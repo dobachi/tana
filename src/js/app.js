@@ -5,6 +5,12 @@
 import { createSafeMode, MODE } from './core/safemode.js';
 import { createPanes, PANE } from './core/panes.js';
 import { createTheme, loadStoredTheme, storeTheme } from './core/theme.js';
+import {
+  createFontScale,
+  loadStoredFontScale,
+  storeFontScale,
+  toPercent,
+} from './core/fontscale.js';
 import { createFilePane } from './core/filepane.js';
 import { createToast } from './core/toast.js';
 import { createFileOps } from './core/fileops.js';
@@ -21,6 +27,7 @@ import {
 const safemode = createSafeMode(MODE.SAFE);
 const panes = createPanes(PANE.LEFT);
 const theme = createTheme(loadStoredTheme());
+const fontScale = createFontScale(loadStoredFontScale());
 const toast = createToast();
 const fileOps = createFileOps({
   canMutate: () => safemode.canMutate(),
@@ -61,6 +68,13 @@ function syncTheme(t) {
     document.documentElement.dataset.theme = t;
   }
   storeTheme(t);
+}
+
+function syncFontScale(scale) {
+  if (typeof document !== 'undefined' && document.documentElement) {
+    document.documentElement.style.setProperty('--font-scale', String(scale));
+  }
+  storeFontScale(scale);
 }
 
 function syncActivePane(active) {
@@ -150,6 +164,24 @@ function onKeydown(e) {
     toggleHidden();
     return;
   }
+  // 文字サイズ: Ctrl++ / Ctrl+- / Ctrl+0 (NFR-U5)
+  if (e.ctrlKey && !e.altKey && !e.metaKey) {
+    if (e.key === '+' || e.key === '=') {
+      e.preventDefault();
+      toast(`文字サイズ: ${toPercent(fontScale.increase())}%`);
+      return;
+    }
+    if (e.key === '-' || e.key === '_') {
+      e.preventDefault();
+      toast(`文字サイズ: ${toPercent(fontScale.decrease())}%`);
+      return;
+    }
+    if (e.key === '0') {
+      e.preventDefault();
+      toast(`文字サイズ: ${toPercent(fontScale.reset())}%`);
+      return;
+    }
+  }
   // ペイン往復: Tab
   if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
     e.preventDefault();
@@ -211,6 +243,7 @@ function onKeydown(e) {
 
 async function init() {
   theme.subscribe(syncTheme);
+  fontScale.subscribe(syncFontScale);
   safemode.subscribe(syncMode);
   panes.subscribe(syncActivePane);
   document.addEventListener('keydown', onKeydown);

@@ -50,12 +50,12 @@ make docker-shell
 
 `docker compose run --rm tana <mode>` の `<mode>`:
 
-| mode | 内容 |
-|------|------|
+| mode          | 内容                                           |
+| ------------- | ---------------------------------------------- |
 | `gui`（既定） | Xvfb + noVNC で GUI 起動、サンドボックスを開く |
-| `test` | Vitest + cargo test |
-| `check` | lint + format + clippy + 全テスト |
-| `shell` | bash |
+| `test`        | Vitest + cargo test                            |
+| `check`       | lint + format + clippy + 全テスト              |
+| `shell`       | bash                                           |
 
 ## トラブルシュート
 
