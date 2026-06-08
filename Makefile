@@ -1,5 +1,5 @@
 .PHONY: setup doctor install-rust dev build test test-js test-rust lint lint-js lint-rust format format-js format-rust format-check check clean help \
-        docker-build docker-gui docker-test docker-check docker-shell
+        docker-build docker-gui docker-test docker-check docker-shell docker-down
 
 # OS判定
 UNAME_S := $(shell uname -s)
@@ -109,3 +109,6 @@ docker-check:
 
 docker-shell:
 	docker compose run --rm tana shell
+
+docker-down:
+	docker compose down --remove-orphans
