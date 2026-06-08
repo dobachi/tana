@@ -6,11 +6,28 @@ import { createSafeMode, MODE } from './core/safemode.js';
 import { createPanes, PANE } from './core/panes.js';
 import { createTheme, loadStoredTheme, storeTheme } from './core/theme.js';
 import { createFilePane } from './core/filepane.js';
-import { homeDir } from './backend.js';
+import { createToast } from './core/toast.js';
+import { createFileOps } from './core/fileops.js';
+import {
+  homeDir,
+  copyPath,
+  movePath,
+  deleteToTrash,
+  deletePermanent,
+  confirmDialog,
+} from './backend.js';
 
 const safemode = createSafeMode(MODE.SAFE);
 const panes = createPanes(PANE.LEFT);
 const theme = createTheme(loadStoredTheme());
+const toast = createToast();
+const fileOps = createFileOps({
+  canMutate: () => safemode.canMutate(),
+  backend: { copyPath, movePath, deleteToTrash, deletePermanent },
+  confirm: confirmDialog,
+  toast,
+  refresh: refreshPanes,
+});
 
 // 各ペインの DOM 要素とファイルペイン・コントローラ
 const filePanes = { left: null, right: null };
@@ -68,6 +85,36 @@ function updateStatus(info) {
     const name = entry ? entry.name : '';
     selEl.textContent = count != null ? `${count} 件${name ? ' / ' + name : ''}` : '';
   }
+}
+
+async function refreshPanes() {
+  const jobs = [];
+  for (const p of [PANE.LEFT, PANE.RIGHT]) {
+    const fp = filePanes[p];
+    if (fp && fp.getCurrentDir()) jobs.push(fp.load(fp.getCurrentDir()));
+  }
+  await Promise.all(jobs);
+  updateStatus();
+}
+
+// アクティブペインの選択項目を、非アクティブペインのディレクトリへ
+function opCopy() {
+  const src = activeFilePane();
+  const dest = filePanes[panes.getInactive()];
+  if (src && dest) fileOps.copy(src.getCursorEntry(), dest.getCurrentDir());
+}
+function opMove() {
+  const src = activeFilePane();
+  const dest = filePanes[panes.getInactive()];
+  if (src && dest) fileOps.move(src.getCursorEntry(), dest.getCurrentDir());
+}
+function opTrash() {
+  const fp = activeFilePane();
+  if (fp) fileOps.trash(fp.getCursorEntry());
+}
+function opDeletePermanent() {
+  const fp = activeFilePane();
+  if (fp) fileOps.deletePermanent(fp.getCursorEntry());
 }
 
 function toggleHidden() {
@@ -142,6 +189,19 @@ function onKeydown(e) {
     case 'G':
       e.preventDefault();
       fp.moveCursorTo('bottom');
+      break;
+    case 'F5':
+      e.preventDefault();
+      opCopy();
+      break;
+    case 'F6':
+      e.preventDefault();
+      opMove();
+      break;
+    case 'Delete':
+      e.preventDefault();
+      if (e.shiftKey) opDeletePermanent();
+      else opTrash();
       break;
     default:
       break;

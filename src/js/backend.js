@@ -33,3 +33,44 @@ export async function parentDir(path) {
 export async function homeDir() {
   return invoke('home_dir');
 }
+
+// ===== ファイル操作 (FR-02, FR-03) =====
+// Rust が Err を返すと invoke は reject する。呼び出し側で捕捉する。
+
+/** dest_dir 配下へコピー。既存かつ overwrite=false なら "EXISTS" で reject */
+export async function copyPath(src, destDir, overwrite = false) {
+  return invoke('copy_path', { src, destDir, overwrite });
+}
+
+/** dest_dir 配下へ移動。既存かつ overwrite=false なら "EXISTS" で reject */
+export async function movePath(src, destDir, overwrite = false) {
+  return invoke('move_path', { src, destDir, overwrite });
+}
+
+/** OS のゴミ箱へ移動 */
+export async function deleteToTrash(path) {
+  return invoke('delete_to_trash', { path });
+}
+
+/** 完全削除 */
+export async function deletePermanent(path) {
+  return invoke('delete_permanent', { path });
+}
+
+/** 新規ディレクトリ作成 */
+export async function makeDir(path) {
+  return invoke('make_dir', { path });
+}
+
+/** 確認ダイアログ。Tauri 不在時は window.confirm にフォールバック */
+export async function confirmDialog(message) {
+  try {
+    const mod = await import('@tauri-apps/plugin-dialog');
+    return await mod.confirm(message, { title: 'Tana', kind: 'warning' });
+  } catch {
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      return window.confirm(message);
+    }
+    return false;
+  }
+}

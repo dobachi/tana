@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -81,13 +81,114 @@ fn parent_dir(path: String) -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+// ===== ファイル操作 (FR-02, FR-03) =====
+// 破壊的操作の許可（安全モードのゲート）はフロント側で行う。ここは実行のみ。
+
+/// `src` を `dest_dir` 配下へ置いたときの宛先パスを返す。
+fn target_path(src: &Path, dest_dir: &Path) -> Option<PathBuf> {
+    src.file_name().map(|n| dest_dir.join(n))
+}
+
+/// ファイル/ディレクトリを再帰的にコピーする。
+fn copy_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if src.is_dir() {
+        std::fs::create_dir_all(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            copy_recursive(&entry.path(), &dst.join(entry.file_name()))?;
+        }
+    } else {
+        if let Some(parent) = dst.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(src, dst)?;
+    }
+    Ok(())
+}
+
+fn remove_any(path: &Path) -> std::io::Result<()> {
+    if path.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    }
+}
+
+/// `src` を `dest_dir` 配下へコピーする。宛先が既存で overwrite=false なら "EXISTS" を返す。
+#[tauri::command]
+fn copy_path(src: String, dest_dir: String, overwrite: bool) -> Result<String, String> {
+    let src = Path::new(&src);
+    let dest_dir = Path::new(&dest_dir);
+    let target = target_path(src, dest_dir).ok_or("コピー元が不正です")?;
+    if target == src {
+        return Err("コピー元と宛先が同じです".into());
+    }
+    if target.exists() && !overwrite {
+        return Err("EXISTS".into());
+    }
+    if target.exists() {
+        remove_any(&target).map_err(|e| e.to_string())?;
+    }
+    copy_recursive(src, &target).map_err(|e| e.to_string())?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+/// `src` を `dest_dir` 配下へ移動する。別デバイス間は copy+delete でフォールバック。
+#[tauri::command]
+fn move_path(src: String, dest_dir: String, overwrite: bool) -> Result<String, String> {
+    let src = Path::new(&src);
+    let dest_dir = Path::new(&dest_dir);
+    let target = target_path(src, dest_dir).ok_or("移動元が不正です")?;
+    if target == src {
+        return Err("移動元と宛先が同じです".into());
+    }
+    if target.exists() {
+        if !overwrite {
+            return Err("EXISTS".into());
+        }
+        remove_any(&target).map_err(|e| e.to_string())?;
+    }
+    if std::fs::rename(src, &target).is_err() {
+        copy_recursive(src, &target).map_err(|e| e.to_string())?;
+        remove_any(src).map_err(|e| e.to_string())?;
+    }
+    Ok(target.to_string_lossy().to_string())
+}
+
+/// OS のゴミ箱へ移動する（既定の削除, NFR-R2）。
+#[tauri::command]
+fn delete_to_trash(path: String) -> Result<(), String> {
+    trash::delete(&path).map_err(|e| e.to_string())
+}
+
+/// 完全に削除する（元に戻せない, 明示操作）。
+#[tauri::command]
+fn delete_permanent(path: String) -> Result<(), String> {
+    remove_any(Path::new(&path)).map_err(|e| e.to_string())
+}
+
+/// 新規ディレクトリを作成する。
+#[tauri::command]
+fn make_dir(path: String) -> Result<(), String> {
+    std::fs::create_dir(Path::new(&path)).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![list_dir, home_dir, parent_dir])
+        .invoke_handler(tauri::generate_handler![
+            list_dir,
+            home_dir,
+            parent_dir,
+            copy_path,
+            move_path,
+            delete_to_trash,
+            delete_permanent,
+            make_dir
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tana application");
 }
@@ -138,5 +239,87 @@ mod tests {
         let vis = entries.iter().find(|e| e.name == "visible.txt").unwrap();
         assert!(dot.is_hidden);
         assert!(!vis.is_hidden);
+    }
+
+    #[test]
+    fn target_path_joins_basename() {
+        let t = target_path(Path::new("/a/b/file.txt"), Path::new("/x/y")).unwrap();
+        assert_eq!(t, PathBuf::from("/x/y/file.txt"));
+    }
+
+    #[test]
+    fn copy_recursive_copies_dir_tree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        fs::create_dir(&src).unwrap();
+        fs::write(src.join("a.txt"), b"hello").unwrap();
+        fs::create_dir(src.join("sub")).unwrap();
+        fs::write(src.join("sub/b.txt"), b"world").unwrap();
+
+        let dst = tmp.path().join("dst");
+        copy_recursive(&src, &dst).unwrap();
+        assert_eq!(fs::read_to_string(dst.join("a.txt")).unwrap(), "hello");
+        assert_eq!(fs::read_to_string(dst.join("sub/b.txt")).unwrap(), "world");
+        // 元が残っている（コピー）
+        assert!(src.join("a.txt").exists());
+    }
+
+    #[test]
+    fn copy_path_blocks_existing_without_overwrite() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("dest");
+        fs::create_dir(&dest).unwrap();
+        let src = tmp.path().join("f.txt");
+        fs::write(&src, b"x").unwrap();
+        fs::write(dest.join("f.txt"), b"old").unwrap();
+
+        let err = copy_path(
+            src.to_string_lossy().into(),
+            dest.to_string_lossy().into(),
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(err, "EXISTS");
+        // overwrite=true なら成功し上書き
+        copy_path(
+            src.to_string_lossy().into(),
+            dest.to_string_lossy().into(),
+            true,
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(dest.join("f.txt")).unwrap(), "x");
+    }
+
+    #[test]
+    fn move_path_moves_and_removes_source() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("dest");
+        fs::create_dir(&dest).unwrap();
+        let src = tmp.path().join("m.txt");
+        fs::write(&src, b"data").unwrap();
+
+        move_path(
+            src.to_string_lossy().into(),
+            dest.to_string_lossy().into(),
+            false,
+        )
+        .unwrap();
+        assert!(!src.exists());
+        assert_eq!(fs::read_to_string(dest.join("m.txt")).unwrap(), "data");
+    }
+
+    #[test]
+    fn delete_permanent_removes_file_and_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let f = tmp.path().join("x.txt");
+        fs::write(&f, b"x").unwrap();
+        delete_permanent(f.to_string_lossy().into()).unwrap();
+        assert!(!f.exists());
+
+        let d = tmp.path().join("d");
+        fs::create_dir(&d).unwrap();
+        fs::write(d.join("inner.txt"), b"y").unwrap();
+        delete_permanent(d.to_string_lossy().into()).unwrap();
+        assert!(!d.exists());
     }
 }
