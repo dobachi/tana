@@ -177,6 +177,9 @@ body[data-mode='operation'] .pane.active {
   font-size: 11px;
   flex-shrink: 0;
 }
+.entry.is-hidden {
+  opacity: 0.6;
+}
 .entry.cursor {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }

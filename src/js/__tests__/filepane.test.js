@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatSize, clampCursor } from '../core/filepane.js';
+import { formatSize, clampCursor, isHidden, filterEntries } from '../core/filepane.js';
 
 describe('formatSize', () => {
   it('0 や負値は空文字', () => {
@@ -25,5 +25,31 @@ describe('clampCursor', () => {
   it('下限・上限でクランプ', () => {
     expect(clampCursor(-1, 5)).toBe(0);
     expect(clampCursor(9, 5)).toBe(4);
+  });
+});
+
+describe('isHidden', () => {
+  it('バックエンドの is_hidden を優先する', () => {
+    expect(isHidden({ name: 'visible', is_hidden: true })).toBe(true);
+    expect(isHidden({ name: '.env', is_hidden: false })).toBe(false);
+  });
+  it('is_hidden 不在時は先頭ドットで判定', () => {
+    expect(isHidden({ name: '.gitignore' })).toBe(true);
+    expect(isHidden({ name: 'README.md' })).toBe(false);
+  });
+});
+
+describe('filterEntries', () => {
+  const entries = [
+    { name: '.git', is_hidden: true },
+    { name: 'src', is_hidden: false },
+    { name: '.env', is_hidden: true },
+    { name: 'README.md', is_hidden: false },
+  ];
+  it('showHidden=false で隠しを除外', () => {
+    expect(filterEntries(entries, false).map((e) => e.name)).toEqual(['src', 'README.md']);
+  });
+  it('showHidden=true で全件', () => {
+    expect(filterEntries(entries, true)).toHaveLength(4);
   });
 });

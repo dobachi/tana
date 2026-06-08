@@ -1,5 +1,5 @@
 // filepane.js — 1ペインのファイル一覧コントローラ (FR-01)
-// ディレクトリの読み込み・描画・カーソル移動・階層ナビゲーション(h/l)を担う。
+// ディレクトリの読み込み・描画・カーソル移動・階層ナビゲーション(h/l)・隠しファイル表示切替(FR-15)。
 
 import { listDir, parentDir } from '../backend.js';
 
@@ -24,12 +24,24 @@ export function clampCursor(idx, len) {
   return idx;
 }
 
+/** エントリが隠しか（バックエンドの is_hidden、無ければ先頭ドットで判定） */
+export function isHidden(entry) {
+  if (typeof entry.is_hidden === 'boolean') return entry.is_hidden;
+  return typeof entry.name === 'string' && entry.name.startsWith('.');
+}
+
+/** showHidden に応じて表示対象のエントリを返す */
+export function filterEntries(entries, showHidden) {
+  return showHidden ? entries : entries.filter((e) => !isHidden(e));
+}
+
 /**
  * ファイルペインを生成する。
  * @param {HTMLElement} rootEl `.pane` 要素（`.pane-list` と `.pane-path` を含む）
  * @param {object} opts
  * @param {() => void} [opts.onActivate] このペインがクリックされたとき
- * @param {(info: {dir: string, entry: object|null, count: number}) => void} [opts.onChange] 状態変化時
+ * @param {(info: {dir: string, entry: object|null, count: number}) => void} [opts.onChange]
+ * @param {boolean} [opts.showHidden] 隠しファイルを表示するか（初期値）
  */
 export function createFilePane(rootEl, opts = {}) {
   const listEl = rootEl.querySelector('.pane-list');
@@ -37,8 +49,21 @@ export function createFilePane(rootEl, opts = {}) {
   const { onActivate, onChange } = opts;
 
   let currentDir = null;
-  let entries = [];
+  let allEntries = []; // 読み込んだ全件
+  let entries = []; // 表示対象（フィルタ後）
   let cursor = 0;
+  let showHidden = opts.showHidden === true;
+
+  function recompute(keepPath) {
+    entries = filterEntries(allEntries, showHidden);
+    // フィルタ前後でカーソル対象を維持できれば維持、できなければクランプ
+    if (keepPath) {
+      const idx = entries.findIndex((e) => e.path === keepPath);
+      cursor = idx >= 0 ? idx : clampCursor(cursor, entries.length);
+    } else {
+      cursor = clampCursor(cursor, entries.length);
+    }
+  }
 
   function notify() {
     if (pathEl) pathEl.textContent = currentDir || '—';
@@ -51,7 +76,9 @@ export function createFilePane(rootEl, opts = {}) {
     listEl.replaceChildren();
     entries.forEach((e, i) => {
       const li = document.createElement('li');
-      li.className = 'entry' + (e.is_dir ? ' is-dir' : '') + (i === cursor ? ' cursor' : '');
+      const hiddenCls = isHidden(e) ? ' is-hidden' : '';
+      li.className =
+        'entry' + (e.is_dir ? ' is-dir' : '') + hiddenCls + (i === cursor ? ' cursor' : '');
       const name = document.createElement('span');
       name.className = 'entry-name';
       name.textContent = e.is_dir ? e.name + '/' : e.name;
@@ -77,15 +104,25 @@ export function createFilePane(rootEl, opts = {}) {
 
   /** ディレクトリを読み込んで表示する */
   async function load(dir, cursorTo = 0) {
-    const list = await listDir(dir);
+    allEntries = await listDir(dir);
     currentDir = dir;
-    entries = list;
+    recompute();
     cursor = clampCursor(cursorTo, entries.length);
     render();
     notify();
   }
 
-  /** カーソルを delta 行移動 */
+  /** 隠しファイルの表示/非表示を設定（FR-15） */
+  function setShowHidden(next) {
+    const v = next === true;
+    if (v === showHidden) return;
+    showHidden = v;
+    const keep = entries[cursor] ? entries[cursor].path : null;
+    recompute(keep);
+    render();
+    notify();
+  }
+
   function moveCursor(delta) {
     const next = clampCursor(cursor + delta, entries.length);
     if (next !== cursor) {
@@ -95,10 +132,8 @@ export function createFilePane(rootEl, opts = {}) {
     }
   }
 
-  /** カーソルを先頭/末尾へ */
   function moveCursorTo(pos) {
-    const next = pos === 'top' ? 0 : entries.length - 1;
-    cursor = clampCursor(next, entries.length);
+    cursor = clampCursor(pos === 'top' ? 0 : entries.length - 1, entries.length);
     render();
     notify();
   }
@@ -131,6 +166,8 @@ export function createFilePane(rootEl, opts = {}) {
     moveCursorTo,
     enter,
     goParent,
+    setShowHidden,
+    isShowingHidden: () => showHidden,
     getCurrentDir: () => currentDir,
     getCursorEntry: () => entries[cursor] || null,
     getCount: () => entries.length,

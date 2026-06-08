@@ -9,6 +9,25 @@ pub struct DirEntry {
     pub path: String,
     pub is_dir: bool,
     pub size: u64,
+    pub is_hidden: bool,
+}
+
+/// 隠しエントリ判定。先頭ドット（Unix 慣習）に加え、Windows では隠し属性も見る。
+fn is_hidden_entry(name: &str, _meta: Option<&std::fs::Metadata>) -> bool {
+    if name.starts_with('.') {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        if let Some(m) = _meta {
+            if m.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0 {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// 指定ディレクトリのエントリ一覧を返す（フォルダ優先 → 名前順）。
@@ -24,11 +43,14 @@ fn read_dir_entries(path: &Path) -> Result<Vec<DirEntry>, String> {
         let meta = item.metadata();
         let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
         let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+        let name = item.file_name().to_string_lossy().to_string();
+        let is_hidden = is_hidden_entry(&name, meta.as_ref().ok());
         entries.push(DirEntry {
-            name: item.file_name().to_string_lossy().to_string(),
+            name,
             path: item.path().to_string_lossy().to_string(),
             is_dir,
             size,
+            is_hidden,
         });
     }
     entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
@@ -103,5 +125,18 @@ mod tests {
     fn parent_dir_returns_parent() {
         assert_eq!(parent_dir("/a/b/c".into()), Some("/a/b".to_string()));
         assert_eq!(parent_dir("/".into()), None);
+    }
+
+    #[test]
+    fn marks_dotfiles_as_hidden() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join(".env"), b"x").unwrap();
+        fs::write(tmp.path().join("visible.txt"), b"x").unwrap();
+
+        let entries = read_dir_entries(tmp.path()).unwrap();
+        let dot = entries.iter().find(|e| e.name == ".env").unwrap();
+        let vis = entries.iter().find(|e| e.name == "visible.txt").unwrap();
+        assert!(dot.is_hidden);
+        assert!(!vis.is_hidden);
     }
 }

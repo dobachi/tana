@@ -15,6 +15,9 @@ const theme = createTheme(loadStoredTheme());
 // 各ペインの DOM 要素とファイルペイン・コントローラ
 const filePanes = { left: null, right: null };
 
+// 隠しファイル表示（両ペイン共通, FR-15）
+let showHidden = false;
+
 function paneEl(pane) {
   return document.getElementById(pane === PANE.LEFT ? 'pane-left' : 'pane-right');
 }
@@ -67,6 +70,15 @@ function updateStatus(info) {
   }
 }
 
+function toggleHidden() {
+  showHidden = !showHidden;
+  if (filePanes.left) filePanes.left.setShowHidden(showHidden);
+  if (filePanes.right) filePanes.right.setShowHidden(showHidden);
+  const el = document.getElementById('status-hidden');
+  if (el) el.textContent = showHidden ? '隠し: 表示' : '';
+  updateStatus();
+}
+
 function isEditableTarget(t) {
   return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 }
@@ -82,6 +94,12 @@ function onKeydown(e) {
   if (e.ctrlKey && e.shiftKey && (e.code === 'KeyT' || e.key.toLowerCase() === 't')) {
     e.preventDefault();
     theme.toggle();
+    return;
+  }
+  // 隠しファイル表示切替: Ctrl+H (FR-15)
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === 'KeyH' || e.key.toLowerCase() === 'h')) {
+    e.preventDefault();
+    toggleHidden();
     return;
   }
   // ペイン往復: Tab
@@ -141,6 +159,7 @@ async function init() {
     const el = paneEl(p);
     if (!el) continue;
     filePanes[p] = createFilePane(el, {
+      showHidden,
       onActivate: () => panes.setActive(p),
       onChange: (info) => {
         if (p === panes.getActive()) updateStatus(info);

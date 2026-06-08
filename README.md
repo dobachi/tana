@@ -33,6 +33,8 @@ make test     # 全テスト（Vitest + cargo test）
 make check    # format + lint + test + build:frontend（CI向け）
 ```
 
+> **テスト方針**: 機能の追加・変更には必ずテストを伴う。詳細は [CONTRIBUTING.md](CONTRIBUTING.md) を参照。
+
 ## 技術スタック(予定)
 
 | 領域 | 採用技術 |
