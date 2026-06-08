@@ -16,10 +16,22 @@
 
 ## ステータス
 
-🚧 **設計フェーズ** — 要求分析と設計を進行中。
+🚧 **M0: 雛形構築中** — Tauri v2 + esbuild + Vitest の足場、ウィンドウ + 空2ペイン + 安全モード基盤。
 
 - [要求分析 (docs/REQUIREMENTS.md)](docs/REQUIREMENTS.md)
 - [設計ドキュメント (docs/DESIGN.md)](docs/DESIGN.md)
+- ロードマップ: **M0 雛形** → M1 MVP(2ペイン操作 / 安全モード / お気に入り) → M2(Places / タブ / セッション復元)→ …
+
+## 開発
+
+```bash
+make doctor   # 前提条件チェック（Node / Rust / システム依存）
+make setup    # 依存関係を一括インストール
+make dev      # 開発モード起動（Tauri ネイティブ）
+make build    # プロダクションビルド
+make test     # 全テスト（Vitest + cargo test）
+make check    # format + lint + test + build:frontend（CI向け）
+```
 
 ## 技術スタック(予定)
 

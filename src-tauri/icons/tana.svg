@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="220" fill="#2f3a4a"/>
+  <g stroke="#e8eef5" stroke-width="44" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- shelf frame -->
+    <rect x="232" y="232" width="560" height="560" rx="40"/>
+    <!-- two horizontal shelves -> 3 rows -->
+    <line x1="232" y1="418" x2="792" y2="418"/>
+    <line x1="232" y1="606" x2="792" y2="606"/>
+  </g>
+  <g fill="#5aa9e6">
+    <!-- top row: two upright books -->
+    <rect x="300" y="296" width="60" height="92" rx="12"/>
+    <rect x="384" y="296" width="60" height="92" rx="12"/>
+    <!-- middle row: one box -->
+    <rect x="300" y="484" width="150" height="92" rx="14"/>
+    <!-- bottom row: upright book + box -->
+    <rect x="660" y="672" width="60" height="92" rx="12"/>
+    <rect x="300" y="672" width="100" height="92" rx="14"/>
+  </g>
+</svg>

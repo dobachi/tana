@@ -1,0 +1,37 @@
+{
+  "name": "tana",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "esbuild src/js/app.js --bundle --outfile=dist/bundle.js --format=esm --sourcemap --watch",
+    "prebuild:frontend": "node -e \"require('fs').mkdirSync('dist',{recursive:true})\"",
+    "build:frontend": "node -e \"require('fs').cpSync('src/index.html','dist/index.html');require('fs').cpSync('src/style.css','dist/style.css')\" && esbuild src/js/app.js --bundle --outfile=dist/bundle.js --format=esm --minify --tree-shaking=true",
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/js/",
+    "lint:fix": "eslint src/js/ --fix",
+    "lint:rust": "cd src-tauri && cargo clippy -- -D warnings",
+    "format": "prettier --write 'src/**/*.{js,css,html}'",
+    "format:check": "prettier --check 'src/**/*.{js,css,html}'",
+    "format:rust": "cd src-tauri && cargo fmt",
+    "check": "npm run format:check && npm run lint && npm run test && npm run build:frontend"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-cli": "^2.4.1",
+    "@tauri-apps/plugin-dialog": "^2.6.0",
+    "@tauri-apps/plugin-opener": "^2.5.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tauri-apps/cli": "^2.10.1",
+    "esbuild": "^0.27.4",
+    "eslint": "^10.0.3",
+    "jsdom": "^28.1.0",
+    "prettier": "^3.8.1",
+    "vitest": "^4.1.0"
+  }
+}

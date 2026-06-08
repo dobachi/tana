@@ -1,0 +1,153 @@
+/* Tana - minimal theme (CSS variables + Grid) */
+:root {
+  --bg: #1e2229;
+  --bg-elev: #262b33;
+  --bg-pane: #20252c;
+  --fg: #d7dde5;
+  --fg-dim: #8a93a0;
+  --border: #333a44;
+  --accent: #5aa9e6; /* 寒色: 安全モードのアクセント */
+  --accent-op: #e6995a; /* 暖色: 操作モードのアクセント */
+  --active-pane: #2c333d;
+  --font: -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+  --mono: 'Cascadia Code', 'Consolas', monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f6f9;
+    --bg-elev: #ffffff;
+    --bg-pane: #ffffff;
+    --fg: #232a33;
+    --fg-dim: #6b7480;
+    --border: #d9dee6;
+    --active-pane: #eef3fa;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+#app {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  grid-template-rows: 1fr 26px;
+  grid-template-areas:
+    'sidebar workspace'
+    'statusbar statusbar';
+  height: 100vh;
+}
+
+/* Sidebar */
+#sidebar {
+  grid-area: sidebar;
+  background: var(--bg-elev);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.sidebar-section {
+  margin-bottom: 12px;
+}
+.sidebar-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-dim);
+  margin: 0 0 4px;
+  padding: 0 12px;
+}
+.sidebar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sidebar-list li {
+  padding: 3px 12px;
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.placeholder {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+/* Workspace: 2ペイン */
+#workspace {
+  grid-area: workspace;
+  display: grid;
+  grid-template-columns: 1fr 1px 1fr;
+  overflow: hidden;
+}
+.pane {
+  background: var(--bg-pane);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  outline: none;
+  border-top: 2px solid transparent;
+}
+.pane.active {
+  background: var(--active-pane);
+  border-top-color: var(--accent);
+}
+body[data-mode='operation'] .pane.active {
+  border-top-color: var(--accent-op);
+}
+.pane-divider {
+  background: var(--border);
+}
+.pane-header {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pane-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Status Bar */
+#statusbar {
+  grid-area: statusbar;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 10px;
+  background: var(--bg-elev);
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+.mode-indicator {
+  font-weight: 600;
+  color: var(--accent);
+}
+body[data-mode='operation'] .mode-indicator {
+  color: var(--accent-op);
+}

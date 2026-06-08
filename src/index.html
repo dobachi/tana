@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tana</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body data-mode="safe">
+    <div id="app">
+      <!-- Sidebar: 場所(Places) + お気に入り(Favorites) -->
+      <aside id="sidebar" tabindex="-1">
+        <section class="sidebar-section">
+          <h2 class="sidebar-title">場所</h2>
+          <ul id="places" class="sidebar-list">
+            <li class="placeholder">（M2 で実装）</li>
+          </ul>
+        </section>
+        <section class="sidebar-section">
+          <h2 class="sidebar-title">お気に入り</h2>
+          <ul id="favorites" class="sidebar-list">
+            <li class="placeholder">（M1 で実装）</li>
+          </ul>
+        </section>
+      </aside>
+
+      <!-- Workspace: 2ペイン -->
+      <main id="workspace">
+        <section class="pane" id="pane-left" data-pane="left" tabindex="0">
+          <header class="pane-header"><span class="pane-path">—</span></header>
+          <ul class="pane-list"></ul>
+        </section>
+        <div class="pane-divider"></div>
+        <section class="pane" id="pane-right" data-pane="right" tabindex="0">
+          <header class="pane-header"><span class="pane-path">—</span></header>
+          <ul class="pane-list"></ul>
+        </section>
+      </main>
+
+      <!-- Status Bar -->
+      <footer id="statusbar">
+        <span id="mode-indicator" class="mode-indicator">● 安全モード</span>
+        <span id="status-path" class="status-path"></span>
+        <span id="status-selection" class="status-selection"></span>
+      </footer>
+    </div>
+    <script type="module" src="bundle.js"></script>
+  </body>
+</html>
