@@ -1,4 +1,5 @@
-.PHONY: setup doctor install-rust dev build test test-js test-rust lint lint-js lint-rust format format-js format-rust format-check check clean help
+.PHONY: setup doctor install-rust dev build test test-js test-rust lint lint-js lint-rust format format-js format-rust format-check check clean help \
+        docker-build docker-gui docker-test docker-check docker-shell
 
 # OS判定
 UNAME_S := $(shell uname -s)
@@ -90,3 +91,21 @@ check: format-check lint test build-frontend
 clean:
 	rm -rf dist/bundle.js dist/index.html dist/style.css
 	cd src-tauri && cargo clean
+
+# ---- Docker 動作確認（安全・隔離） ----
+# 詳細は docs/DOCKER.md
+docker-build:
+	docker compose build
+
+docker-gui: docker-build
+	@echo "起動後: http://localhost:6080/vnc.html を開いてください"
+	docker compose up
+
+docker-test:
+	docker compose run --rm tana test
+
+docker-check:
+	docker compose run --rm tana check
+
+docker-shell:
+	docker compose run --rm tana shell

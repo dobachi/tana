@@ -10,6 +10,7 @@ import { createToast } from './core/toast.js';
 import { createFileOps } from './core/fileops.js';
 import {
   homeDir,
+  getCliPath,
   copyPath,
   movePath,
   deleteToTrash,
@@ -228,8 +229,8 @@ async function init() {
     el.addEventListener('mousedown', () => panes.setActive(p));
   }
 
-  // 起動ディレクトリ: ホーム（取得不能時はカレント '.'）
-  const start = (await homeDir()) || '.';
+  // 起動ディレクトリ: CLI 引数 > ホーム > カレント
+  const start = (await getCliPath()) || (await homeDir()) || '.';
   await Promise.all([filePanes.left.load(start), filePanes.right.load(start)]);
   updateStatus();
 }

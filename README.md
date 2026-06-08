@@ -35,6 +35,18 @@ make check    # format + lint + test + build:frontend（CI向け）
 
 > **テスト方針**: 機能の追加・変更には必ずテストを伴う。詳細は [CONTRIBUTING.md](CONTRIBUTING.md) を参照。
 
+### Docker での動作確認（安全・隔離）
+
+ホストを汚さずに動作確認できる隔離環境を用意しています（ホスト非マウント + 使い捨てサンドボックス + noVNC）。
+
+```bash
+make docker-gui    # GUI を起動 → ブラウザで http://localhost:6080/vnc.html
+make docker-test   # ヘッドレスで全テスト
+make docker-check  # lint + format + clippy + テスト（CI相当）
+```
+
+詳細は [docs/DOCKER.md](docs/DOCKER.md) を参照。
+
 ## 技術スタック(予定)
 
 | 領域 | 採用技術 |

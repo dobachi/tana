@@ -34,6 +34,18 @@ export async function homeDir() {
   return invoke('home_dir');
 }
 
+/** 起動時 CLI 引数 path（開くディレクトリ）を取得する。無ければ null */
+export async function getCliPath() {
+  try {
+    const mod = await import('@tauri-apps/plugin-cli');
+    const matches = await mod.getMatches();
+    const v = matches && matches.args && matches.args.path && matches.args.path.value;
+    return typeof v === 'string' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 // ===== ファイル操作 (FR-02, FR-03) =====
 // Rust が Err を返すと invoke は reject する。呼び出し側で捕捉する。
 
