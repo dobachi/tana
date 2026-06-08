@@ -51,13 +51,21 @@ fn home_dir() -> Option<String> {
     dirs::home_dir().map(|p| p.to_string_lossy().to_string())
 }
 
+/// 親ディレクトリのパスを返す Tauri コマンド（ルートでは None）。
+#[tauri::command]
+fn parent_dir(path: String) -> Option<String> {
+    Path::new(&path)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![list_dir, home_dir])
+        .invoke_handler(tauri::generate_handler![list_dir, home_dir, parent_dir])
         .run(tauri::generate_context!())
         .expect("error while running tana application");
 }
@@ -89,5 +97,11 @@ mod tests {
     fn errors_on_missing_dir() {
         let result = read_dir_entries(Path::new("/no/such/path/tana-xyz"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn parent_dir_returns_parent() {
+        assert_eq!(parent_dir("/a/b/c".into()), Some("/a/b".to_string()));
+        assert_eq!(parent_dir("/".into()), None);
     }
 }

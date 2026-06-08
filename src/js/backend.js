@@ -23,3 +23,13 @@ export async function listDir(path) {
   const entries = await invoke('list_dir', { path });
   return entries || [];
 }
+
+/** 親ディレクトリのパスを取得する (parent_dir コマンド)。ルート/不在時は null */
+export async function parentDir(path) {
+  return invoke('parent_dir', { path });
+}
+
+/** ホームディレクトリのパスを取得する (home_dir コマンド) */
+export async function homeDir() {
+  return invoke('home_dir');
+}

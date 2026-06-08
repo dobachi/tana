@@ -1,17 +1,26 @@
-// app.js — メインオーケストレーター (M0)
-// 役割: 初期化、キーバインド、安全モード/ペイン状態と DOM の同期。
-// 機能の中身（ファイル一覧・操作・お気に入り）は M1 以降で core/ に実装する。
+// app.js — メインオーケストレーター (M1)
+// 役割: 初期化、キーバインド、安全モード/ペイン/テーマと DOM の同期、
+//        2ペインの実ファイル一覧表示とナビゲーション。
 
 import { createSafeMode, MODE } from './core/safemode.js';
 import { createPanes, PANE } from './core/panes.js';
-import { createTheme, loadStoredTheme, storeTheme, THEME_LABELS } from './core/theme.js';
+import { createTheme, loadStoredTheme, storeTheme } from './core/theme.js';
+import { createFilePane } from './core/filepane.js';
+import { homeDir } from './backend.js';
 
 const safemode = createSafeMode(MODE.SAFE);
 const panes = createPanes(PANE.LEFT);
 const theme = createTheme(loadStoredTheme());
 
+// 各ペインの DOM 要素とファイルペイン・コントローラ
+const filePanes = { left: null, right: null };
+
 function paneEl(pane) {
   return document.getElementById(pane === PANE.LEFT ? 'pane-left' : 'pane-right');
+}
+
+function activeFilePane() {
+  return filePanes[panes.getActive()];
 }
 
 function syncMode(mode) {
@@ -41,21 +50,38 @@ function syncActivePane(active) {
   }
   const el = paneEl(active);
   if (el && document.activeElement !== el) el.focus();
+  updateStatus();
+}
+
+function updateStatus(info) {
+  const fp = activeFilePane();
+  const pathEl = document.getElementById('status-path');
+  const selEl = document.getElementById('status-selection');
+  const dir = info ? info.dir : fp && fp.getCurrentDir();
+  const entry = info ? info.entry : fp && fp.getCursorEntry();
+  const count = info ? info.count : fp && fp.getCount();
+  if (pathEl) pathEl.textContent = dir || '';
+  if (selEl) {
+    const name = entry ? entry.name : '';
+    selEl.textContent = count != null ? `${count} 件${name ? ' / ' + name : ''}` : '';
+  }
+}
+
+function isEditableTarget(t) {
+  return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
 }
 
 function onKeydown(e) {
-  // 安全/操作モード切替: Ctrl+Shift+Space (Q1 で確定)
+  // 安全/操作モード切替: Ctrl+Shift+Space
   if (e.ctrlKey && e.shiftKey && (e.code === 'Space' || e.key === ' ')) {
     e.preventDefault();
     safemode.toggle();
     return;
   }
-  // テーマ切替: Ctrl+Shift+T (サイバーダーク ⇄ 白基調シンプル)
+  // テーマ切替: Ctrl+Shift+T
   if (e.ctrlKey && e.shiftKey && (e.code === 'KeyT' || e.key.toLowerCase() === 't')) {
     e.preventDefault();
-    const next = theme.toggle();
-    const indicator = document.getElementById('status-path');
-    if (indicator) indicator.textContent = `テーマ: ${THEME_LABELS[next]}`;
+    theme.toggle();
     return;
   }
   // ペイン往復: Tab
@@ -64,19 +90,69 @@ function onKeydown(e) {
     panes.toggle();
     return;
   }
+
+  // 以降はファイルナビゲーション（修飾キー無し・入力欄以外）
+  if (e.ctrlKey || e.altKey || e.metaKey || isEditableTarget(e.target)) return;
+  const fp = activeFilePane();
+  if (!fp) return;
+
+  switch (e.key) {
+    case 'j':
+    case 'ArrowDown':
+      e.preventDefault();
+      fp.moveCursor(1);
+      break;
+    case 'k':
+    case 'ArrowUp':
+      e.preventDefault();
+      fp.moveCursor(-1);
+      break;
+    case 'l':
+    case 'Enter':
+      e.preventDefault();
+      fp.enter();
+      break;
+    case 'h':
+    case 'Backspace':
+      e.preventDefault();
+      fp.goParent();
+      break;
+    case 'g':
+      e.preventDefault();
+      fp.moveCursorTo('top');
+      break;
+    case 'G':
+      e.preventDefault();
+      fp.moveCursorTo('bottom');
+      break;
+    default:
+      break;
+  }
 }
 
-function init() {
+async function init() {
   theme.subscribe(syncTheme);
   safemode.subscribe(syncMode);
   panes.subscribe(syncActivePane);
   document.addEventListener('keydown', onKeydown);
 
-  // クリックでアクティブペインを切り替え
+  // 2ペインのファイルペインを生成
   for (const p of [PANE.LEFT, PANE.RIGHT]) {
     const el = paneEl(p);
-    if (el) el.addEventListener('mousedown', () => panes.setActive(p));
+    if (!el) continue;
+    filePanes[p] = createFilePane(el, {
+      onActivate: () => panes.setActive(p),
+      onChange: (info) => {
+        if (p === panes.getActive()) updateStatus(info);
+      },
+    });
+    el.addEventListener('mousedown', () => panes.setActive(p));
   }
+
+  // 起動ディレクトリ: ホーム（取得不能時はカレント '.'）
+  const start = (await homeDir()) || '.';
+  await Promise.all([filePanes.left.load(start), filePanes.right.load(start)]);
+  updateStatus();
 }
 
 if (typeof document !== 'undefined') {

@@ -16,7 +16,7 @@
 
 ## ステータス
 
-🚧 **M0: 雛形構築中** — Tauri v2 + esbuild + Vitest の足場、ウィンドウ + 空2ペイン + 安全モード基盤。
+🚧 **M1: MVP 実装中** — M0(雛形 + 安全モード基盤)完了。現在、2ペインの実ファイル一覧表示と hjkl ナビゲーションを実装中。
 
 - [要求分析 (docs/REQUIREMENTS.md)](docs/REQUIREMENTS.md)
 - [設計ドキュメント (docs/DESIGN.md)](docs/DESIGN.md)
