@@ -62,5 +62,7 @@ make docker-shell
 - **ウィンドウが出ない/真っ黒**: WebKitGTK のヘッドレス描画の問題のことがあります。イメージでは
   `WEBKIT_DISABLE_COMPOSITING_MODE=1` / `WEBKIT_DISABLE_DMABUF_RENDERER=1` / `LIBGL_ALWAYS_SOFTWARE=1` を設定済みです。
   それでも出ない場合は `docker compose run --rm tana shell` で入り `cat /tmp/xvfb.log /tmp/x11vnc.log` を確認してください。
+- **日本語が化ける（豆腐）**: コンテナに `fonts-noto-cjk` を導入済みです。古いイメージのままなら `make docker-build` で再ビルドしてください。
+- **キーボードが効かない**: Xvfb のキーマップ設定(`setxkbmap us`)・`x11vnc -xkb`・起動後の `xdotool` フォーカスを設定済みです。それでも効かない場合は、**noVNC のウィンドウ内を一度クリック**してフォーカスを与えてください。`cat /tmp/xkb.log /tmp/focus.log` も参考になります。
 - **ポート競合**: `6080` が使用中なら `docker-compose.yml` の ports を変更してください。
 - **コード変更を反映**: イメージはソースを COPY するため、変更後は `make docker-build`（再ビルド）が必要です。

@@ -1,8 +1,10 @@
 /* Tana - minimal theme system (CSS variables + Grid) */
 /* テーマは <html data-theme="..."> で選択する (NFR-U4)。共通トークンは :root に置く。 */
 :root {
-  --font: -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
-  --mono: 'Cascadia Code', 'Consolas', monospace;
+  --font:
+    -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Noto Sans CJK JP',
+    'Yu Gothic', Meiryo, sans-serif;
+  --mono: 'Cascadia Code', 'Consolas', 'Noto Sans Mono CJK JP', monospace;
 }
 
 /* サイバーダーク: 近黒背景 + ネオンアクセント（既定） */

@@ -25,13 +25,17 @@ seed_sandbox() {
 start_display() {
   Xvfb :99 -screen 0 1280x800x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
   sleep 1
+  # キーボードレイアウトを設定（未設定だと入力が届かない）
+  setxkbmap -display :99 us >/tmp/xkb.log 2>&1 || true
   fluxbox >/tmp/fluxbox.log 2>&1 &
-  x11vnc -display :99 -nopw -forever -shared -quiet -rfbport 5900 >/tmp/x11vnc.log 2>&1 &
+  # -xkb: キーシンボルを正しく送る
+  x11vnc -display :99 -nopw -forever -shared -xkb -quiet -rfbport 5900 >/tmp/x11vnc.log 2>&1 &
   websockify --web=/usr/share/novnc 6080 localhost:5900 >/tmp/novnc.log 2>&1 &
   sleep 1
   echo "============================================================"
   echo "  noVNC で接続: http://localhost:6080/vnc.html"
   echo "  （パスワード不要。自動接続: ?autoconnect=true&resize=remote）"
+  echo "  入力できない時は一度ウィンドウ内をクリックしてください。"
   echo "============================================================"
 }
 
@@ -54,6 +58,12 @@ case "$MODE" in
     seed_sandbox
     start_display
     echo "==> Tana を起動します（サンドボックスを表示）"
-    exec "$BIN" "$SANDBOX"
+    # 起動後、ウィンドウへフォーカスを当てる（入力対策）
+    (
+      sleep 3
+      xdotool search --sync --name 'Tana' windowactivate windowfocus >/tmp/focus.log 2>&1 || true
+    ) &
+    # dbus セッション下で起動（WebKitGTK の安定化）
+    exec dbus-run-session -- "$BIN" "$SANDBOX"
     ;;
 esac

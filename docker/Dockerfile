@@ -10,6 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev pkg-config \
     xvfb x11vnc fluxbox novnc websockify \
     dbus-x11 ca-certificates git \
+    # 日本語表示（化け対策）
+    fonts-noto-cjk fonts-noto-color-emoji \
+    # キーボード/フォーカス（入力対策）
+    x11-xkb-utils x11-xserver-utils xdotool \
  && rm -rf /var/lib/apt/lists/*
 
 # 非rootユーザ
