@@ -4,9 +4,11 @@
 
 import { createSafeMode, MODE } from './core/safemode.js';
 import { createPanes, PANE } from './core/panes.js';
+import { createTheme, loadStoredTheme, storeTheme, THEME_LABELS } from './core/theme.js';
 
 const safemode = createSafeMode(MODE.SAFE);
 const panes = createPanes(PANE.LEFT);
+const theme = createTheme(loadStoredTheme());
 
 function paneEl(pane) {
   return document.getElementById(pane === PANE.LEFT ? 'pane-left' : 'pane-right');
@@ -22,6 +24,13 @@ function syncMode(mode) {
         ? '閲覧専用です（切替: Ctrl+Shift+Space）'
         : '変更可能です（切替: Ctrl+Shift+Space）';
   }
+}
+
+function syncTheme(t) {
+  if (typeof document !== 'undefined' && document.documentElement) {
+    document.documentElement.dataset.theme = t;
+  }
+  storeTheme(t);
 }
 
 function syncActivePane(active) {
@@ -41,6 +50,14 @@ function onKeydown(e) {
     safemode.toggle();
     return;
   }
+  // テーマ切替: Ctrl+Shift+T (サイバーダーク ⇄ 白基調シンプル)
+  if (e.ctrlKey && e.shiftKey && (e.code === 'KeyT' || e.key.toLowerCase() === 't')) {
+    e.preventDefault();
+    const next = theme.toggle();
+    const indicator = document.getElementById('status-path');
+    if (indicator) indicator.textContent = `テーマ: ${THEME_LABELS[next]}`;
+    return;
+  }
   // ペイン往復: Tab
   if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
     e.preventDefault();
@@ -50,6 +67,7 @@ function onKeydown(e) {
 }
 
 function init() {
+  theme.subscribe(syncTheme);
   safemode.subscribe(syncMode);
   panes.subscribe(syncActivePane);
   document.addEventListener('keydown', onKeydown);
@@ -70,4 +88,4 @@ if (typeof document !== 'undefined') {
 }
 
 // テスト用にエクスポート
-export { safemode, panes };
+export { safemode, panes, theme };

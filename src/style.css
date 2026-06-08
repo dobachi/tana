@@ -1,28 +1,50 @@
-/* Tana - minimal theme (CSS variables + Grid) */
+/* Tana - minimal theme system (CSS variables + Grid) */
+/* テーマは <html data-theme="..."> で選択する (NFR-U4)。共通トークンは :root に置く。 */
 :root {
-  --bg: #1e2229;
-  --bg-elev: #262b33;
-  --bg-pane: #20252c;
-  --fg: #d7dde5;
-  --fg-dim: #8a93a0;
-  --border: #333a44;
-  --accent: #5aa9e6; /* 寒色: 安全モードのアクセント */
-  --accent-op: #e6995a; /* 暖色: 操作モードのアクセント */
-  --active-pane: #2c333d;
   --font: -apple-system, 'Segoe UI', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
   --mono: 'Cascadia Code', 'Consolas', monospace;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f4f6f9;
-    --bg-elev: #ffffff;
-    --bg-pane: #ffffff;
-    --fg: #232a33;
-    --fg-dim: #6b7480;
-    --border: #d9dee6;
-    --active-pane: #eef3fa;
-  }
+/* サイバーダーク: 近黒背景 + ネオンアクセント（既定） */
+:root[data-theme='cyber-dark'] {
+  --bg: #0a0e14;
+  --bg-elev: #0f1620;
+  --bg-pane: #0c1118;
+  --fg: #c8d6e5;
+  --fg-dim: #5a6b82;
+  --border: #1c2733;
+  --accent: #00e5ff; /* 安全モード: シアンネオン */
+  --accent-op: #ff3d7f; /* 操作モード: マゼンタネオン */
+  --active-pane: #111b27;
+  --active-glow: 0 0 12px -2px var(--accent);
+}
+
+/* 白基調シンプル: 余白とコントラスト重視 */
+:root[data-theme='light'] {
+  --bg: #ffffff;
+  --bg-elev: #f7f8fa;
+  --bg-pane: #ffffff;
+  --fg: #1f2933;
+  --fg-dim: #7b8794;
+  --border: #e4e7eb;
+  --accent: #2f80ed; /* 安全モード: 青 */
+  --accent-op: #eb5757; /* 操作モード: 赤 */
+  --active-pane: #f0f5ff;
+  --active-glow: none;
+}
+
+/* テーマ未設定時のフォールバック（cyber-dark 相当） */
+:root:not([data-theme]) {
+  --bg: #0a0e14;
+  --bg-elev: #0f1620;
+  --bg-pane: #0c1118;
+  --fg: #c8d6e5;
+  --fg-dim: #5a6b82;
+  --border: #1c2733;
+  --accent: #00e5ff;
+  --accent-op: #ff3d7f;
+  --active-pane: #111b27;
+  --active-glow: 0 0 12px -2px var(--accent);
 }
 
 * {
@@ -107,6 +129,7 @@ body {
 .pane.active {
   background: var(--active-pane);
   border-top-color: var(--accent);
+  box-shadow: var(--active-glow);
 }
 body[data-mode='operation'] .pane.active {
   border-top-color: var(--accent-op);
