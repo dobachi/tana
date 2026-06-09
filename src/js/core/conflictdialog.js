@@ -43,7 +43,7 @@ export function createConflictDialog(doc = typeof document !== 'undefined' ? doc
         b.addEventListener('click', () => finish(value));
         return b;
       }
-      const bRename = makeBtn('名前を変えてコピー (R)', CHOICE.RENAME, true);
+      const bRename = makeBtn('名前を変えて実行 (R)', CHOICE.RENAME, true);
       const bOver = makeBtn('上書き (O)', CHOICE.OVERWRITE, false);
       const bCancel = makeBtn('キャンセル (Esc)', CHOICE.CANCEL, false);
       row.append(bRename, bOver, bCancel);

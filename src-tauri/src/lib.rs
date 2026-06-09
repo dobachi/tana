@@ -160,13 +160,16 @@ fn copy_path(
     let src = Path::new(&src);
     let dest_dir = Path::new(&dest_dir);
     let target = target_path(src, dest_dir, dest_name.as_deref()).ok_or("コピー元が不正です")?;
-    if target == src {
-        return Err("コピー元と宛先が同じです".into());
+    let same = target == src;
+    // 同じ場所への同名コピーは「複製」。上書きはできない（自分自身を消す）。
+    if same && overwrite {
+        return Err("同じファイルには上書きできません。名前を変えてコピーしてください".into());
     }
-    if target.exists() && !overwrite {
+    // 既存 or 同一パス → 衝突。overwrite でなければ EXISTS（呼び出し側で3択）。
+    if (target.exists() || same) && !overwrite {
         return Err("EXISTS".into());
     }
-    if target.exists() {
+    if target.exists() && !same {
         remove_any(&target).map_err(|e| e.to_string())?;
     }
     copy_recursive(src, &target).map_err(|e| e.to_string())?;
@@ -184,13 +187,15 @@ fn move_path(
     let src = Path::new(&src);
     let dest_dir = Path::new(&dest_dir);
     let target = target_path(src, dest_dir, dest_name.as_deref()).ok_or("移動元が不正です")?;
-    if target == src {
-        return Err("移動元と宛先が同じです".into());
+    let same = target == src;
+    // 同じ場所へは移動できない。名前を変えれば実質リネームとして成立する。
+    if same && overwrite {
+        return Err("同じ場所へは移動できません。名前を変えてください".into());
     }
-    if target.exists() {
-        if !overwrite {
-            return Err("EXISTS".into());
-        }
+    if (target.exists() || same) && !overwrite {
+        return Err("EXISTS".into());
+    }
+    if target.exists() && !same {
         remove_any(&target).map_err(|e| e.to_string())?;
     }
     if std::fs::rename(src, &target).is_err() {
@@ -368,6 +373,31 @@ mod tests {
         )
         .unwrap();
         assert!(dest.join("f (1).txt").exists());
+    }
+
+    #[test]
+    fn copy_to_same_dir_is_conflict_not_error() {
+        // 同じディレクトリへの同名コピーは EXISTS（=3択モーダル）になる
+        let tmp = tempfile::tempdir().unwrap();
+        let f = tmp.path().join("f.txt");
+        fs::write(&f, b"x").unwrap();
+        let dir = tmp.path().to_string_lossy().to_string();
+
+        let err = copy_path(f.to_string_lossy().into(), dir.clone(), None, false).unwrap_err();
+        assert_eq!(err, "EXISTS");
+        // 同一パスへの上書きは拒否（自分自身を消さない）
+        let err2 = copy_path(f.to_string_lossy().into(), dir.clone(), None, true).unwrap_err();
+        assert!(err2.contains("名前を変えて"));
+        // 名前を変えれば複製できる
+        copy_path(
+            f.to_string_lossy().into(),
+            dir,
+            Some("f (1).txt".into()),
+            false,
+        )
+        .unwrap();
+        assert!(tmp.path().join("f (1).txt").exists());
+        assert!(f.exists()); // 元は残る
     }
 
     #[test]
