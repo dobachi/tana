@@ -30,18 +30,27 @@ export function createFileOps(deps) {
 
   // 宛先が既存(EXISTS)なら3択（名前変更/上書き/キャンセル）で解決して再実行。
   // run(destName, overwrite) は backend を呼ぶ。
+  // 名前変更は任意入力可（既定はインクリメント名）。入力名も衝突したら再プロンプト。
   async function withConflict(entry, destDir, run) {
     try {
       return await run(null, false);
     } catch (e) {
       if (!isExists(e)) throw e;
-      const choice = await resolveConflict(entry.name);
-      if (choice === 'overwrite') return run(null, true);
-      if (choice === 'rename') {
-        const name = await backend.uniqueName(destDir, entry.name);
-        return run(name, false);
+    }
+    let conflictName = entry.name;
+    for (;;) {
+      const suggested = await backend.uniqueName(destDir, conflictName);
+      const res = (await resolveConflict(conflictName, suggested)) || { action: 'cancel' };
+      if (res.action === 'cancel') return null;
+      if (res.action === 'overwrite') return run(null, true);
+      // rename: 入力名（空なら提案名）で実行
+      const name = (res.name && res.name.trim()) || suggested;
+      try {
+        return await run(name, false);
+      } catch (e) {
+        if (!isExists(e)) throw e;
+        conflictName = name; // 入力名も衝突 → その名前を基準に再提案
       }
-      return null; // cancel
     }
   }
 

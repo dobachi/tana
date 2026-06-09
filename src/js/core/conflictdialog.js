@@ -1,8 +1,7 @@
-// conflictdialog.js — ファイル名衝突時の3択モーダル (FR-02 / NFR-R3)
-//   'rename'    名前を変えてコピー（インクリメント）
-//   'overwrite' 上書き
-//   'cancel'    キャンセル
-// ネイティブダイアログは2択しか出せないため、アプリ内モーダルで実装する。
+// conflictdialog.js — ファイル名衝突時の解決モーダル (FR-02 / NFR-R3)
+// 返り値: { action: 'rename'|'overwrite'|'cancel', name?: string }
+//   rename 時は入力欄の名前を使う（既定はインクリメント名）。
+// ネイティブダイアログは入力＋3択を出せないため、アプリ内モーダルで実装する。
 
 export const CHOICE = Object.freeze({
   RENAME: 'rename',
@@ -13,13 +12,13 @@ export const CHOICE = Object.freeze({
 /**
  * 衝突解決ダイアログ関数を生成する。
  * @param {Document} [doc]
- * @returns {(name: string) => Promise<'rename'|'overwrite'|'cancel'>}
+ * @returns {(name: string, suggested: string) => Promise<{action: string, name?: string}>}
  */
 export function createConflictDialog(doc = typeof document !== 'undefined' ? document : null) {
-  return function ask(name) {
+  return function ask(name, suggested) {
     return new Promise((resolve) => {
       if (!doc || !doc.body) {
-        resolve(CHOICE.CANCEL);
+        resolve({ action: CHOICE.CANCEL });
         return;
       }
       const overlay = doc.createElement('div');
@@ -30,42 +29,60 @@ export function createConflictDialog(doc = typeof document !== 'undefined' ? doc
 
       const msg = doc.createElement('p');
       msg.className = 'modal-msg';
-      msg.textContent = `「${name}」は既に存在します。どうしますか？`;
+      msg.textContent = `「${name}」は既に存在します。`;
+
+      const label = doc.createElement('label');
+      label.className = 'modal-label';
+      label.textContent = '新しい名前:';
+      const input = doc.createElement('input');
+      input.type = 'text';
+      input.className = 'modal-input';
+      input.value = suggested || '';
+      label.appendChild(input);
 
       const row = doc.createElement('div');
       row.className = 'modal-buttons';
 
-      function makeBtn(label, value, primary) {
+      function makeBtn(text, onClick, primary) {
         const b = doc.createElement('button');
         b.type = 'button';
         b.className = 'modal-btn' + (primary ? ' primary' : '');
-        b.textContent = label;
-        b.addEventListener('click', () => finish(value));
+        b.textContent = text;
+        b.addEventListener('click', onClick);
         return b;
       }
-      const bRename = makeBtn('名前を変えて実行 (R)', CHOICE.RENAME, true);
-      const bOver = makeBtn('上書き (O)', CHOICE.OVERWRITE, false);
-      const bCancel = makeBtn('キャンセル (Esc)', CHOICE.CANCEL, false);
+      const bRename = makeBtn(
+        '名前を変えて実行 (Enter)',
+        () => finish({ action: CHOICE.RENAME, name: input.value }),
+        true,
+      );
+      const bOver = makeBtn('上書き', () => finish({ action: CHOICE.OVERWRITE }), false);
+      const bCancel = makeBtn('キャンセル (Esc)', () => finish({ action: CHOICE.CANCEL }), false);
       row.append(bRename, bOver, bCancel);
-      box.append(msg, row);
+
+      box.append(msg, label, row);
       overlay.appendChild(box);
-      doc.body.appendChild(overlay);
 
       function onKey(e) {
-        // 背後のキー操作（ペイン移動等）に渡さない
-        e.stopPropagation();
-        const k = e.key.toLowerCase();
-        if (e.key === 'Escape' || k === 'c') finish(CHOICE.CANCEL);
-        else if (e.key === 'Enter' || k === 'r') finish(CHOICE.RENAME);
-        else if (k === 'o') finish(CHOICE.OVERWRITE);
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          finish({ action: CHOICE.RENAME, name: input.value });
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          finish({ action: CHOICE.CANCEL });
+        }
       }
-      function finish(value) {
-        doc.removeEventListener('keydown', onKey, true);
+      overlay.addEventListener('keydown', onKey);
+      doc.body.appendChild(overlay);
+
+      function finish(result) {
         overlay.remove();
-        resolve(value);
+        resolve(result);
       }
-      doc.addEventListener('keydown', onKey, true);
-      bRename.focus();
+
+      // 入力欄にフォーカスし、拡張子前まで選択（名前を変えやすく）
+      input.focus();
+      input.select();
     });
   };
 }

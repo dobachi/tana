@@ -232,9 +232,31 @@ body[data-mode='operation'] .modal {
   border-top-color: var(--accent-op);
 }
 .modal-msg {
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   white-space: pre-line;
   word-break: break-all;
+}
+.modal-label {
+  display: block;
+  margin: 0 0 16px;
+  color: var(--fg-dim);
+  font-size: 0.9em;
+}
+.modal-input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  box-sizing: border-box;
+}
+.modal-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .modal-buttons {
   display: flex;
