@@ -85,8 +85,36 @@ fn parent_dir(path: String) -> Option<String> {
 // 破壊的操作の許可（安全モードのゲート）はフロント側で行う。ここは実行のみ。
 
 /// `src` を `dest_dir` 配下へ置いたときの宛先パスを返す。
-fn target_path(src: &Path, dest_dir: &Path) -> Option<PathBuf> {
-    src.file_name().map(|n| dest_dir.join(n))
+/// `dest_name` を与えるとその名前を、無ければ src のベース名を使う。
+fn target_path(src: &Path, dest_dir: &Path, dest_name: Option<&str>) -> Option<PathBuf> {
+    match dest_name {
+        Some(n) => Some(dest_dir.join(n)),
+        None => src.file_name().map(|n| dest_dir.join(n)),
+    }
+}
+
+/// `dest_dir` 内で衝突しないベース名を返す（既存なら "name (1).ext", "name (2).ext" …）。
+fn unique_target_name(dest_dir: &Path, name: &str) -> String {
+    if !dest_dir.join(name).exists() {
+        return name.to_string();
+    }
+    let p = Path::new(name);
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| name.to_string());
+    let ext = p
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+    let mut i = 1;
+    loop {
+        let candidate = format!("{} ({}){}", stem, i, ext);
+        if !dest_dir.join(&candidate).exists() {
+            return candidate;
+        }
+        i += 1;
+    }
 }
 
 /// ファイル/ディレクトリを再帰的にコピーする。
@@ -114,12 +142,24 @@ fn remove_any(path: &Path) -> std::io::Result<()> {
     }
 }
 
-/// `src` を `dest_dir` 配下へコピーする。宛先が既存で overwrite=false なら "EXISTS" を返す。
+/// `dest_dir` 内で衝突しないベース名を返す Tauri コマンド。
 #[tauri::command]
-fn copy_path(src: String, dest_dir: String, overwrite: bool) -> Result<String, String> {
+fn unique_name(dest_dir: String, name: String) -> String {
+    unique_target_name(Path::new(&dest_dir), &name)
+}
+
+/// `src` を `dest_dir` 配下へコピーする。
+/// `dest_name` で宛先名を指定可。既存で overwrite=false なら "EXISTS" を返す。
+#[tauri::command]
+fn copy_path(
+    src: String,
+    dest_dir: String,
+    dest_name: Option<String>,
+    overwrite: bool,
+) -> Result<String, String> {
     let src = Path::new(&src);
     let dest_dir = Path::new(&dest_dir);
-    let target = target_path(src, dest_dir).ok_or("コピー元が不正です")?;
+    let target = target_path(src, dest_dir, dest_name.as_deref()).ok_or("コピー元が不正です")?;
     if target == src {
         return Err("コピー元と宛先が同じです".into());
     }
@@ -135,10 +175,15 @@ fn copy_path(src: String, dest_dir: String, overwrite: bool) -> Result<String, S
 
 /// `src` を `dest_dir` 配下へ移動する。別デバイス間は copy+delete でフォールバック。
 #[tauri::command]
-fn move_path(src: String, dest_dir: String, overwrite: bool) -> Result<String, String> {
+fn move_path(
+    src: String,
+    dest_dir: String,
+    dest_name: Option<String>,
+    overwrite: bool,
+) -> Result<String, String> {
     let src = Path::new(&src);
     let dest_dir = Path::new(&dest_dir);
-    let target = target_path(src, dest_dir).ok_or("移動元が不正です")?;
+    let target = target_path(src, dest_dir, dest_name.as_deref()).ok_or("移動元が不正です")?;
     if target == src {
         return Err("移動元と宛先が同じです".into());
     }
@@ -183,6 +228,7 @@ pub fn run() {
             list_dir,
             home_dir,
             parent_dir,
+            unique_name,
             copy_path,
             move_path,
             delete_to_trash,
@@ -243,8 +289,31 @@ mod tests {
 
     #[test]
     fn target_path_joins_basename() {
-        let t = target_path(Path::new("/a/b/file.txt"), Path::new("/x/y")).unwrap();
+        let t = target_path(Path::new("/a/b/file.txt"), Path::new("/x/y"), None).unwrap();
         assert_eq!(t, PathBuf::from("/x/y/file.txt"));
+        // dest_name 指定時はその名前
+        let t2 = target_path(
+            Path::new("/a/b/file.txt"),
+            Path::new("/x/y"),
+            Some("renamed.txt"),
+        );
+        assert_eq!(t2.unwrap(), PathBuf::from("/x/y/renamed.txt"));
+    }
+
+    #[test]
+    fn unique_target_name_increments() {
+        let tmp = tempfile::tempdir().unwrap();
+        // 衝突なし → そのまま
+        assert_eq!(unique_target_name(tmp.path(), "a.txt"), "a.txt");
+        // 1つ存在 → " (1)"
+        fs::write(tmp.path().join("a.txt"), b"x").unwrap();
+        assert_eq!(unique_target_name(tmp.path(), "a.txt"), "a (1).txt");
+        // 2つ存在 → " (2)"
+        fs::write(tmp.path().join("a (1).txt"), b"x").unwrap();
+        assert_eq!(unique_target_name(tmp.path(), "a.txt"), "a (2).txt");
+        // 拡張子なし
+        fs::write(tmp.path().join("noext"), b"x").unwrap();
+        assert_eq!(unique_target_name(tmp.path(), "noext"), "noext (1)");
     }
 
     #[test]
@@ -276,6 +345,7 @@ mod tests {
         let err = copy_path(
             src.to_string_lossy().into(),
             dest.to_string_lossy().into(),
+            None,
             false,
         )
         .unwrap_err();
@@ -284,10 +354,20 @@ mod tests {
         copy_path(
             src.to_string_lossy().into(),
             dest.to_string_lossy().into(),
+            None,
             true,
         )
         .unwrap();
         assert_eq!(fs::read_to_string(dest.join("f.txt")).unwrap(), "x");
+        // dest_name 指定でインクリメント名コピー
+        copy_path(
+            src.to_string_lossy().into(),
+            dest.to_string_lossy().into(),
+            Some("f (1).txt".into()),
+            false,
+        )
+        .unwrap();
+        assert!(dest.join("f (1).txt").exists());
     }
 
     #[test]
@@ -301,6 +381,7 @@ mod tests {
         move_path(
             src.to_string_lossy().into(),
             dest.to_string_lossy().into(),
+            None,
             false,
         )
         .unwrap();

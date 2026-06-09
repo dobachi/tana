@@ -1,19 +1,24 @@
 // fileops.js — ファイル操作のオーケストレーション (FR-02, FR-03)
-// 安全モードのゲート(NFR-R1)・上書き確認(NFR-R3)をここで一元化する。
+// 安全モードのゲート(NFR-R1)・衝突解決(NFR-R3)をここで一元化する。
 // 依存はすべて注入し、Tauri/DOM 非依存で単体テストできるようにする。
 
 const EXISTS = 'EXISTS';
 
+function isExists(e) {
+  return String(e && e.message ? e.message : e).includes(EXISTS);
+}
+
 /**
  * @param {object} deps
  * @param {() => boolean} deps.canMutate 破壊的操作が許可されるか（safemode.canMutate）
- * @param {object} deps.backend { copyPath, movePath, deleteToTrash, deletePermanent }
- * @param {(msg: string) => Promise<boolean>|boolean} deps.confirm 確認ダイアログ
+ * @param {object} deps.backend { copyPath, movePath, deleteToTrash, deletePermanent, uniqueName }
+ * @param {(name: string) => Promise<'rename'|'overwrite'|'cancel'>} deps.resolveConflict 衝突時の3択
+ * @param {(msg: string) => Promise<boolean>|boolean} deps.confirm 完全削除の確認
  * @param {(msg: string) => void} deps.toast 通知
  * @param {() => Promise<void>|void} deps.refresh 完了後のペイン更新
  */
 export function createFileOps(deps) {
-  const { canMutate, backend, confirm, toast, refresh } = deps;
+  const { canMutate, backend, resolveConflict, confirm, toast, refresh } = deps;
 
   async function gate() {
     if (!canMutate()) {
@@ -23,17 +28,20 @@ export function createFileOps(deps) {
     return true;
   }
 
-  // 宛先が既存(EXISTS)なら確認して overwrite で再実行
-  async function withOverwrite(run) {
+  // 宛先が既存(EXISTS)なら3択（名前変更/上書き/キャンセル）で解決して再実行。
+  // run(destName, overwrite) は backend を呼ぶ。
+  async function withConflict(entry, destDir, run) {
     try {
-      return await run(false);
+      return await run(null, false);
     } catch (e) {
-      if (String(e && e.message ? e.message : e).includes(EXISTS)) {
-        const ok = await confirm('同名の項目があります。上書きしますか？');
-        if (ok) return run(true);
-        return null;
+      if (!isExists(e)) throw e;
+      const choice = await resolveConflict(entry.name);
+      if (choice === 'overwrite') return run(null, true);
+      if (choice === 'rename') {
+        const name = await backend.uniqueName(destDir, entry.name);
+        return run(name, false);
       }
-      throw e;
+      return null; // cancel
     }
   }
 
@@ -48,7 +56,9 @@ export function createFileOps(deps) {
       if (!entry || !destDir) return;
       if (!(await gate())) return;
       try {
-        const r = await withOverwrite((ow) => backend.copyPath(entry.path, destDir, ow));
+        const r = await withConflict(entry, destDir, (name, ow) =>
+          backend.copyPath(entry.path, destDir, name, ow),
+        );
         if (r !== null) await done('コピーしました');
       } catch (e) {
         toast('コピー失敗: ' + (e && e.message ? e.message : e));
@@ -60,7 +70,9 @@ export function createFileOps(deps) {
       if (!entry || !destDir) return;
       if (!(await gate())) return;
       try {
-        const r = await withOverwrite((ow) => backend.movePath(entry.path, destDir, ow));
+        const r = await withConflict(entry, destDir, (name, ow) =>
+          backend.movePath(entry.path, destDir, name, ow),
+        );
         if (r !== null) await done('移動しました');
       } catch (e) {
         toast('移動失敗: ' + (e && e.message ? e.message : e));

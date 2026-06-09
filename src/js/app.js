@@ -14,6 +14,7 @@ import {
 import { createFilePane } from './core/filepane.js';
 import { createToast } from './core/toast.js';
 import { createFileOps } from './core/fileops.js';
+import { createConflictDialog } from './core/conflictdialog.js';
 import {
   homeDir,
   getCliPath,
@@ -21,6 +22,7 @@ import {
   movePath,
   deleteToTrash,
   deletePermanent,
+  uniqueName,
   confirmDialog,
 } from './backend.js';
 
@@ -29,9 +31,11 @@ const panes = createPanes(PANE.LEFT);
 const theme = createTheme(loadStoredTheme());
 const fontScale = createFontScale(loadStoredFontScale());
 const toast = createToast();
+const resolveConflict = createConflictDialog();
 const fileOps = createFileOps({
   canMutate: () => safemode.canMutate(),
-  backend: { copyPath, movePath, deleteToTrash, deletePermanent },
+  backend: { copyPath, movePath, deleteToTrash, deletePermanent, uniqueName },
+  resolveConflict,
   confirm: confirmDialog,
   toast,
   refresh: refreshPanes,

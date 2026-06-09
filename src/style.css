@@ -207,6 +207,64 @@ body[data-mode='operation'] .entry.cursor {
   color: var(--accent);
 }
 
+/* Modal（衝突解決の3択） */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+.modal {
+  background: var(--bg-elev);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 18px 20px;
+  min-width: 320px;
+  max-width: 80vw;
+  box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.7);
+}
+body[data-mode='operation'] .modal {
+  border-top-color: var(--accent-op);
+}
+.modal-msg {
+  margin: 0 0 16px;
+  white-space: pre-line;
+  word-break: break-all;
+}
+.modal-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.modal-btn {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.modal-btn:hover {
+  border-color: var(--accent);
+}
+.modal-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06141d;
+  font-weight: 600;
+}
+.modal-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* Toast */
 .toast {
   position: fixed;

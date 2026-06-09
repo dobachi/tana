@@ -49,14 +49,19 @@ export async function getCliPath() {
 // ===== ファイル操作 (FR-02, FR-03) =====
 // Rust が Err を返すと invoke は reject する。呼び出し側で捕捉する。
 
-/** dest_dir 配下へコピー。既存かつ overwrite=false なら "EXISTS" で reject */
-export async function copyPath(src, destDir, overwrite = false) {
-  return invoke('copy_path', { src, destDir, overwrite });
+/** dest_dir 配下へコピー。destName で宛先名指定可。既存かつ overwrite=false なら "EXISTS" で reject */
+export async function copyPath(src, destDir, destName = null, overwrite = false) {
+  return invoke('copy_path', { src, destDir, destName, overwrite });
 }
 
-/** dest_dir 配下へ移動。既存かつ overwrite=false なら "EXISTS" で reject */
-export async function movePath(src, destDir, overwrite = false) {
-  return invoke('move_path', { src, destDir, overwrite });
+/** dest_dir 配下へ移動。destName で宛先名指定可。既存かつ overwrite=false なら "EXISTS" で reject */
+export async function movePath(src, destDir, destName = null, overwrite = false) {
+  return invoke('move_path', { src, destDir, destName, overwrite });
+}
+
+/** dest_dir 内で衝突しないベース名を取得（既存なら "name (1).ext" …） */
+export async function uniqueName(destDir, name) {
+  return invoke('unique_name', { destDir, name });
 }
 
 /** OS のゴミ箱へ移動 */
