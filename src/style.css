@@ -206,6 +206,11 @@ body[data-mode='operation'] .entry.cursor {
   font-weight: 600;
   color: var(--accent);
 }
+.status-hint {
+  margin-left: auto;
+  color: var(--fg-dim);
+  opacity: 0.8;
+}
 
 /* Modal（衝突解決の3択） */
 .modal-overlay {
@@ -285,6 +290,50 @@ body[data-mode='operation'] .modal {
 .modal-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* Help（ショートカット一覧） */
+.help-box {
+  min-width: 420px;
+  max-width: 90vw;
+  max-height: 84vh;
+  overflow-y: auto;
+}
+.help-title {
+  margin: 0 0 4px;
+  font-size: 1.15em;
+}
+.help-section {
+  margin: 14px 0 6px;
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-dim);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 2px;
+}
+.help-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0;
+}
+.help-list dt {
+  font-family: var(--mono);
+  color: var(--accent);
+  white-space: nowrap;
+}
+body[data-mode='operation'] .help-list dt {
+  color: var(--accent-op);
+}
+.help-list dd {
+  margin: 0;
+}
+.help-hint {
+  margin: 16px 0 0;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+  text-align: right;
 }
 
 /* Toast */

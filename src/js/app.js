@@ -15,6 +15,7 @@ import { createFilePane } from './core/filepane.js';
 import { createToast } from './core/toast.js';
 import { createFileOps } from './core/fileops.js';
 import { createConflictDialog } from './core/conflictdialog.js';
+import { createHelp } from './core/help.js';
 import {
   homeDir,
   getCliPath,
@@ -31,6 +32,7 @@ const panes = createPanes(PANE.LEFT);
 const theme = createTheme(loadStoredTheme());
 const fontScale = createFontScale(loadStoredFontScale());
 const toast = createToast();
+const help = createHelp();
 const resolveConflict = createConflictDialog();
 const fileOps = createFileOps({
   canMutate: () => safemode.canMutate(),
@@ -186,6 +188,15 @@ function onKeydown(e) {
       return;
     }
   }
+  // ヘルプ: ? または F1（入力中は無効。Ctrl+? も e.key==='?' で拾える）
+  if ((e.key === '?' || e.key === 'F1') && !isEditableTarget(e.target)) {
+    e.preventDefault();
+    help.toggle();
+    return;
+  }
+  // ヘルプ表示中は背後のナビ操作を無効化（閉じるのは ? / F1 / Esc）
+  if (help.isOpen()) return;
+
   // ペイン往復: Tab
   if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
     e.preventDefault();

@@ -1,0 +1,117 @@
+// help.js — キーボードショートカット一覧（ヘルプ画面）
+// `?` / `F1` でトグル、Esc で閉じる。内容はここのデータ駆動。
+
+export const SHORTCUTS = [
+  {
+    section: 'ナビゲーション',
+    items: [
+      ['j / k', 'カーソル 下 / 上'],
+      ['h', '親フォルダへ戻る'],
+      ['l / Enter', 'フォルダを開く'],
+      ['g / G', '先頭 / 末尾へ'],
+      ['Tab', 'ペイン切替（左 ⇄ 右）'],
+    ],
+  },
+  {
+    section: 'ファイル操作（操作モードのみ）',
+    items: [
+      ['F5', '別ペインへコピー'],
+      ['F6', '別ペインへ移動'],
+      ['Delete', 'ゴミ箱へ削除'],
+      ['Shift + Delete', '完全に削除'],
+    ],
+  },
+  {
+    section: '表示',
+    items: [
+      ['Ctrl + H', '隠しファイルの表示/非表示'],
+      ['Ctrl + Shift + T', 'テーマ切替（サイバーダーク/白基調）'],
+      ['Ctrl + + / - / 0', '文字サイズ 拡大 / 縮小 / リセット'],
+    ],
+  },
+  {
+    section: 'モード',
+    items: [['Ctrl + Shift + Space', '安全モード ⇄ 操作モード']],
+  },
+  {
+    section: 'ヘルプ',
+    items: [
+      ['? / F1', 'このヘルプを表示/閉じる'],
+      ['Esc', '閉じる'],
+    ],
+  },
+];
+
+/**
+ * ヘルプ画面コントローラを生成する。
+ * @param {Document} [doc]
+ */
+export function createHelp(doc = typeof document !== 'undefined' ? document : null) {
+  let overlay = null;
+
+  function onKey(e) {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      e.preventDefault();
+      close();
+    }
+  }
+
+  function close() {
+    if (!overlay) return;
+    doc.removeEventListener('keydown', onKey, true);
+    overlay.remove();
+    overlay = null;
+  }
+
+  function open() {
+    if (!doc || !doc.body || overlay) return;
+    overlay = doc.createElement('div');
+    overlay.className = 'modal-overlay help-overlay';
+
+    const box = doc.createElement('div');
+    box.className = 'modal help-box';
+
+    const title = doc.createElement('h2');
+    title.className = 'help-title';
+    title.textContent = 'キーボードショートカット';
+    box.appendChild(title);
+
+    for (const sec of SHORTCUTS) {
+      const h = doc.createElement('h3');
+      h.className = 'help-section';
+      h.textContent = sec.section;
+      box.appendChild(h);
+
+      const dl = doc.createElement('dl');
+      dl.className = 'help-list';
+      for (const [keys, desc] of sec.items) {
+        const dt = doc.createElement('dt');
+        dt.textContent = keys;
+        const dd = doc.createElement('dd');
+        dd.textContent = desc;
+        dl.append(dt, dd);
+      }
+      box.appendChild(dl);
+    }
+
+    const hint = doc.createElement('p');
+    hint.className = 'help-hint';
+    hint.textContent = 'Esc または ? で閉じる';
+    box.appendChild(hint);
+
+    overlay.appendChild(box);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close();
+    });
+    doc.body.appendChild(overlay);
+    doc.addEventListener('keydown', onKey, true);
+  }
+
+  function toggle() {
+    if (overlay) close();
+    else open();
+  }
+
+  return { open, close, toggle, isOpen: () => overlay !== null };
+}
