@@ -74,9 +74,14 @@ export async function deletePermanent(path) {
   return invoke('delete_permanent', { path });
 }
 
-/** 新規ディレクトリ作成 */
-export async function makeDir(path) {
-  return invoke('make_dir', { path });
+/** 同じ親内で名前変更。既存なら "EXISTS" で reject */
+export async function renamePath(path, newName) {
+  return invoke('rename_path', { path, newName });
+}
+
+/** parent 配下に新規ディレクトリ作成。既存なら "EXISTS" で reject */
+export async function makeDir(parent, name) {
+  return invoke('make_dir', { parent, name });
 }
 
 /** 確認ダイアログ。Tauri 不在時は window.confirm にフォールバック */

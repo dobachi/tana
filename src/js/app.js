@@ -15,6 +15,7 @@ import { createFilePane } from './core/filepane.js';
 import { createToast } from './core/toast.js';
 import { createFileOps } from './core/fileops.js';
 import { createConflictDialog } from './core/conflictdialog.js';
+import { createInputDialog } from './core/inputdialog.js';
 import { createHelp } from './core/help.js';
 import {
   homeDir,
@@ -24,6 +25,8 @@ import {
   deleteToTrash,
   deletePermanent,
   uniqueName,
+  renamePath,
+  makeDir,
   confirmDialog,
 } from './backend.js';
 
@@ -34,10 +37,12 @@ const fontScale = createFontScale(loadStoredFontScale());
 const toast = createToast();
 const help = createHelp();
 const resolveConflict = createConflictDialog();
+const promptName = createInputDialog();
 const fileOps = createFileOps({
   canMutate: () => safemode.canMutate(),
-  backend: { copyPath, movePath, deleteToTrash, deletePermanent, uniqueName },
+  backend: { copyPath, movePath, deleteToTrash, deletePermanent, uniqueName, renamePath, makeDir },
   resolveConflict,
+  promptName,
   confirm: confirmDialog,
   toast,
   refresh: refreshPanes,
@@ -136,6 +141,14 @@ function opTrash() {
 function opDeletePermanent() {
   const fp = activeFilePane();
   if (fp) fileOps.deletePermanent(fp.getCursorEntry());
+}
+function opRename() {
+  const fp = activeFilePane();
+  if (fp) fileOps.rename(fp.getCursorEntry());
+}
+function opMakeFolder() {
+  const fp = activeFilePane();
+  if (fp) fileOps.makeNewFolder(fp.getCurrentDir());
 }
 
 function toggleHidden() {
@@ -250,6 +263,14 @@ function onKeydown(e) {
       e.preventDefault();
       if (e.shiftKey) opDeletePermanent();
       else opTrash();
+      break;
+    case 'F2':
+      e.preventDefault();
+      opRename();
+      break;
+    case 'F7':
+      e.preventDefault();
+      opMakeFolder();
       break;
     default:
       break;

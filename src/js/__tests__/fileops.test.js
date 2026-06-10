@@ -5,6 +5,7 @@ function setup({
   canMutate = true,
   conflictResult = { action: 'overwrite' },
   confirmReturn = true,
+  promptReturn = 'newname.txt',
 } = {}) {
   const backend = {
     copyPath: vi.fn(async () => '/dest/f'),
@@ -12,20 +13,24 @@ function setup({
     deleteToTrash: vi.fn(async () => {}),
     deletePermanent: vi.fn(async () => {}),
     uniqueName: vi.fn(async () => 'f (1).txt'),
+    renamePath: vi.fn(async () => '/src/newname.txt'),
+    makeDir: vi.fn(async () => '/dir/newdir'),
   };
   const toast = vi.fn();
   const resolveConflict = vi.fn(async () => conflictResult);
+  const promptName = vi.fn(async () => promptReturn);
   const confirm = vi.fn(async () => confirmReturn);
   const refresh = vi.fn(async () => {});
   const ops = createFileOps({
     canMutate: () => canMutate,
     backend,
     resolveConflict,
+    promptName,
     confirm,
     toast,
     refresh,
   });
-  return { ops, backend, toast, resolveConflict, confirm, refresh };
+  return { ops, backend, toast, resolveConflict, promptName, confirm, refresh };
 }
 
 const entry = { name: 'f.txt', path: '/src/f.txt' };
@@ -150,6 +155,65 @@ describe('fileops 衝突解決（入力付き3択）', () => {
       .mockResolvedValueOnce('/dest/f (1).txt');
     await ops.move(entry, '/dest');
     expect(backend.movePath).toHaveBeenNthCalledWith(2, '/src/f.txt', '/dest', 'f (1).txt', false);
+  });
+});
+
+describe('fileops リネーム', () => {
+  it('安全モードでは入力も出さずブロック', async () => {
+    const { ops, backend, promptName } = setup({ canMutate: false });
+    await ops.rename(entry);
+    expect(promptName).not.toHaveBeenCalled();
+    expect(backend.renamePath).not.toHaveBeenCalled();
+  });
+
+  it('新しい名前で renamePath を呼ぶ', async () => {
+    const { ops, backend, refresh } = setup({ promptReturn: 'renamed.txt' });
+    await ops.rename(entry);
+    expect(backend.renamePath).toHaveBeenCalledWith('/src/f.txt', 'renamed.txt');
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it('キャンセル(null)・同名・空文字では何もしない', async () => {
+    const c = setup({ promptReturn: null });
+    await c.ops.rename(entry);
+    expect(c.backend.renamePath).not.toHaveBeenCalled();
+
+    const same = setup({ promptReturn: 'f.txt' });
+    await same.ops.rename(entry);
+    expect(same.backend.renamePath).not.toHaveBeenCalled();
+
+    const empty = setup({ promptReturn: '   ' });
+    await empty.ops.rename(entry);
+    expect(empty.backend.renamePath).not.toHaveBeenCalled();
+  });
+
+  it('既存名なら EXISTS を分かりやすく通知', async () => {
+    const { ops, backend, toast } = setup({ promptReturn: 'taken.txt' });
+    backend.renamePath.mockRejectedValueOnce(new Error('EXISTS'));
+    await ops.rename(entry);
+    expect(toast).toHaveBeenCalledWith('その名前は既に存在します');
+  });
+});
+
+describe('fileops 新規フォルダ', () => {
+  it('安全モードではブロック', async () => {
+    const { ops, backend, promptName } = setup({ canMutate: false });
+    await ops.makeNewFolder('/dir');
+    expect(promptName).not.toHaveBeenCalled();
+    expect(backend.makeDir).not.toHaveBeenCalled();
+  });
+
+  it('入力名で makeDir を呼ぶ', async () => {
+    const { ops, backend, refresh } = setup({ promptReturn: 'work' });
+    await ops.makeNewFolder('/dir');
+    expect(backend.makeDir).toHaveBeenCalledWith('/dir', 'work');
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it('キャンセルなら作成しない', async () => {
+    const { ops, backend } = setup({ promptReturn: null });
+    await ops.makeNewFolder('/dir');
+    expect(backend.makeDir).not.toHaveBeenCalled();
   });
 });
 

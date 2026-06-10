@@ -217,10 +217,31 @@ fn delete_permanent(path: String) -> Result<(), String> {
     remove_any(Path::new(&path)).map_err(|e| e.to_string())
 }
 
-/// 新規ディレクトリを作成する。
+/// 同じ親ディレクトリ内で名前を変更する。宛先が既存なら "EXISTS" を返す。
 #[tauri::command]
-fn make_dir(path: String) -> Result<(), String> {
-    std::fs::create_dir(Path::new(&path)).map_err(|e| e.to_string())
+fn rename_path(path: String, new_name: String) -> Result<String, String> {
+    let src = Path::new(&path);
+    let parent = src.parent().ok_or("親ディレクトリがありません")?;
+    let target = parent.join(&new_name);
+    if target == src {
+        return Ok(target.to_string_lossy().to_string()); // 変更なし
+    }
+    if target.exists() {
+        return Err("EXISTS".into());
+    }
+    std::fs::rename(src, &target).map_err(|e| e.to_string())?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+/// 親ディレクトリ配下に新規ディレクトリを作成する。既存なら "EXISTS"。
+#[tauri::command]
+fn make_dir(parent: String, name: String) -> Result<String, String> {
+    let target = Path::new(&parent).join(&name);
+    if target.exists() {
+        return Err("EXISTS".into());
+    }
+    std::fs::create_dir(&target).map_err(|e| e.to_string())?;
+    Ok(target.to_string_lossy().to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -238,6 +259,7 @@ pub fn run() {
             move_path,
             delete_to_trash,
             delete_permanent,
+            rename_path,
             make_dir
         ])
         .run(tauri::generate_context!())
@@ -417,6 +439,38 @@ mod tests {
         .unwrap();
         assert!(!src.exists());
         assert_eq!(fs::read_to_string(dest.join("m.txt")).unwrap(), "data");
+    }
+
+    #[test]
+    fn rename_path_renames_and_blocks_existing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("a.txt");
+        fs::write(&a, b"x").unwrap();
+
+        let newp = rename_path(a.to_string_lossy().into(), "b.txt".into()).unwrap();
+        assert!(!a.exists());
+        assert!(tmp.path().join("b.txt").exists());
+        assert!(newp.ends_with("b.txt"));
+
+        // 既存名へのリネームは EXISTS
+        fs::write(tmp.path().join("c.txt"), b"y").unwrap();
+        let err = rename_path(
+            tmp.path().join("b.txt").to_string_lossy().into(),
+            "c.txt".into(),
+        )
+        .unwrap_err();
+        assert_eq!(err, "EXISTS");
+    }
+
+    #[test]
+    fn make_dir_creates_and_blocks_existing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_string_lossy().to_string();
+        make_dir(dir.clone(), "newdir".into()).unwrap();
+        assert!(tmp.path().join("newdir").is_dir());
+        // 既存なら EXISTS
+        let err = make_dir(dir, "newdir".into()).unwrap_err();
+        assert_eq!(err, "EXISTS");
     }
 
     #[test]
