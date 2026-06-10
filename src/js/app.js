@@ -16,6 +16,8 @@ import { createToast } from './core/toast.js';
 import { createFileOps } from './core/fileops.js';
 import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
+import { createFavorites, loadStoredFavorites, storeFavorites } from './core/favorites.js';
+import { createFavoritesView } from './core/favoritesview.js';
 import { createHelp } from './core/help.js';
 import {
   homeDir,
@@ -38,6 +40,8 @@ const toast = createToast();
 const help = createHelp();
 const resolveConflict = createConflictDialog();
 const promptName = createInputDialog();
+const favorites = createFavorites(loadStoredFavorites());
+favorites.subscribe(() => storeFavorites(favorites.toJSON()));
 const fileOps = createFileOps({
   canMutate: () => safemode.canMutate(),
   backend: { copyPath, movePath, deleteToTrash, deletePermanent, uniqueName, renamePath, makeDir },
@@ -150,6 +154,20 @@ function opMakeFolder() {
   const fp = activeFilePane();
   if (fp) fileOps.makeNewFolder(fp.getCurrentDir());
 }
+function navigateActive(path) {
+  const fp = activeFilePane();
+  if (fp && path) fp.load(path);
+}
+async function addCurrentToFavorites() {
+  const fp = activeFilePane();
+  const dir = fp && fp.getCurrentDir();
+  if (!dir) return;
+  const base = dir.split(/[/\\]/).filter(Boolean).pop() || dir;
+  const name = await promptName('お気に入りに追加', base);
+  if (name == null) return;
+  favorites.addBookmark(name.trim() || base, dir);
+  toast('お気に入りに追加しました');
+}
 
 function toggleHidden() {
   showHidden = !showHidden;
@@ -181,6 +199,12 @@ function onKeydown(e) {
   if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === 'KeyH' || e.key.toLowerCase() === 'h')) {
     e.preventDefault();
     toggleHidden();
+    return;
+  }
+  // お気に入りに現在地を追加: Ctrl+D (FR-05)
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === 'KeyD' || e.key.toLowerCase() === 'd')) {
+    e.preventDefault();
+    addCurrentToFavorites();
     return;
   }
   // 文字サイズ: Ctrl++ / Ctrl+- / Ctrl+0 (NFR-U5)
@@ -283,6 +307,22 @@ async function init() {
   safemode.subscribe(syncMode);
   panes.subscribe(syncActivePane);
   document.addEventListener('keydown', onKeydown);
+
+  // お気に入りサイドバー
+  createFavoritesView({
+    listEl: document.getElementById('favorites'),
+    searchEl: document.getElementById('fav-search'),
+    favorites,
+    onNavigate: navigateActive,
+    promptName,
+  });
+  const addFolderBtn = document.getElementById('fav-add-folder');
+  if (addFolderBtn) {
+    addFolderBtn.addEventListener('click', async () => {
+      const name = await promptName('フォルダ名', '新しいフォルダ');
+      if (name && name.trim()) favorites.addFolder(name.trim());
+    });
+  }
 
   // 2ペインのファイルペインを生成
   for (const p of [PANE.LEFT, PANE.RIGHT]) {

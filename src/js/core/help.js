@@ -24,6 +24,13 @@ export const SHORTCUTS = [
     ],
   },
   {
+    section: 'お気に入り',
+    items: [
+      ['Ctrl + D', '現在のフォルダを追加'],
+      ['ダブルクリック', '名前を変更'],
+    ],
+  },
+  {
     section: '表示',
     items: [
       ['Ctrl + H', '隠しファイルの表示/非表示'],

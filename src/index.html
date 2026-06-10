@@ -16,11 +16,13 @@
             <li class="placeholder">（M2 で実装）</li>
           </ul>
         </section>
-        <section class="sidebar-section">
-          <h2 class="sidebar-title">お気に入り</h2>
-          <ul id="favorites" class="sidebar-list">
-            <li class="placeholder">（M1 で実装）</li>
-          </ul>
+        <section class="sidebar-section" id="favorites-section">
+          <h2 class="sidebar-title">
+            お気に入り
+            <button id="fav-add-folder" class="sidebar-btn" title="フォルダを追加">＋</button>
+          </h2>
+          <input id="fav-search" class="fav-search" type="search" placeholder="検索…" />
+          <ul id="favorites" class="sidebar-list"></ul>
         </section>
       </aside>
 
