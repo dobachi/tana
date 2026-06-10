@@ -164,6 +164,14 @@ body {
 .fav-row:hover {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
+.fav-row:focus {
+  outline: none;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+body[data-mode='operation'] .fav-row:focus {
+  box-shadow: inset 2px 0 0 var(--accent-op);
+}
 .fav-name {
   overflow: hidden;
   text-overflow: ellipsis;

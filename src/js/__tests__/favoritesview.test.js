@@ -55,6 +55,63 @@ describe('favoritesview', () => {
     expect(listEl.querySelector('.placeholder')).not.toBeNull();
   });
 
+  it('focusFirst で先頭行にフォーカス、isFocused が true', () => {
+    const { listEl, searchEl } = mount();
+    const favorites = createFavorites();
+    favorites.addBookmark('a', '/a');
+    favorites.addBookmark('b', '/b');
+    const view = createFavoritesView({ listEl, searchEl, favorites, onNavigate: vi.fn() });
+    view.focusFirst();
+    expect(view.isFocused()).toBe(true);
+    expect(document.activeElement).toBe(listEl.querySelectorAll('.fav-row')[0]);
+  });
+
+  it('j/k でフォーカス移動、Enter で navigate', () => {
+    const { listEl, searchEl } = mount();
+    const favorites = createFavorites();
+    favorites.addBookmark('a', '/a');
+    favorites.addBookmark('b', '/b');
+    const onNavigate = vi.fn();
+    const view = createFavoritesView({ listEl, searchEl, favorites, onNavigate });
+    view.focusFirst();
+    listEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true }));
+    expect(document.activeElement).toBe(listEl.querySelectorAll('.fav-row')[1]);
+    listEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(onNavigate).toHaveBeenCalledWith('/b');
+  });
+
+  it('Escape で onReturn を呼ぶ', () => {
+    const { listEl, searchEl } = mount();
+    const favorites = createFavorites();
+    favorites.addBookmark('a', '/a');
+    const onReturn = vi.fn();
+    const view = createFavoritesView({
+      listEl,
+      searchEl,
+      favorites,
+      onNavigate: vi.fn(),
+      onReturn,
+    });
+    view.focusFirst();
+    listEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(onReturn).toHaveBeenCalled();
+  });
+
+  it('l でフォルダ展開、h で折りたたみ', () => {
+    const { listEl, searchEl } = mount();
+    const favorites = createFavorites();
+    const fid = favorites.addFolder('A');
+    favorites.toggleOpen(fid); // 閉じる
+    favorites.addBookmark('child', '/c', fid);
+    const view = createFavoritesView({ listEl, searchEl, favorites, onNavigate: vi.fn() });
+    view.focusFirst(); // フォルダ行
+    expect(favorites.find(fid).open).toBe(false);
+    listEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', bubbles: true }));
+    expect(favorites.find(fid).open).toBe(true);
+    listEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }));
+    expect(favorites.find(fid).open).toBe(false);
+  });
+
   it('検索入力で平坦な結果に絞り込む', () => {
     const { listEl, searchEl } = mount();
     const favorites = createFavorites();

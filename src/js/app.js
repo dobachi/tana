@@ -54,6 +54,7 @@ const fileOps = createFileOps({
 
 // 各ペインの DOM 要素とファイルペイン・コントローラ
 const filePanes = { left: null, right: null };
+let favView = null;
 
 // 隠しファイル表示（両ペイン共通, FR-15）
 let showHidden = false;
@@ -158,6 +159,14 @@ function navigateActive(path) {
   const fp = activeFilePane();
   if (fp && path) fp.load(path);
 }
+function focusActivePane() {
+  const el = paneEl(panes.getActive());
+  if (el) el.focus();
+}
+function toggleSidebarFocus() {
+  if (favView && favView.isFocused()) focusActivePane();
+  else if (favView) favView.focusFirst();
+}
 async function addCurrentToFavorites() {
   const fp = activeFilePane();
   const dir = fp && fp.getCurrentDir();
@@ -207,6 +216,12 @@ function onKeydown(e) {
     addCurrentToFavorites();
     return;
   }
+  // サイドバー(お気に入り) ⇄ ペイン のフォーカス切替: Ctrl+B
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === 'KeyB' || e.key.toLowerCase() === 'b')) {
+    e.preventDefault();
+    toggleSidebarFocus();
+    return;
+  }
   // 文字サイズ: Ctrl++ / Ctrl+- / Ctrl+0 (NFR-U5)
   if (e.ctrlKey && !e.altKey && !e.metaKey) {
     if (e.key === '+' || e.key === '=') {
@@ -233,6 +248,8 @@ function onKeydown(e) {
   }
   // ヘルプ表示中は背後のナビ操作を無効化（閉じるのは ? / F1 / Esc）
   if (help.isOpen()) return;
+  // サイドバーがフォーカス中はペイン操作を無効化（操作は favoritesview 側で処理）
+  if (favView && favView.isFocused()) return;
 
   // ペイン往復: Tab
   if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -309,11 +326,12 @@ async function init() {
   document.addEventListener('keydown', onKeydown);
 
   // お気に入りサイドバー
-  createFavoritesView({
+  favView = createFavoritesView({
     listEl: document.getElementById('favorites'),
     searchEl: document.getElementById('fav-search'),
     favorites,
     onNavigate: navigateActive,
+    onReturn: focusActivePane,
     promptName,
   });
   const addFolderBtn = document.getElementById('fav-add-folder');
