@@ -20,6 +20,7 @@
 
 - [要求分析 (docs/REQUIREMENTS.md)](docs/REQUIREMENTS.md)
 - [設計ドキュメント (docs/DESIGN.md)](docs/DESIGN.md)
+- **[開発ステータス / 引き継ぎメモ (docs/STATUS.md)](docs/STATUS.md)** ← 別マシン・別セッションで開発を継続する入口（現在地・コードマップ・次の一手）
 - ロードマップ: **M0 雛形** → M1 MVP(2ペイン操作 / 安全モード / お気に入り) → M2(Places / タブ / セッション復元)→ …
 
 ## 開発
