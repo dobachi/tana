@@ -34,10 +34,18 @@ describe('initMenuBar', () => {
     expect(labels).toEqual(['ファイル', '表示']);
   });
 
-  it('既定では非表示（保存値が無いとき）', () => {
+  // 既定を「表示」にしているのは、メニューバー自体がショートカットを
+  // 知らない人のための入口だから（隠れていては目的を果たさない）。
+  it('既定では表示（保存値が無いとき）', () => {
+    initMenuBar(bar, MENUS);
+    expect(isMenuBarVisible()).toBe(true);
+    expect(bar.classList.contains('hidden')).toBe(false);
+  });
+
+  it('明示的に隠した選択は維持される', () => {
+    localStorage.setItem('tana.menuBarVisible', '0');
     initMenuBar(bar, MENUS);
     expect(isMenuBarVisible()).toBe(false);
-    expect(bar.classList.contains('hidden')).toBe(true);
   });
 
   it('保存済みの表示状態を復元する', () => {
@@ -58,12 +66,12 @@ describe('表示/非表示の切り替え', () => {
 
   it('toggleMenuBar で反転し、localStorage に永続化する', () => {
     toggleMenuBar();
-    expect(isMenuBarVisible()).toBe(true);
-    expect(getStoredMenuBarVisible()).toBe(true);
-
-    toggleMenuBar();
     expect(isMenuBarVisible()).toBe(false);
     expect(getStoredMenuBarVisible()).toBe(false);
+
+    toggleMenuBar();
+    expect(isMenuBarVisible()).toBe(true);
+    expect(getStoredMenuBarVisible()).toBe(true);
   });
 
   it('非表示にすると開いているドロップダウンも閉じる', () => {

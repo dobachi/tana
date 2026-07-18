@@ -39,12 +39,19 @@ export function toggleMenuBar() {
   setMenuBarVisible(!isMenuBarVisible());
 }
 
-/** Read the persisted visibility (default: hidden). */
+/**
+ * 保存済みの表示状態を読む。未設定なら「表示」。
+ *
+ * Fude は非表示が既定だが、Tana では表示を既定にする。メニューバーは
+ * 「ショートカットを知らないと機能に辿り着けない」問題を解消するために
+ * 入れたものなので、それ自体をショートカットでしか出せないのでは意味が無い。
+ * 明示的に隠した人（'0' を保存済み）はその選択を維持する。
+ */
 export function getStoredMenuBarVisible() {
   try {
-    return localStorage.getItem(VISIBLE_KEY) === '1';
+    return localStorage.getItem(VISIBLE_KEY) !== '0';
   } catch {
-    return false;
+    return true;
   }
 }
 
