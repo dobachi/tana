@@ -2,6 +2,7 @@
 // ディレクトリの読み込み・描画・カーソル移動・階層ナビゲーション(h/l)・隠しファイル表示切替(FR-15)。
 
 import { listDir, parentDir } from '../backend.js';
+import { pathSegments } from './pathnav.js';
 
 /** バイト数を人間可読なサイズ文字列にする */
 export function formatSize(bytes) {
@@ -46,7 +47,8 @@ export function filterEntries(entries, showHidden) {
 export function createFilePane(rootEl, opts = {}) {
   const listEl = rootEl.querySelector('.pane-list');
   const pathEl = rootEl.querySelector('.pane-path');
-  const { onActivate, onChange } = opts;
+  const inputEl = rootEl.querySelector('.pane-path-input');
+  const { onActivate, onChange, onNavigate } = opts;
 
   let currentDir = null;
   let allEntries = []; // 読み込んだ全件
@@ -65,8 +67,38 @@ export function createFilePane(rootEl, opts = {}) {
     }
   }
 
+  /** パス表示を階層ごとにクリックできるブレッドクラムとして描画する (FR-12) */
+  function renderBreadcrumb() {
+    if (!pathEl) return;
+    pathEl.replaceChildren();
+    const segs = pathSegments(currentDir);
+    if (!segs.length) {
+      pathEl.textContent = '—';
+      return;
+    }
+    segs.forEach((seg, i) => {
+      if (i > 0 && segs[i - 1].name !== '/') {
+        const sep = document.createElement('span');
+        sep.className = 'crumb-sep';
+        sep.textContent = '/';
+        pathEl.appendChild(sep);
+      }
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'crumb' + (i === segs.length - 1 ? ' current' : '');
+      btn.textContent = seg.name;
+      btn.title = seg.path;
+      btn.addEventListener('click', () => {
+        if (onActivate) onActivate();
+        // 現在地そのものを押しても再読込だけで済むので特別扱いしない
+        if (onNavigate) onNavigate(seg.path);
+      });
+      pathEl.appendChild(btn);
+    });
+  }
+
   function notify() {
-    if (pathEl) pathEl.textContent = currentDir || '—';
+    renderBreadcrumb();
     if (onChange) {
       onChange({ dir: currentDir, entry: entries[cursor] || null, count: entries.length });
     }
@@ -159,9 +191,47 @@ export function createFilePane(rootEl, opts = {}) {
     }
   }
 
+  /**
+   * パス入力欄を開いてフォーカスする (FR-12)。Enter で移動、Escape で取り消し。
+   * 実際の移動は onNavigate に委ねる（存在確認は listDir の成否で判定する）。
+   */
+  function beginPathEdit() {
+    if (!inputEl || !pathEl) return;
+    inputEl.value = currentDir || '';
+    inputEl.hidden = false;
+    pathEl.hidden = true;
+    inputEl.focus();
+    inputEl.select();
+  }
+
+  function endPathEdit() {
+    if (!inputEl || !pathEl) return;
+    inputEl.hidden = true;
+    pathEl.hidden = false;
+  }
+
+  if (inputEl) {
+    inputEl.hidden = true;
+    inputEl.addEventListener('keydown', (e) => {
+      // ペインのキー操作（hjkl 等）に流さない
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        const value = inputEl.value;
+        endPathEdit();
+        if (onNavigate) onNavigate(value, { raw: true });
+      } else if (e.key === 'Escape') {
+        endPathEdit();
+        if (onActivate) onActivate();
+      }
+    });
+    // フォーカスが外れたら編集をやめる（開きっぱなしを避ける）
+    inputEl.addEventListener('blur', endPathEdit);
+  }
+
   return {
     el: rootEl,
     load,
+    beginPathEdit,
     moveCursor,
     moveCursorTo,
     enter,

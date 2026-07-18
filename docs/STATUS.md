@@ -55,7 +55,7 @@ make docker-check  # CI相当チェック
 
 | 項目 | 状態（2026-07-18 実測） |
 |------|------|
-| Vitest (JS) | ✅ 137 passed / 15 files |
+| Vitest (JS) | ✅ 159 passed / 16 files |
 | cargo test (Rust) | ✅ 13 passed |
 | ESLint / Clippy | ✅ クリーン |
 | Prettier / cargo fmt | ✅ クリーン |
@@ -89,8 +89,9 @@ make docker-check  # CI相当チェック
 | `core/menu.js` | 汎用ドロップダウン/コンテキストメニュー（Fude から移植） |
 | `core/menubar.js` | メニューバー（Ctrl+Shift+B で開閉・既定は非表示・永続化） |
 | `core/settings.js` | 設定画面（テーマ/文字サイズ/隠しファイル）。即時反映・即時保存で Save ボタンは無し |
+| `core/pathnav.js` | パス直接入力/ブレッドクラムの純粋ロジック（`resolveInputPath` / `pathSegments`）|
 
-テストは `src/js/__tests__/<name>.test.js` に対応（15ファイル）。
+テストは `src/js/__tests__/<name>.test.js` に対応（16ファイル）。
 
 ### バックエンド `src-tauri/src/`
 `lib.rs` に集約（まだ `fs.rs`/`places.rs` 等に分割していない）。`main.rs` は薄いエントリ。
@@ -119,7 +120,7 @@ make docker-check  # CI相当チェック
 | FR-09 | 多形式プレビュー | S | ⬜ | M2/M3。画像/テキスト/Markdown が最小 |
 | FR-10 | 全機能キーボード到達 | M | 🟡 | 主要操作は到達可。網羅性は要点検 |
 | FR-11 | マウス操作（D&D/右クリック/複数選択） | M | 🟡 | クリックでペイン選択のみ。D&D・コンテキストメニュー・複数選択は未 |
-| FR-12 | パス入力/パンくず | S | ⬜ | M2 |
+| FR-12 | パス入力/パンくず | S | ✅ | Ctrl+L で入力、ヘッダはブレッドクラム |
 | FR-13 | コンテキストメニュー + 外部アプリ連携 | M | ⬜ | 未着手（要 M1 仕上げ範囲の再確認） |
 | FR-14 | セッション復元 | M/S | ⬜ | ディレクトリ/ペインは M1、タブ込みは M2 |
 | FR-15 | 隠しファイル表示トグル | M | ✅ | Ctrl+H、両ペイン共通 |

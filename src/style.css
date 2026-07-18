@@ -406,6 +406,45 @@ body[data-mode='operation'] .pane.active {
 .pane-divider {
   background: var(--border);
 }
+.crumb {
+  font: inherit;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 0 3px;
+  cursor: pointer;
+}
+.crumb:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.crumb.current {
+  color: var(--fg);
+}
+.crumb:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.crumb-sep {
+  color: var(--fg-dim);
+  opacity: 0.6;
+}
+/* パス入力欄。ブレッドクラムと同じ位置に重ねるのではなく差し替える */
+.pane-path-input {
+  width: 100%;
+  font: inherit;
+  font-family: var(--mono);
+  color: var(--fg);
+  background: var(--bg-pane);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 6px;
+  box-sizing: border-box;
+}
+.pane-path-input[hidden] {
+  display: none;
+}
 .pane-header {
   padding: 4px 10px;
   border-bottom: 1px solid var(--border);

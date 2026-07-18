@@ -15,6 +15,7 @@ import {
 import { createFilePane } from './core/filepane.js';
 import { createToast } from './core/toast.js';
 import { checkForUpdates } from './core/updater.js';
+import { resolveInputPath } from './core/pathnav.js';
 import { initMenuBar, toggleMenuBar } from './core/menubar.js';
 import { openSettings, closeSettings, isSettingsOpen } from './core/settings.js';
 import { createFileOps } from './core/fileops.js';
@@ -88,6 +89,33 @@ function syncTheme(t) {
     document.documentElement.dataset.theme = t;
   }
   storeTheme(t);
+}
+
+/**
+ * パス指定でペインを移動する (FR-12)。
+ * @param {string} pane PANE.LEFT / PANE.RIGHT
+ * @param {string} value ブレッドクラムからは解決済み絶対パス、入力欄からは生の文字列
+ * @param {{raw?: boolean}} [o] raw なら ~ 展開・相対解決を通す
+ */
+async function navigatePane(pane, value, o = {}) {
+  const fp = filePanes[pane];
+  if (!fp) return;
+  const target = o.raw
+    ? resolveInputPath(value, { home: await homeDir(), cwd: fp.getCurrentDir() })
+    : value;
+  if (!target) {
+    toast('パスを解釈できませんでした');
+    return;
+  }
+  try {
+    await fp.load(target);
+    panes.setActive(pane);
+    focusActivePane();
+    updateStatus();
+  } catch {
+    // 存在しない・ディレクトリでない・権限が無い等はまとめて弾く
+    toast(`開けませんでした: ${target}`);
+  }
 }
 
 /** 設定画面を開閉する（Ctrl+, とメニューから） */
@@ -297,6 +325,13 @@ function onKeydown(e) {
     toggleMenuBar();
     return;
   }
+  // パス入力: Ctrl+L（ブラウザ/ファイラの慣習に合わせる）(FR-12)
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === 'KeyL' || e.key.toLowerCase() === 'l')) {
+    e.preventDefault();
+    const fp = filePanes[panes.getActive()];
+    if (fp) fp.beginPathEdit();
+    return;
+  }
   // 設定: Ctrl+,（Fude と同じ）
   if (e.ctrlKey && !e.altKey && (e.code === 'Comma' || e.key === ',')) {
     e.preventDefault();
@@ -437,6 +472,7 @@ async function init() {
     filePanes[p] = createFilePane(el, {
       showHidden,
       onActivate: () => panes.setActive(p),
+      onNavigate: (value, o) => navigatePane(p, value, o),
       onChange: (info) => {
         if (p === panes.getActive()) updateStatus(info);
       },
