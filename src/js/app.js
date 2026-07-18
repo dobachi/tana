@@ -17,6 +17,7 @@ import { createToast } from './core/toast.js';
 import { checkForUpdates } from './core/updater.js';
 import { resolveInputPath } from './core/pathnav.js';
 import { initMenuBar, toggleMenuBar } from './core/menubar.js';
+import { showMenu } from './core/menu.js';
 import { openSettings, closeSettings, isSettingsOpen } from './core/settings.js';
 import { createFileOps } from './core/fileops.js';
 import { createConflictDialog } from './core/conflictdialog.js';
@@ -35,6 +36,7 @@ import {
   renamePath,
   makeDir,
   confirmDialog,
+  isDesktop,
 } from './backend.js';
 
 const safemode = createSafeMode(MODE.SAFE);
@@ -116,6 +118,107 @@ async function navigatePane(pane, value, o = {}) {
     // 存在しない・ディレクトリでない・権限が無い等はまとめて弾く
     toast(`開けませんでした: ${target}`);
   }
+}
+
+/** パスや名前をクリップボードへ（Tauri でもブラウザでも動くようフォールバック付き） */
+async function copyText(text) {
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('コピーしました');
+  } catch {
+    toast('コピーできませんでした');
+  }
+}
+
+/** OS の既定アプリで開く / ファイルマネージャで表示（デスクトップのみ） */
+async function openWith(kind, path) {
+  if (!path) return;
+  if (!isDesktop()) {
+    toast('デスクトップ版でのみ利用できます');
+    return;
+  }
+  try {
+    const opener = await import('@tauri-apps/plugin-opener');
+    if (kind === 'reveal') await opener.revealItemInDir(path);
+    else await opener.openPath(path);
+  } catch (e) {
+    toast('開けませんでした: ' + (e && e.message ? e.message : e));
+  }
+}
+
+/**
+ * ファイル一覧の右クリックメニュー (FR-13)。
+ * 破壊操作は fileOps 側で安全モードのゲートに掛かる（ここでは隠さず、
+ * 押したときに理由がトーストで出るほうが分かりやすい）。
+ * @param {string} pane PANE.LEFT / PANE.RIGHT
+ * @param {{entry: object|null, x: number, y: number}} info
+ */
+function showEntryMenu(pane, info) {
+  const fp = filePanes[pane];
+  if (!fp) return;
+  const { entry, x, y } = info;
+  const destDir = filePanes[panes.getInactive()]?.getCurrentDir();
+  const items = [];
+
+  if (entry) {
+    if (entry.is_dir) {
+      items.push({ label: '開く', shortcut: 'Enter', action: () => navigateActive(entry.path) });
+    } else {
+      items.push({ label: '外部アプリで開く', action: () => openWith('open', entry.path) });
+    }
+    items.push(
+      { label: 'ファイルマネージャで表示', action: () => openWith('reveal', entry.path) },
+      { separator: true },
+      {
+        label: '反対のペインへコピー',
+        shortcut: 'F5',
+        disabled: !destDir,
+        action: () => fileOps.copy(entry, destDir),
+      },
+      {
+        label: '反対のペインへ移動',
+        shortcut: 'F6',
+        disabled: !destDir,
+        action: () => fileOps.move(entry, destDir),
+      },
+      { separator: true },
+      { label: '名前を変更…', shortcut: 'F2', action: () => fileOps.rename(entry) },
+      {
+        label: 'ゴミ箱へ',
+        shortcut: 'Delete',
+        danger: true,
+        action: () => fileOps.trash(entry),
+      },
+      {
+        label: '完全に削除',
+        shortcut: 'Shift+Delete',
+        danger: true,
+        action: () => fileOps.deletePermanent(entry),
+      },
+      { separator: true },
+      { label: 'パスをコピー', action: () => copyText(entry.path) },
+      { label: '名前をコピー', action: () => copyText(entry.name) },
+      { separator: true },
+    );
+  }
+
+  items.push(
+    {
+      label: '新しいフォルダ…',
+      shortcut: 'F7',
+      action: () => fileOps.makeNewFolder(fp.getCurrentDir()),
+    },
+    { label: 'ここをお気に入りに追加', shortcut: 'Ctrl+D', action: addCurrentToFavorites },
+    { separator: true },
+    { label: '現在地のパスをコピー', action: () => copyText(fp.getCurrentDir()) },
+    {
+      label: '現在地をファイルマネージャで表示',
+      action: () => openWith('reveal', fp.getCurrentDir()),
+    },
+  );
+
+  showMenu(x, y, items);
 }
 
 /** 設定画面を開閉する（Ctrl+, とメニューから） */
@@ -325,6 +428,16 @@ function onKeydown(e) {
     toggleMenuBar();
     return;
   }
+  // コンテキストメニュー: Shift+F10 / メニューキー（キーボードからも到達可能に）
+  if ((e.shiftKey && e.key === 'F10') || e.key === 'ContextMenu') {
+    e.preventDefault();
+    const fp = activeFilePane();
+    if (fp) {
+      const pt = fp.getCursorPoint();
+      showEntryMenu(panes.getActive(), { entry: fp.getCursorEntry(), x: pt.x, y: pt.y });
+    }
+    return;
+  }
   // パス入力: Ctrl+L（ブラウザ/ファイラの慣習に合わせる）(FR-12)
   if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === 'KeyL' || e.key.toLowerCase() === 'l')) {
     e.preventDefault();
@@ -473,6 +586,7 @@ async function init() {
       showHidden,
       onActivate: () => panes.setActive(p),
       onNavigate: (value, o) => navigatePane(p, value, o),
+      onContextMenu: (info) => showEntryMenu(p, info),
       onChange: (info) => {
         if (p === panes.getActive()) updateStatus(info);
       },

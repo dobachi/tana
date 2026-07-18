@@ -48,7 +48,7 @@ export function createFilePane(rootEl, opts = {}) {
   const listEl = rootEl.querySelector('.pane-list');
   const pathEl = rootEl.querySelector('.pane-path');
   const inputEl = rootEl.querySelector('.pane-path-input');
-  const { onActivate, onChange, onNavigate } = opts;
+  const { onActivate, onChange, onNavigate, onContextMenu } = opts;
 
   let currentDir = null;
   let allEntries = []; // 読み込んだ全件
@@ -127,6 +127,16 @@ export function createFilePane(rootEl, opts = {}) {
       li.addEventListener('dblclick', () => {
         cursor = i;
         enter();
+      });
+      li.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (onActivate) onActivate();
+        // 右クリックした行にカーソルを移してから開く（対象が曖昧にならないように）
+        cursor = i;
+        render();
+        notify();
+        if (onContextMenu) onContextMenu({ entry: entries[i], x: ev.clientX, y: ev.clientY });
       });
       listEl.appendChild(li);
     });
@@ -210,6 +220,15 @@ export function createFilePane(rootEl, opts = {}) {
     pathEl.hidden = false;
   }
 
+  // 一覧の余白で右クリックしたときは「対象なし」のメニューを出す
+  if (listEl) {
+    listEl.addEventListener('contextmenu', (ev) => {
+      ev.preventDefault();
+      if (onActivate) onActivate();
+      if (onContextMenu) onContextMenu({ entry: null, x: ev.clientX, y: ev.clientY });
+    });
+  }
+
   if (inputEl) {
     inputEl.hidden = true;
     inputEl.addEventListener('keydown', (e) => {
@@ -240,6 +259,12 @@ export function createFilePane(rootEl, opts = {}) {
     isShowingHidden: () => showHidden,
     getCurrentDir: () => currentDir,
     getCursorEntry: () => entries[cursor] || null,
+    /** カーソル行の画面座標。キーボード（Shift+F10）からメニューを出すのに使う */
+    getCursorPoint: () => {
+      const el = listEl && listEl.children[cursor];
+      const box = (el || listEl || rootEl).getBoundingClientRect();
+      return { x: box.left + 24, y: box.bottom };
+    },
     getCount: () => entries.length,
   };
 }

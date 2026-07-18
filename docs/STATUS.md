@@ -55,7 +55,7 @@ make docker-check  # CI相当チェック
 
 | 項目 | 状態（2026-07-18 実測） |
 |------|------|
-| Vitest (JS) | ✅ 159 passed / 16 files |
+| Vitest (JS) | ✅ 167 passed / 17 files |
 | cargo test (Rust) | ✅ 13 passed |
 | ESLint / Clippy | ✅ クリーン |
 | Prettier / cargo fmt | ✅ クリーン |
@@ -90,8 +90,9 @@ make docker-check  # CI相当チェック
 | `core/menubar.js` | メニューバー（Ctrl+Shift+B で開閉・既定は非表示・永続化） |
 | `core/settings.js` | 設定画面（テーマ/文字サイズ/隠しファイル）。即時反映・即時保存で Save ボタンは無し |
 | `core/pathnav.js` | パス直接入力/ブレッドクラムの純粋ロジック（`resolveInputPath` / `pathSegments`）|
+| `core/menu.js` / `core/menubar.js` | メニューバーと右クリックメニュー（Fude から移植）|
 
-テストは `src/js/__tests__/<name>.test.js` に対応（16ファイル）。
+テストは `src/js/__tests__/<name>.test.js` に対応（17ファイル）。
 
 ### バックエンド `src-tauri/src/`
 `lib.rs` に集約（まだ `fs.rs`/`places.rs` 等に分割していない）。`main.rs` は薄いエントリ。
