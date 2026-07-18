@@ -314,6 +314,26 @@ body[data-mode='operation'] .entry.cursor {
   color: var(--fg-dim);
   opacity: 0.8;
 }
+/* ステータスバー右端の補助ボタン（更新を確認）。
+   周囲のテキストに馴染ませ、hover / focus でだけ輪郭を出す。 */
+.status-btn {
+  font: inherit;
+  font-size: 0.95em;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+.status-btn:hover {
+  color: var(--fg);
+  border-color: var(--border);
+}
+.status-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 
 /* Modal（衝突解決の3択） */
 .modal-overlay {

@@ -19,6 +19,9 @@
     "core:window:allow-close",
     "core:window:allow-set-title",
     "core:app:default",
+    "updater:default",
+    "process:default",
+    "process:allow-exit",
     {
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "http://**" }, { "url": "https://**" }, { "url": "mailto:*" }]

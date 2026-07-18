@@ -9,6 +9,14 @@ function getInvoke() {
 }
 
 /**
+ * デスクトップ（Tauri webview）で動作しているかを返す。
+ * アップデータのように Tauri 専用のプラグインを触る前のガードに使う。
+ */
+export function isDesktop() {
+  return getInvoke() !== null;
+}
+
+/**
  * Tauri コマンドを呼び出す。Tauri 不在時は null を返す。
  * 引数は Rust の snake_case を JS では camelCase で渡す（Tauri v2 の仕様）。
  */

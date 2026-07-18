@@ -1,4 +1,4 @@
-.PHONY: setup doctor install-rust dev build test test-js test-rust lint lint-js lint-rust format format-js format-rust format-check check clean help \
+.PHONY: setup doctor install-rust dev build test test-js test-rust lint lint-js lint-rust format format-js format-rust format-check check clean help release \
         docker-build docker-gui docker-test docker-check docker-shell docker-down
 
 # OS判定
@@ -21,6 +21,7 @@ help:
 	@echo "  make format       全フォーマット実行"
 	@echo "  make check        lint + format + test + build"
 	@echo "  make clean        ビルド成果物を削除"
+	@echo "  make release      リリース（check + バージョン更新 + タグ + CIビルド）"
 
 doctor:
 	@echo "==> 開発環境をチェックします..."
@@ -112,3 +113,27 @@ docker-shell:
 
 docker-down:
 	docker compose down --remove-orphans
+
+# リリース（事前チェック + バージョン更新 + lockfile 同期 + タグ + CIビルド）
+# バージョンは package.json / Cargo.toml / tauri.conf.json の3箇所に散っているため、
+# 手で sed するとどれか1つ取りこぼす。必ずこのターゲット経由で上げること。
+# 各ステップが失敗したら以降を実行しない（&& chain）
+release:
+	@read -p "New version (e.g., 0.2.0): " ver && \
+	echo "==> Pre-release check: make check" && \
+	$(MAKE) check && \
+	echo "==> Bumping version to v$$ver" && \
+	sed -i "s/\"version\": \".*\"/\"version\": \"$$ver\"/" src-tauri/tauri.conf.json && \
+	sed -i "s/^version = \".*\"/version = \"$$ver\"/" src-tauri/Cargo.toml && \
+	sed -i "s/\"version\": \".*\"/\"version\": \"$$ver\"/" package.json && \
+	echo "==> Syncing package-lock.json" && \
+	npm install --package-lock-only --silent && \
+	echo "==> Syncing Cargo.lock" && \
+	(cd src-tauri && cargo check --quiet) && \
+	echo "==> Committing release (only version + lock files)" && \
+	git add src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json package-lock.json && \
+	git commit -m "release: v$$ver" && \
+	git push && \
+	git tag "v$$ver" && \
+	git push origin "v$$ver" && \
+	echo "==> v$$ver tagged and pushed. CI will build all platforms."

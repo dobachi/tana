@@ -53,9 +53,9 @@ make docker-check  # CI相当チェック
 
 ## 2. 品質ゲートの状態
 
-| 項目 | 状態（2026-06-13 実測） |
+| 項目 | 状態（2026-07-18 実測） |
 |------|------|
-| Vitest (JS) | ✅ 88 passed / 12 files |
+| Vitest (JS) | ✅ 103 passed / 13 files |
 | cargo test (Rust) | ✅ 13 passed |
 | ESLint / Clippy | ✅ クリーン |
 | Prettier / cargo fmt | ✅ クリーン |
@@ -85,15 +85,16 @@ make docker-check  # CI相当チェック
 | `core/fontscale.js` | 文字サイズ（Ctrl + / - / 0） |
 | `core/help.js` | ショートカット一覧ヘルプ（`?` / `F1`） |
 | `core/toast.js` | トースト通知 |
+| `core/updater.js` | 起動時の更新検知 + 手動チェック。純粋関数 `describeManualCheck` で判定だけを切り出し |
 
-テストは `src/js/__tests__/<name>.test.js` に対応（12ファイル）。
+テストは `src/js/__tests__/<name>.test.js` に対応（13ファイル）。
 
 ### バックエンド `src-tauri/src/`
 `lib.rs` に集約（まだ `fs.rs`/`places.rs` 等に分割していない）。`main.rs` は薄いエントリ。
 
 - Tauri コマンド: `list_dir` / `home_dir` / `parent_dir` / `unique_name` / `copy_path` / `move_path` / `delete_to_trash` / `delete_permanent` / `rename_path` / `make_dir`
 - テスト対象の純粋関数: `is_hidden_entry` / `read_dir_entries` / `target_path` / `unique_target_name` / `copy_recursive` / `remove_any`
-- 依存は最小（tauri / tauri-cli / plugin-dialog / opener / serde / dirs）
+- 依存は最小（tauri / tauri-cli / plugin-dialog / opener / updater / process / serde / dirs）
 
 ---
 

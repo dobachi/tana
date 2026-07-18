@@ -13,6 +13,7 @@ import {
 } from './core/fontscale.js';
 import { createFilePane } from './core/filepane.js';
 import { createToast } from './core/toast.js';
+import { checkForUpdates } from './core/updater.js';
 import { createFileOps } from './core/fileops.js';
 import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
@@ -356,10 +357,19 @@ async function init() {
     el.addEventListener('mousedown', () => panes.setActive(p));
   }
 
+  // 更新を確認（ステータスバー）
+  const updateBtn = document.getElementById('check-updates');
+  if (updateBtn) {
+    updateBtn.addEventListener('click', () => checkForUpdates({ manual: true, notify: toast }));
+  }
+
   // 起動ディレクトリ: CLI 引数 > ホーム > カレント
   const start = (await getCliPath()) || (await homeDir()) || '.';
   await Promise.all([filePanes.left.load(start), filePanes.right.load(start)]);
   updateStatus();
+
+  // 起動時の更新検知。待たない・失敗しても黙る（起動を妨げないため）。
+  checkForUpdates();
 }
 
 if (typeof document !== 'undefined') {

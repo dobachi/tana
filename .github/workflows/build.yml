@@ -1,0 +1,148 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  # Create the GitHub Release once, BEFORE the matrix builds, so the three
+  # OS jobs never race each other into creating duplicate releases (which
+  # silently drops the assets of whichever loses the race — this bit Fude,
+  # the sibling app this workflow was ported from, and cost it a release's
+  # Linux artifacts).
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create draft release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create "${{ github.ref_name }}" \
+              --repo "${{ github.repository }}" \
+              --title "Tana ${{ github.ref_name }}" \
+              --notes "Download the portable exe (Windows), AppImage (Linux), or dmg (macOS)." \
+              --draft
+          else
+            echo "Release ${{ github.ref_name }} already exists; skipping create."
+          fi
+
+  build:
+    needs: [prepare-release]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Build Linux on the oldest supported distro so the binaries' glibc
+          # baseline (2.35) stays low — they then run on 22.04, 24.04, and newer
+          # (newer glibc is backward-compatible). Deps below exist on 22.04.
+          - platform: ubuntu-22.04
+            target: linux
+          - platform: windows-latest
+            target: windows
+          - platform: macos-latest
+            target: macos
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # rust-cache keys by RUNNER_OS (Linux) + host triple, which are the
+          # same for ubuntu-22.04 and ubuntu-24.04 — without this, a cache built
+          # on one distro is restored on the other and the prebuilt `tauri`
+          # rlib mismatches ("can't find crate for tauri"). Namespace per runner.
+          key: ${{ matrix.platform }}
+
+      - name: Install Linux dependencies
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build:frontend
+
+      - name: Run JS tests
+        run: npx vitest run
+
+      - name: Run Rust tests
+        run: cd src-tauri && cargo test --lib
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        with:
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('Tana {0}', github.ref_name) || '' }}
+          releaseBody: 'Download the portable exe (Windows), AppImage (Linux), or dmg (macOS).'
+          # Keep the release in draft state during the matrix build. The
+          # release was pre-created (draft) by prepare-release, so every
+          # matrix job sees "Found release" and just uploads. We flip the
+          # release to published in the publish-release job once all three
+          # OS jobs have finished.
+          releaseDraft: true
+          prerelease: false
+
+      - name: Upload portable exe to release
+        if: startsWith(github.ref, 'refs/tags/') && matrix.target == 'windows'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ github.ref_name }} src-tauri/target/release/tana.exe --clobber
+
+      - name: Upload artifacts
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: tana-${{ matrix.target }}
+          path: |
+            src-tauri/target/release/bundle/**/*
+            src-tauri/target/release/tana*
+            !src-tauri/target/release/bundle/**/deps
+          retention-days: 7
+
+  # Flip the draft release to published only after every matrix build
+  # succeeded, so users never see a half-populated release.
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Mark release as published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --draft=false
