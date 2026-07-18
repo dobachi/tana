@@ -117,6 +117,26 @@ export function createFilePane(rootEl, opts = {}) {
     }
   }
 
+  /**
+   * カーソル・選択の見た目だけを既存ノード上で更新する。
+   *
+   * クリックのたびに render() で一覧を作り直すと、1回目と2回目のクリックが
+   * 別ノードに当たるため、ブラウザは dblclick を <ul> に発火させてしまい
+   * 行のダブルクリック（フォルダを開く）が効かなくなる。行の中身が変わらない
+   * 場面ではノードを使い回す。
+   */
+  function syncRowStates() {
+    const rows = listEl.children;
+    for (let i = 0; i < rows.length; i++) {
+      const e = entries[i];
+      if (!e) continue;
+      rows[i].classList.toggle('cursor', i === cursor);
+      rows[i].classList.toggle('selected', selected.has(e.path));
+    }
+    const cur = rows[cursor];
+    if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+  }
+
   function render() {
     listEl.replaceChildren();
     entries.forEach((e, i) => {
@@ -146,7 +166,7 @@ export function createFilePane(rootEl, opts = {}) {
         selected = next.selected;
         anchor = next.anchor;
         cursor = i;
-        render();
+        syncRowStates();
         notify();
       });
       li.addEventListener('dblclick', () => {
@@ -164,7 +184,7 @@ export function createFilePane(rootEl, opts = {}) {
           selected = new Set();
           anchor = i;
         }
-        render();
+        syncRowStates();
         notify();
         if (onContextMenu) onContextMenu({ entry: entries[i], x: ev.clientX, y: ev.clientY });
       });
@@ -204,14 +224,14 @@ export function createFilePane(rootEl, opts = {}) {
     const next = clampCursor(cursor + delta, entries.length);
     if (next !== cursor) {
       cursor = next;
-      render();
+      syncRowStates();
       notify();
     }
   }
 
   function moveCursorTo(pos) {
     cursor = clampCursor(pos === 'top' ? 0 : entries.length - 1, entries.length);
-    render();
+    syncRowStates();
     notify();
   }
 
@@ -224,7 +244,7 @@ export function createFilePane(rootEl, opts = {}) {
     );
     anchor = cursor;
     if (cursor < entries.length - 1) cursor += 1;
-    render();
+    syncRowStates();
     notify();
   }
 
@@ -232,7 +252,7 @@ export function createFilePane(rootEl, opts = {}) {
   function selectAllEntries() {
     selected = selectAll(entries.map((e) => e.path));
     anchor = cursor;
-    render();
+    syncRowStates();
     notify();
   }
 
@@ -241,7 +261,7 @@ export function createFilePane(rootEl, opts = {}) {
     if (selected.size === 0) return false;
     selected = new Set();
     anchor = -1;
-    render();
+    syncRowStates();
     notify();
     return true;
   }
@@ -262,7 +282,8 @@ export function createFilePane(rootEl, opts = {}) {
     const idx = entries.findIndex((e) => e.path === from);
     if (idx >= 0) {
       cursor = idx;
-      render();
+      // load() で作り直した直後なのでカーソル位置の反映だけでよい
+      syncRowStates();
       notify();
     }
   }
