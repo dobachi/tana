@@ -228,3 +228,115 @@ describe('fileops 完全削除', () => {
     expect(no.backend.deletePermanent).not.toHaveBeenCalled();
   });
 });
+
+// ── 複数選択への一括操作 (FR-11) ────────────────────────────
+const entries = (...names) => names.map((n) => ({ name: n, path: '/src/' + n }));
+
+describe('fileops 複数件の一括操作', () => {
+  it('配列を渡すと全件にバックエンドを呼ぶ', async () => {
+    const { ops, backend } = setup();
+    await ops.copy(entries('a.txt', 'b.txt', 'c.txt'), '/dest');
+    expect(backend.copyPath).toHaveBeenCalledTimes(3);
+    expect(backend.copyPath.mock.calls.map((c) => c[0])).toEqual([
+      '/src/a.txt',
+      '/src/b.txt',
+      '/src/c.txt',
+    ]);
+  });
+
+  it('refresh は最後に1回だけ（件数分走らせない）', async () => {
+    const { ops, refresh } = setup();
+    await ops.copy(entries('a.txt', 'b.txt', 'c.txt'), '/dest');
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('複数件のトーストは件数で伝える', async () => {
+    const { ops, toast } = setup();
+    await ops.move(entries('a.txt', 'b.txt'), '/dest');
+    expect(toast).toHaveBeenCalledWith('2 件移動しました');
+  });
+
+  it('1件のときは従来どおりの文言のまま', async () => {
+    const { ops, toast } = setup();
+    await ops.copy(entries('a.txt'), '/dest');
+    expect(toast).toHaveBeenCalledWith('コピーしました');
+  });
+
+  it('単体の entry も引き続き受け付ける（後方互換）', async () => {
+    const { ops, backend, toast } = setup();
+    await ops.trash(entry);
+    expect(backend.deleteToTrash).toHaveBeenCalledWith('/src/f.txt');
+    expect(toast).toHaveBeenCalledWith('ゴミ箱へ移動しました');
+  });
+
+  it('空配列では何もしない', async () => {
+    const { ops, backend, toast, refresh } = setup();
+    await ops.copy([], '/dest');
+    expect(backend.copyPath).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('安全モードなら1件も実行しない', async () => {
+    const { ops, backend } = setup({ canMutate: false });
+    await ops.trash(entries('a.txt', 'b.txt'));
+    expect(backend.deleteToTrash).not.toHaveBeenCalled();
+  });
+
+  it('1件失敗しても残りは続行し、結果をまとめて伝える', async () => {
+    const { ops, backend, toast, refresh } = setup();
+    backend.deleteToTrash
+      .mockImplementationOnce(async () => {})
+      .mockImplementationOnce(async () => {
+        throw new Error('権限がありません');
+      })
+      .mockImplementationOnce(async () => {});
+    await ops.trash(entries('a.txt', 'b.txt', 'c.txt'));
+    expect(backend.deleteToTrash).toHaveBeenCalledTimes(3);
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining('2 件ゴミ箱へ移動しました'));
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining('1 件失敗'));
+    expect(refresh).toHaveBeenCalledTimes(1); // 成功が1件でもあれば再読込する
+  });
+
+  it('全件失敗なら refresh しない', async () => {
+    const { ops, backend, toast, refresh } = setup();
+    backend.deleteToTrash.mockImplementation(async () => {
+      throw new Error('だめ');
+    });
+    await ops.trash(entries('a.txt', 'b.txt'));
+    expect(refresh).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining('2 件失敗'));
+  });
+
+  it('衝突でキャンセルした分はスキップし、残りは続ける', async () => {
+    // 1件のキャンセルで全部止まると、残りをやり直す羽目になって驚きが大きい
+    const { ops, backend, toast } = setup({ conflictResult: { action: 'cancel' } });
+    backend.copyPath
+      .mockImplementationOnce(async () => {
+        throw new Error('EXISTS');
+      })
+      .mockImplementationOnce(async () => '/dest/b');
+    await ops.copy(entries('a.txt', 'b.txt'), '/dest');
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining('1 件スキップ'));
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining('1 件コピーしました'));
+  });
+
+  it('完全削除の確認は最初に1回だけ', async () => {
+    const { ops, confirm, backend } = setup();
+    await ops.deletePermanent(entries('a.txt', 'b.txt', 'c.txt'));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(backend.deletePermanent).toHaveBeenCalledTimes(3);
+  });
+
+  it('完全削除の確認文は4件以上なら件数で丸める', async () => {
+    const { ops, confirm } = setup();
+    await ops.deletePermanent(entries('a', 'b', 'c', 'd', 'e'));
+    expect(confirm.mock.calls[0][0]).toContain('ほか 2 件');
+  });
+
+  it('完全削除の確認を断れば1件も消さない', async () => {
+    const { ops, backend } = setup({ confirmReturn: false });
+    await ops.deletePermanent(entries('a.txt', 'b.txt'));
+    expect(backend.deletePermanent).not.toHaveBeenCalled();
+  });
+});

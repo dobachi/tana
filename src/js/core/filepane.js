@@ -3,6 +3,7 @@
 
 import { listDir, parentDir } from '../backend.js';
 import { pathSegments } from './pathnav.js';
+import { applyClick, toggleAt, selectAll, pruneSelection, targetEntries } from './selection.js';
 
 /** バイト数を人間可読なサイズ文字列にする */
 export function formatSize(bytes) {
@@ -55,9 +56,16 @@ export function createFilePane(rootEl, opts = {}) {
   let entries = []; // 表示対象（フィルタ後）
   let cursor = 0;
   let showHidden = opts.showHidden === true;
+  let selected = new Set(); // 選択されたパス（FR-11）
+  let anchor = -1; // Shift+クリックの起点
 
   function recompute(keepPath) {
     entries = filterEntries(allEntries, showHidden);
+    // 表示から消えたものを選択に残さない（隠しファイル切替・再読込・外部削除）
+    selected = pruneSelection(
+      selected,
+      entries.map((e) => e.path),
+    );
     // フィルタ前後でカーソル対象を維持できれば維持、できなければクランプ
     if (keepPath) {
       const idx = entries.findIndex((e) => e.path === keepPath);
@@ -100,7 +108,12 @@ export function createFilePane(rootEl, opts = {}) {
   function notify() {
     renderBreadcrumb();
     if (onChange) {
-      onChange({ dir: currentDir, entry: entries[cursor] || null, count: entries.length });
+      onChange({
+        dir: currentDir,
+        entry: entries[cursor] || null,
+        count: entries.length,
+        selectedCount: selected.size,
+      });
     }
   }
 
@@ -110,7 +123,11 @@ export function createFilePane(rootEl, opts = {}) {
       const li = document.createElement('li');
       const hiddenCls = isHidden(e) ? ' is-hidden' : '';
       li.className =
-        'entry' + (e.is_dir ? ' is-dir' : '') + hiddenCls + (i === cursor ? ' cursor' : '');
+        'entry' +
+        (e.is_dir ? ' is-dir' : '') +
+        hiddenCls +
+        (i === cursor ? ' cursor' : '') +
+        (selected.has(e.path) ? ' selected' : '');
       const name = document.createElement('span');
       name.className = 'entry-name';
       name.textContent = e.is_dir ? e.name + '/' : e.name;
@@ -118,8 +135,16 @@ export function createFilePane(rootEl, opts = {}) {
       size.className = 'entry-size';
       size.textContent = e.is_dir ? '' : formatSize(e.size);
       li.append(name, size);
-      li.addEventListener('mousedown', () => {
+      li.addEventListener('mousedown', (ev) => {
         if (onActivate) onActivate();
+        // Shift+クリックの範囲選択でテキスト選択が走ると見た目が壊れるので抑止
+        if (ev.shiftKey) ev.preventDefault();
+        const next = applyClick({ paths: entries.map((x) => x.path), selected, anchor }, i, {
+          ctrl: ev.ctrlKey || ev.metaKey,
+          shift: ev.shiftKey,
+        });
+        selected = next.selected;
+        anchor = next.anchor;
         cursor = i;
         render();
         notify();
@@ -132,8 +157,13 @@ export function createFilePane(rootEl, opts = {}) {
         ev.preventDefault();
         ev.stopPropagation();
         if (onActivate) onActivate();
-        // 右クリックした行にカーソルを移してから開く（対象が曖昧にならないように）
+        // 右クリックした行にカーソルを移してから開く（対象が曖昧にならないように）。
+        // 選択済みの行を右クリックした場合は選択を保つ（複数選択への操作を想定）。
         cursor = i;
+        if (!selected.has(entries[i].path)) {
+          selected = new Set();
+          anchor = i;
+        }
         render();
         notify();
         if (onContextMenu) onContextMenu({ entry: entries[i], x: ev.clientX, y: ev.clientY });
@@ -147,6 +177,11 @@ export function createFilePane(rootEl, opts = {}) {
   /** ディレクトリを読み込んで表示する */
   async function load(dir, cursorTo = 0) {
     allEntries = await listDir(dir);
+    // ディレクトリを移ったら選択は持ち越さない（別フォルダのパスが残るため）
+    if (dir !== currentDir) {
+      selected = new Set();
+      anchor = -1;
+    }
     currentDir = dir;
     recompute();
     cursor = clampCursor(cursorTo, entries.length);
@@ -178,6 +213,37 @@ export function createFilePane(rootEl, opts = {}) {
     cursor = clampCursor(pos === 'top' ? 0 : entries.length - 1, entries.length);
     render();
     notify();
+  }
+
+  /** カーソル位置の選択をトグルしてカーソルを1つ下へ (Space) */
+  function toggleSelection() {
+    selected = toggleAt(
+      selected,
+      entries.map((e) => e.path),
+      cursor,
+    );
+    anchor = cursor;
+    if (cursor < entries.length - 1) cursor += 1;
+    render();
+    notify();
+  }
+
+  /** 表示中の全件を選択 (Ctrl+A) */
+  function selectAllEntries() {
+    selected = selectAll(entries.map((e) => e.path));
+    anchor = cursor;
+    render();
+    notify();
+  }
+
+  /** 選択を解除 (Escape) */
+  function clearSelection() {
+    if (selected.size === 0) return false;
+    selected = new Set();
+    anchor = -1;
+    render();
+    notify();
+    return true;
   }
 
   /** カーソル位置がディレクトリなら入る (l / Enter) */
@@ -256,7 +322,13 @@ export function createFilePane(rootEl, opts = {}) {
     enter,
     goParent,
     setShowHidden,
+    toggleSelection,
+    selectAllEntries,
+    clearSelection,
     isShowingHidden: () => showHidden,
+    getSelectedCount: () => selected.size,
+    /** 操作（コピー/移動/削除）の対象。選択が無ければカーソル位置の1件 */
+    getTargetEntries: () => targetEntries(entries, selected, cursor),
     getCurrentDir: () => currentDir,
     getCursorEntry: () => entries[cursor] || null,
     /** カーソル行の画面座標。キーボード（Shift+F10）からメニューを出すのに使う */

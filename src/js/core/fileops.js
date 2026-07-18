@@ -60,45 +60,81 @@ export function createFileOps(deps) {
     await refresh();
   }
 
+  /** entry / 配列 / null をエントリ配列に正規化する */
+  function asList(entryOrList) {
+    if (!entryOrList) return [];
+    return Array.isArray(entryOrList) ? entryOrList.filter(Boolean) : [entryOrList];
+  }
+
+  /**
+   * 複数件の実行結果をまとめてトースト1回・refresh1回にする。
+   *
+   * 1件のときは従来どおりの文言（「コピーしました」）を出し、複数件のときだけ
+   * 件数入りにする。衝突ダイアログでキャンセルした分は「スキップ」として数え、
+   * 残りの処理は続ける（1件のキャンセルで全部止まる方が驚きが大きいため）。
+   *
+   * @param {{ok: number, skipped: number, failed: string[]}} r
+   * @param {string} verb 「コピー」など
+   * @param {string} singleMessage 1件成功時の従来メッセージ
+   */
+  async function reportBatch(r, verb, singleMessage) {
+    const parts = [];
+    if (r.ok > 0)
+      parts.push(
+        r.ok === 1 && !r.skipped && !r.failed.length ? singleMessage : `${r.ok} 件${verb}しました`,
+      );
+    if (r.skipped > 0) parts.push(`${r.skipped} 件スキップ`);
+    if (r.failed.length > 0) parts.push(`${r.failed.length} 件失敗: ${r.failed[0]}`);
+    if (parts.length === 0) return;
+    if (r.ok > 0) await done(parts.join(' / '));
+    else toast(parts.join(' / '));
+  }
+
+  /** 各エントリに op を適用し、成功/スキップ/失敗を集計する */
+  async function runBatch(list, op) {
+    const r = { ok: 0, skipped: 0, failed: [] };
+    for (const entry of list) {
+      try {
+        const res = await op(entry);
+        if (res === null) r.skipped += 1;
+        else r.ok += 1;
+      } catch (e) {
+        r.failed.push(e && e.message ? e.message : String(e));
+      }
+    }
+    return r;
+  }
+
   return {
-    /** アクティブペインの entry を destDir へコピー */
-    async copy(entry, destDir) {
-      if (!entry || !destDir) return;
+    /** entry（単体または配列）を destDir へコピー */
+    async copy(entryOrList, destDir) {
+      const list = asList(entryOrList);
+      if (!list.length || !destDir) return;
       if (!(await gate())) return;
-      try {
-        const r = await withConflict(entry, destDir, (name, ow) =>
-          backend.copyPath(entry.path, destDir, name, ow),
-        );
-        if (r !== null) await done('コピーしました');
-      } catch (e) {
-        toast('コピー失敗: ' + (e && e.message ? e.message : e));
-      }
+      const r = await runBatch(list, (entry) =>
+        withConflict(entry, destDir, (name, ow) => backend.copyPath(entry.path, destDir, name, ow)),
+      );
+      await reportBatch(r, 'コピー', 'コピーしました');
     },
 
-    /** アクティブペインの entry を destDir へ移動 */
-    async move(entry, destDir) {
-      if (!entry || !destDir) return;
+    /** entry（単体または配列）を destDir へ移動 */
+    async move(entryOrList, destDir) {
+      const list = asList(entryOrList);
+      if (!list.length || !destDir) return;
       if (!(await gate())) return;
-      try {
-        const r = await withConflict(entry, destDir, (name, ow) =>
-          backend.movePath(entry.path, destDir, name, ow),
-        );
-        if (r !== null) await done('移動しました');
-      } catch (e) {
-        toast('移動失敗: ' + (e && e.message ? e.message : e));
-      }
+      const r = await runBatch(list, (entry) =>
+        withConflict(entry, destDir, (name, ow) => backend.movePath(entry.path, destDir, name, ow)),
+      );
+      await reportBatch(r, '移動', '移動しました');
     },
 
-    /** entry をゴミ箱へ（既定の削除, NFR-R2） */
-    async trash(entry) {
-      if (!entry) return;
+    /** entry（単体または配列）をゴミ箱へ（既定の削除, NFR-R2） */
+    async trash(entryOrList) {
+      const list = asList(entryOrList);
+      if (!list.length) return;
       if (!(await gate())) return;
-      try {
-        await backend.deleteToTrash(entry.path);
-        await done('ゴミ箱へ移動しました');
-      } catch (e) {
-        toast('削除失敗: ' + (e && e.message ? e.message : e));
-      }
+      const r = await runBatch(list, (entry) => backend.deleteToTrash(entry.path));
+      await reportBatch(r, 'ゴミ箱へ移動', 'ゴミ箱へ移動しました');
     },
 
     /** entry の名前を変更（同じフォルダ内, FR-03） */
@@ -135,20 +171,24 @@ export function createFileOps(deps) {
       }
     },
 
-    /** entry を完全削除（確認必須, NFR-R3） */
-    async deletePermanent(entry) {
-      if (!entry) return;
+    /** entry（単体または配列）を完全削除（確認必須, NFR-R3） */
+    async deletePermanent(entryOrList) {
+      const list = asList(entryOrList);
+      if (!list.length) return;
       if (!(await gate())) return;
-      const ok = await confirm(
-        `完全に削除します（元に戻せません）:\n${entry.name}\nよろしいですか？`,
-      );
+      // 確認は最初に1回だけ。件数が多いときに全ファイル名を並べても読めないので、
+      // 数件までは名前を出し、それ以上は件数で示す。
+      const names =
+        list.length <= 3
+          ? list.map((e) => e.name).join('\n')
+          : `${list
+              .slice(0, 3)
+              .map((e) => e.name)
+              .join('\n')}\nほか ${list.length - 3} 件`;
+      const ok = await confirm(`完全に削除します（元に戻せません）:\n${names}\nよろしいですか？`);
       if (!ok) return;
-      try {
-        await backend.deletePermanent(entry.path);
-        await done('完全に削除しました');
-      } catch (e) {
-        toast('削除失敗: ' + (e && e.message ? e.message : e));
-      }
+      const r = await runBatch(list, (entry) => backend.deletePermanent(entry.path));
+      await reportBatch(r, '完全に削除', '完全に削除しました');
     },
   };
 }

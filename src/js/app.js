@@ -160,6 +160,11 @@ function showEntryMenu(pane, info) {
   const { entry, x, y } = info;
   const destDir = filePanes[panes.getInactive()]?.getCurrentDir();
   const items = [];
+  // 選択済みの行を右クリックしたときは選択全体が対象（filepane 側で選択を保つ）。
+  // ラベルに件数を出して、何件に効くのかを押す前に分かるようにする。
+  const targets = fp.getTargetEntries();
+  const n = targets.length;
+  const suffix = n > 1 ? `（${n} 件）` : '';
 
   if (entry) {
     if (entry.is_dir) {
@@ -171,30 +176,31 @@ function showEntryMenu(pane, info) {
       { label: 'ファイルマネージャで表示', action: () => openWith('reveal', entry.path) },
       { separator: true },
       {
-        label: '反対のペインへコピー',
+        label: `反対のペインへコピー${suffix}`,
         shortcut: 'F5',
         disabled: !destDir,
-        action: () => fileOps.copy(entry, destDir),
+        action: () => fileOps.copy(targets, destDir),
       },
       {
-        label: '反対のペインへ移動',
+        label: `反対のペインへ移動${suffix}`,
         shortcut: 'F6',
         disabled: !destDir,
-        action: () => fileOps.move(entry, destDir),
+        action: () => fileOps.move(targets, destDir),
       },
       { separator: true },
+      // リネームは対象が1つに定まる必要があるので、常にクリックした行のみ
       { label: '名前を変更…', shortcut: 'F2', action: () => fileOps.rename(entry) },
       {
-        label: 'ゴミ箱へ',
+        label: `ゴミ箱へ${suffix}`,
         shortcut: 'Delete',
         danger: true,
-        action: () => fileOps.trash(entry),
+        action: () => fileOps.trash(targets),
       },
       {
-        label: '完全に削除',
+        label: `完全に削除${suffix}`,
         shortcut: 'Shift+Delete',
         danger: true,
-        action: () => fileOps.deletePermanent(entry),
+        action: () => fileOps.deletePermanent(targets),
       },
       { separator: true },
       { label: 'パスをコピー', action: () => copyText(entry.path) },
@@ -333,7 +339,10 @@ function updateStatus(info) {
   if (pathEl) pathEl.textContent = dir || '';
   if (selEl) {
     const name = entry ? entry.name : '';
-    selEl.textContent = count != null ? `${count} 件${name ? ' / ' + name : ''}` : '';
+    const picked =
+      info && info.selectedCount != null ? info.selectedCount : fp && fp.getSelectedCount();
+    const base = count != null ? `${count} 件${name ? ' / ' + name : ''}` : '';
+    selEl.textContent = picked > 0 ? `${base}（${picked} 件選択）` : base;
   }
 }
 
@@ -348,23 +357,25 @@ async function refreshPanes() {
 }
 
 // アクティブペインの選択項目を、非アクティブペインのディレクトリへ
+// コピー/移動/削除の対象は「選択があればそれ、無ければカーソル位置の1件」。
+// リネームだけは対象が1つに定まる必要があるのでカーソル位置を使う。
 function opCopy() {
   const src = activeFilePane();
   const dest = filePanes[panes.getInactive()];
-  if (src && dest) fileOps.copy(src.getCursorEntry(), dest.getCurrentDir());
+  if (src && dest) fileOps.copy(src.getTargetEntries(), dest.getCurrentDir());
 }
 function opMove() {
   const src = activeFilePane();
   const dest = filePanes[panes.getInactive()];
-  if (src && dest) fileOps.move(src.getCursorEntry(), dest.getCurrentDir());
+  if (src && dest) fileOps.move(src.getTargetEntries(), dest.getCurrentDir());
 }
 function opTrash() {
   const fp = activeFilePane();
-  if (fp) fileOps.trash(fp.getCursorEntry());
+  if (fp) fileOps.trash(fp.getTargetEntries());
 }
 function opDeletePermanent() {
   const fp = activeFilePane();
-  if (fp) fileOps.deletePermanent(fp.getCursorEntry());
+  if (fp) fileOps.deletePermanent(fp.getTargetEntries());
 }
 function opRename() {
   const fp = activeFilePane();
@@ -469,6 +480,13 @@ function onKeydown(e) {
     toggleSidebarFocus();
     return;
   }
+  // 全選択: Ctrl+A (FR-11)
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === 'KeyA' || e.key.toLowerCase() === 'a')) {
+    e.preventDefault();
+    const fp = activeFilePane();
+    if (fp) fp.selectAllEntries();
+    return;
+  }
   // 文字サイズ: Ctrl++ / Ctrl+- / Ctrl+0 (NFR-U5)
   const fsAction = fontScaleAction(e);
   if (fsAction) {
@@ -500,6 +518,15 @@ function onKeydown(e) {
   if (!fp) return;
 
   switch (e.key) {
+    case ' ':
+      // 選択トグル + カーソルを1つ下へ（連打でまとめて選べる）
+      e.preventDefault();
+      fp.toggleSelection();
+      break;
+    case 'Escape':
+      // 選択があれば解除。無ければ他のハンドラに任せる
+      if (fp.clearSelection()) e.preventDefault();
+      break;
     case 'j':
     case 'ArrowDown':
       e.preventDefault();
