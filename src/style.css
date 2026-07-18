@@ -330,6 +330,17 @@ body[data-mode='operation'] .entry.cursor {
   color: var(--fg);
   border-color: var(--border);
 }
+.font-scale-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+/* 倍率表示は桁数が変わっても左右のボタンが動かないよう幅を固定する */
+.font-scale-value {
+  min-width: 3.4em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
 .status-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;

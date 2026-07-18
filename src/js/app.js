@@ -10,6 +10,7 @@ import {
   loadStoredFontScale,
   storeFontScale,
   toPercent,
+  fontScaleAction,
 } from './core/fontscale.js';
 import { createFilePane } from './core/filepane.js';
 import { createToast } from './core/toast.js';
@@ -87,9 +88,24 @@ function syncTheme(t) {
   storeTheme(t);
 }
 
+/**
+ * 文字サイズを増減/リセットし、結果を通知する。
+ * キーボードとステータスバーのボタンで同じ経路を通す。
+ * @param {'increase'|'decrease'|'reset'} action
+ */
+function applyFontScale(action) {
+  const pct = toPercent(fontScale[action]());
+  toast(`文字サイズ: ${pct}%`);
+}
+
 function syncFontScale(scale) {
   if (typeof document !== 'undefined' && document.documentElement) {
     document.documentElement.style.setProperty('--font-scale', String(scale));
+  }
+  const label = typeof document !== 'undefined' && document.getElementById('font-reset');
+  if (label) {
+    label.textContent = `${toPercent(scale)}%`;
+    label.title = `文字サイズ ${toPercent(scale)}%（クリックで100%に戻す）`;
   }
   storeFontScale(scale);
 }
@@ -224,22 +240,11 @@ function onKeydown(e) {
     return;
   }
   // 文字サイズ: Ctrl++ / Ctrl+- / Ctrl+0 (NFR-U5)
-  if (e.ctrlKey && !e.altKey && !e.metaKey) {
-    if (e.key === '+' || e.key === '=') {
-      e.preventDefault();
-      toast(`文字サイズ: ${toPercent(fontScale.increase())}%`);
-      return;
-    }
-    if (e.key === '-' || e.key === '_') {
-      e.preventDefault();
-      toast(`文字サイズ: ${toPercent(fontScale.decrease())}%`);
-      return;
-    }
-    if (e.key === '0') {
-      e.preventDefault();
-      toast(`文字サイズ: ${toPercent(fontScale.reset())}%`);
-      return;
-    }
+  const fsAction = fontScaleAction(e);
+  if (fsAction) {
+    e.preventDefault();
+    applyFontScale(fsAction);
+    return;
   }
   // ヘルプ: ? または F1（入力中は無効。Ctrl+? も e.key==='?' で拾える）
   if ((e.key === '?' || e.key === 'F1') && !isEditableTarget(e.target)) {
@@ -355,6 +360,16 @@ async function init() {
       },
     });
     el.addEventListener('mousedown', () => panes.setActive(p));
+  }
+
+  // 文字サイズ（ステータスバー）
+  for (const [id, action] of [
+    ['font-smaller', 'decrease'],
+    ['font-reset', 'reset'],
+    ['font-larger', 'increase'],
+  ]) {
+    const btn = document.getElementById(id);
+    if (btn) btn.addEventListener('click', () => applyFontScale(action));
   }
 
   // 更新を確認（ステータスバー）

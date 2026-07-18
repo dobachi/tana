@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
+  fontScaleAction,
   createFontScale,
   clampScale,
   toPercent,
@@ -64,5 +65,46 @@ describe('createFontScale', () => {
     off();
     fs.increase();
     expect(fn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('fontScaleAction', () => {
+  const ev = (o) => ({ ctrlKey: true, ...o });
+
+  it('US配列: Ctrl+= / Ctrl+- / Ctrl+0', () => {
+    expect(fontScaleAction(ev({ key: '=', code: 'Equal' }))).toBe('increase');
+    expect(fontScaleAction(ev({ key: '-', code: 'Minus' }))).toBe('decrease');
+    expect(fontScaleAction(ev({ key: '0', code: 'Digit0' }))).toBe('reset');
+  });
+
+  it('Shift併用: Ctrl+Shift+; が + になる配列でも拡大できる', () => {
+    expect(fontScaleAction(ev({ key: '+', code: 'Semicolon', shiftKey: true }))).toBe('increase');
+    expect(fontScaleAction(ev({ key: '_', code: 'Minus', shiftKey: true }))).toBe('decrease');
+  });
+
+  // 回帰: e.key だけを見ていたため、配列によっては無反応だった。
+  it('e.key が期待値でなくても物理キー(e.code)で判定する', () => {
+    expect(fontScaleAction(ev({ key: 'Dead', code: 'Equal' }))).toBe('increase');
+    expect(fontScaleAction(ev({ key: '‐', code: 'Minus' }))).toBe('decrease');
+    expect(fontScaleAction(ev({ key: '０', code: 'Digit0' }))).toBe('reset');
+  });
+
+  it('テンキーにも対応する', () => {
+    expect(fontScaleAction(ev({ key: '+', code: 'NumpadAdd' }))).toBe('increase');
+    expect(fontScaleAction(ev({ key: '-', code: 'NumpadSubtract' }))).toBe('decrease');
+    expect(fontScaleAction(ev({ key: '0', code: 'Numpad0' }))).toBe('reset');
+  });
+
+  it('Ctrl なし・Alt/Meta 併用は対象外', () => {
+    expect(fontScaleAction({ key: '=', code: 'Equal' })).toBeNull();
+    expect(fontScaleAction(ev({ key: '=', code: 'Equal', altKey: true }))).toBeNull();
+    expect(fontScaleAction(ev({ key: '=', code: 'Equal', metaKey: true }))).toBeNull();
+  });
+
+  it('無関係なキーは null', () => {
+    expect(fontScaleAction(ev({ key: 'a', code: 'KeyA' }))).toBeNull();
+    expect(fontScaleAction(ev({ key: '1', code: 'Digit1' }))).toBeNull();
+    expect(fontScaleAction(null)).toBeNull();
+    expect(fontScaleAction(ev({}))).toBeNull();
   });
 });

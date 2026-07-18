@@ -21,6 +21,26 @@ export function toPercent(scale) {
   return Math.round(scale * 100);
 }
 
+/**
+ * キーイベントを文字サイズ操作に対応づける。
+ *
+ * `e.key` だけで判定すると、キーボード配列によって取りこぼす。JIS 配列の
+ * `=` は Shift+`-`、`+` は Shift+`;` で、テンキーはさらに別。物理キーを表す
+ * `e.code` を主に見て、`e.key` は補助にする（他のショートカットと同じ方針）。
+ * @param {{key?: string, code?: string, ctrlKey?: boolean, altKey?: boolean, metaKey?: boolean}} e
+ * @returns {'increase'|'decrease'|'reset'|null}
+ */
+export function fontScaleAction(e) {
+  if (!e || !e.ctrlKey || e.altKey || e.metaKey) return null;
+  const code = e.code || '';
+  const key = e.key || '';
+  if (code === 'Equal' || code === 'NumpadAdd' || key === '+' || key === '=') return 'increase';
+  if (code === 'Minus' || code === 'NumpadSubtract' || key === '-' || key === '_')
+    return 'decrease';
+  if (code === 'Digit0' || code === 'Numpad0' || key === '0') return 'reset';
+  return null;
+}
+
 export function createFontScale(initial) {
   let scale = clampScale(initial);
   const listeners = new Set();
