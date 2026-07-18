@@ -55,7 +55,7 @@ make docker-check  # CI相当チェック
 
 | 項目 | 状態（2026-07-18 実測） |
 |------|------|
-| Vitest (JS) | ✅ 103 passed / 13 files |
+| Vitest (JS) | ✅ 137 passed / 15 files |
 | cargo test (Rust) | ✅ 13 passed |
 | ESLint / Clippy | ✅ クリーン |
 | Prettier / cargo fmt | ✅ クリーン |
@@ -86,8 +86,11 @@ make docker-check  # CI相当チェック
 | `core/help.js` | ショートカット一覧ヘルプ（`?` / `F1`） |
 | `core/toast.js` | トースト通知 |
 | `core/updater.js` | 起動時の更新検知 + 手動チェック。純粋関数 `describeManualCheck` で判定だけを切り出し |
+| `core/menu.js` | 汎用ドロップダウン/コンテキストメニュー（Fude から移植） |
+| `core/menubar.js` | メニューバー（Ctrl+Shift+B で開閉・既定は非表示・永続化） |
+| `core/settings.js` | 設定画面（テーマ/文字サイズ/隠しファイル）。即時反映・即時保存で Save ボタンは無し |
 
-テストは `src/js/__tests__/<name>.test.js` に対応（13ファイル）。
+テストは `src/js/__tests__/<name>.test.js` に対応（15ファイル）。
 
 ### バックエンド `src-tauri/src/`
 `lib.rs` に集約（まだ `fs.rs`/`places.rs` 等に分割していない）。`main.rs` は薄いエントリ。

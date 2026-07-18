@@ -4,7 +4,7 @@
 
 import { createSafeMode, MODE } from './core/safemode.js';
 import { createPanes, PANE } from './core/panes.js';
-import { createTheme, loadStoredTheme, storeTheme } from './core/theme.js';
+import { createTheme, loadStoredTheme, storeTheme, THEMES, THEME_LABELS } from './core/theme.js';
 import {
   createFontScale,
   loadStoredFontScale,
@@ -15,6 +15,8 @@ import {
 import { createFilePane } from './core/filepane.js';
 import { createToast } from './core/toast.js';
 import { checkForUpdates } from './core/updater.js';
+import { initMenuBar, toggleMenuBar } from './core/menubar.js';
+import { openSettings, closeSettings, isSettingsOpen } from './core/settings.js';
 import { createFileOps } from './core/fileops.js';
 import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
@@ -86,6 +88,75 @@ function syncTheme(t) {
     document.documentElement.dataset.theme = t;
   }
   storeTheme(t);
+}
+
+/** 設定画面を開閉する（Ctrl+, とメニューから） */
+function toggleSettings() {
+  if (isSettingsOpen()) {
+    closeSettings();
+    return;
+  }
+  openSettings({
+    theme,
+    fontScale,
+    getShowHidden: () => showHidden,
+    setShowHidden,
+  });
+}
+
+/**
+ * メニューバーの定義。items を関数にすると開くたびに現在の状態を反映できる
+ * （チェック状態など）。
+ */
+function buildMenuDefinition() {
+  return [
+    {
+      label: 'ファイル',
+      items: () => [
+        { label: 'お気に入りに現在地を追加', shortcut: 'Ctrl+D', action: addCurrentToFavorites },
+        { separator: true },
+        { label: '終了', action: () => window.close() },
+      ],
+    },
+    {
+      label: '表示',
+      items: () => [
+        {
+          label: showHidden ? '✓ 隠しファイルを表示' : '隠しファイルを表示',
+          shortcut: 'Ctrl+H',
+          action: toggleHidden,
+        },
+        { separator: true },
+        ...THEMES.map((t) => ({
+          label: `${theme.get() === t ? '✓ ' : ''}${THEME_LABELS[t]}`,
+          action: () => theme.set(t),
+        })),
+        { separator: true },
+        { label: '文字を大きく', shortcut: 'Ctrl++', action: () => applyFontScale('increase') },
+        { label: '文字を小さく', shortcut: 'Ctrl+-', action: () => applyFontScale('decrease') },
+        {
+          label: '文字サイズをリセット',
+          shortcut: 'Ctrl+0',
+          action: () => applyFontScale('reset'),
+        },
+        { separator: true },
+        { label: 'メニューバーを隠す', shortcut: 'Ctrl+Shift+B', action: toggleMenuBar },
+        { separator: true },
+        { label: '設定…', shortcut: 'Ctrl+,', action: toggleSettings },
+      ],
+    },
+    {
+      label: 'ヘルプ',
+      items: () => [
+        { label: 'ショートカット一覧', shortcut: '?', action: () => help.toggle() },
+        { separator: true },
+        {
+          label: '更新を確認',
+          action: () => checkForUpdates({ manual: true, notify: toast }),
+        },
+      ],
+    },
+  ];
 }
 
 /**
@@ -195,6 +266,11 @@ async function addCurrentToFavorites() {
   toast('お気に入りに追加しました');
 }
 
+function setShowHidden(next) {
+  if (showHidden === next) return;
+  toggleHidden();
+}
+
 function toggleHidden() {
   showHidden = !showHidden;
   if (filePanes.left) filePanes.left.setShowHidden(showHidden);
@@ -215,10 +291,16 @@ function onKeydown(e) {
     safemode.toggle();
     return;
   }
-  // テーマ切替: Ctrl+Shift+T
-  if (e.ctrlKey && e.shiftKey && (e.code === 'KeyT' || e.key.toLowerCase() === 't')) {
+  // メニューバー開閉: Ctrl+Shift+B（Fude と同じ）
+  if (e.ctrlKey && e.shiftKey && (e.code === 'KeyB' || e.key.toLowerCase() === 'b')) {
     e.preventDefault();
-    theme.toggle();
+    toggleMenuBar();
+    return;
+  }
+  // 設定: Ctrl+,（Fude と同じ）
+  if (e.ctrlKey && !e.altKey && (e.code === 'Comma' || e.key === ',')) {
+    e.preventDefault();
+    toggleSettings();
     return;
   }
   // 隠しファイル表示切替: Ctrl+H (FR-15)
@@ -361,6 +443,10 @@ async function init() {
     });
     el.addEventListener('mousedown', () => panes.setActive(p));
   }
+
+  // メニューバー（既定は非表示。Ctrl+Shift+B で開閉）
+  const menuBarEl = document.getElementById('menu-bar');
+  if (menuBarEl) initMenuBar(menuBarEl, buildMenuDefinition());
 
   // 文字サイズ（ステータスバー）
   for (const [id, action] of [
