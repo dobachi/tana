@@ -22,9 +22,22 @@ seed_sandbox() {
   echo "==> サンドボックスを用意: $SANDBOX"
 }
 
+# X サーバが実際に接続を受け付けるまで待つ。固定の sleep では、Xvfb が
+# ソケットを開く前に GTK が接続を試みて "Failed to initialize GTK" で
+# 落ちることがある（実際にこの競合で起動しなかった）。
+wait_for_x() {
+  for _ in $(seq 1 50); do
+    [ -S /tmp/.X11-unix/X99 ] && return 0
+    sleep 0.2
+  done
+  echo "X サーバの起動を待てませんでした（/tmp/xvfb.log を確認してください）" >&2
+  cat /tmp/xvfb.log >&2 || true
+  return 1
+}
+
 start_display() {
-  Xvfb :99 -screen 0 1280x800x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
-  sleep 1
+  Xvfb :99 -screen 0 1440x1000x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
+  wait_for_x
   # キーボードレイアウトを設定（未設定だと入力が届かない）
   setxkbmap -display :99 us >/tmp/xkb.log 2>&1 || true
   fluxbox >/tmp/fluxbox.log 2>&1 &
@@ -61,7 +74,10 @@ case "$MODE" in
     # 起動後、ウィンドウへフォーカスを当てる（入力対策）
     (
       sleep 3
-      xdotool search --sync --name 'Tana' windowactivate windowfocus >/tmp/focus.log 2>&1 || true
+      # ウィンドウマネージャが負のY座標に置くことがあり、上端（メニューバー）が
+      # 画面外に出て見えなくなる。明示的に左上へ寄せてから前面に出す。
+      W=$(xdotool search --sync --name 'Tana' | tail -1)
+      xdotool windowmove "$W" 0 24 windowactivate "$W" windowfocus "$W" >/tmp/focus.log 2>&1 || true
     ) &
     # dbus セッション下で起動（WebKitGTK の安定化）
     exec dbus-run-session -- "$BIN" "$SANDBOX"
