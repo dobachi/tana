@@ -1,6 +1,6 @@
 [package]
 name = "tana"
-version = "0.2.0"
+version = "0.3.0"
 description = "Tana - A lightweight cross-platform file manager built with Tauri"
 authors = ["dobachi"]
 edition = "2021"
