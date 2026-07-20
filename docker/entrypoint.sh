@@ -38,8 +38,13 @@ wait_for_x() {
 start_display() {
   Xvfb :99 -screen 0 1440x1000x24 -nolisten tcp >/tmp/xvfb.log 2>&1 &
   wait_for_x
-  # キーボードレイアウトを設定（未設定だと入力が届かない）
-  setxkbmap -display :99 us >/tmp/xkb.log 2>&1 || true
+  # ソケットが出来ても X がまだ接続を受け付けられないことがある。実接続を
+  # 伴う setxkbmap が成功するまで待つ（GTK 初期化失敗の競合対策）。
+  # キーボードレイアウト設定も兼ねる（未設定だと入力が届かない）。
+  for _ in $(seq 1 50); do
+    setxkbmap -display :99 us >/tmp/xkb.log 2>&1 && break
+    sleep 0.2
+  done
   fluxbox >/tmp/fluxbox.log 2>&1 &
   # -xkb: キーシンボルを正しく送る
   x11vnc -display :99 -nopw -forever -shared -xkb -quiet -rfbport 5900 >/tmp/x11vnc.log 2>&1 &
@@ -79,7 +84,15 @@ case "$MODE" in
       W=$(xdotool search --sync --name 'Tana' | tail -1)
       xdotool windowmove "$W" 0 24 windowactivate "$W" windowfocus "$W" >/tmp/focus.log 2>&1 || true
     ) &
-    # dbus セッション下で起動（WebKitGTK の安定化）
-    exec dbus-run-session -- "$BIN" "$SANDBOX"
+    # dbus セッション下で起動（WebKitGTK の安定化）。
+    # GTK 初期化は X の準備待ちで稀に失敗するためリトライする。exec しない
+    # ことで、アプリが落ちても noVNC セッションは生き続ける（接続を維持）。
+    for attempt in 1 2 3 4 5; do
+      dbus-run-session -- "$BIN" "$SANDBOX" && break
+      echo "==> Tana が終了しました（試行 $attempt/5）。再起動します…" >&2
+      sleep 1
+    done
+    echo "==> Tana プロセスが終了。noVNC は接続可能なまま待機します。" >&2
+    wait
     ;;
 esac
