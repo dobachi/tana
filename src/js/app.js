@@ -19,6 +19,8 @@ import {
   loadStoredPlacement,
   storePlacement,
 } from './core/previewplacement.js';
+import { createSortState, loadStoredSort, storeSort } from './core/sortstate.js';
+import { SORT_KEYS, SORT_LABELS } from './core/sort.js';
 import { createToast } from './core/toast.js';
 import { checkForUpdates } from './core/updater.js';
 import { resolveInputPath } from './core/pathnav.js';
@@ -112,6 +114,17 @@ let showHidden = false;
 
 // アプリのバージョン（起動時に取得。ヘルプ表示・更新チェックのメッセージで使う）
 let appVer = '';
+
+// ソート・プレフィックス（s に続けて種別キーを待つ）中かどうか
+let sortPending = false;
+
+// ソート状態（両ペイン共通, 詳細表示の並べ替え）
+const sortState = createSortState(loadStoredSort());
+sortState.subscribe((s) => {
+  storeSort(s);
+  for (const p of [PANE.LEFT, PANE.RIGHT]) filePanes[p] && filePanes[p].refresh();
+  updateStatus();
+});
 
 function paneEl(pane) {
   return document.getElementById(pane === PANE.LEFT ? 'pane-left' : 'pane-right');
@@ -318,6 +331,18 @@ function buildMenuDefinition() {
           shortcut: 'Ctrl+H',
           action: toggleHidden,
         },
+        { separator: true },
+        {
+          label: `並び替え（${SORT_LABELS[sortState.get().key]} ${
+            sortState.get().dir === 'asc' ? '▲' : '▼'
+          }）`,
+          disabled: true,
+        },
+        ...SORT_KEYS.map((k) => ({
+          label: `${sortState.get().key === k ? '✓ ' : '　'}${SORT_LABELS[k]}`,
+          shortcut: k === 'ext' ? 's e' : `s ${k[0]}`,
+          action: () => sortState.applyKey(k),
+        })),
         { separator: true },
         ...THEMES.map((t) => ({
           label: `${theme.get() === t ? '✓ ' : ''}${THEME_LABELS[t]}`,
@@ -605,6 +630,24 @@ function onKeydown(e) {
 
   // 以降はファイルナビゲーション（修飾キー無し・入力欄以外）
   if (e.ctrlKey || e.altKey || e.metaKey || isEditableTarget(e.target)) return;
+
+  // ソート・プレフィックス: s に続けて n/s/m/e で並べ替え、r で反転、他キーで取消
+  if (sortPending) {
+    e.preventDefault();
+    sortPending = false;
+    const map = { n: 'name', s: 'size', m: 'modified', e: 'ext' };
+    const k = e.key.toLowerCase();
+    if (k === 'r') sortState.reverse();
+    else if (map[k]) sortState.applyKey(map[k]);
+    return;
+  }
+  if (e.key === 's' && !isEditableTarget(e.target)) {
+    e.preventDefault();
+    sortPending = true;
+    toast('並び替え: n=名前 / s=サイズ / m=更新日時 / e=拡張子 / r=反転');
+    return;
+  }
+
   const fp = activeFilePane();
   if (!fp) return;
 
@@ -715,6 +758,8 @@ async function init() {
     if (!el) continue;
     filePanes[p] = createFilePane(el, {
       showHidden,
+      getSort: () => sortState.get(),
+      onSort: (key) => sortState.applyKey(key),
       onActivate: () => panes.setActive(p),
       onNavigate: (value, o) => navigatePane(p, value, o),
       onContextMenu: (info) => showEntryMenu(p, info),

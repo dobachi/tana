@@ -4,6 +4,7 @@
 import { listDir, parentDir } from '../backend.js';
 import { pathSegments } from './pathnav.js';
 import { applyClick, toggleAt, selectAll, pruneSelection, targetEntries } from './selection.js';
+import { sortEntries, defaultCollator, DEFAULT_SORT } from './sort.js';
 
 /** バイト数を人間可読なサイズ文字列にする */
 export function formatSize(bytes) {
@@ -16,6 +17,16 @@ export function formatSize(bytes) {
     i += 1;
   }
   return (i === 0 ? n : n.toFixed(1)) + units[i];
+}
+
+/** エポック秒を YYYY-MM-DD HH:MM に整形する（一覧の更新日時列）。 */
+export function formatMtime(secs) {
+  if (secs == null) return '';
+  const d = new Date(secs * 1000);
+  const p = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(
+    d.getMinutes(),
+  )}`;
 }
 
 /** カーソル位置を [0, len-1] にクランプする */
@@ -49,18 +60,22 @@ export function createFilePane(rootEl, opts = {}) {
   const listEl = rootEl.querySelector('.pane-list');
   const pathEl = rootEl.querySelector('.pane-path');
   const inputEl = rootEl.querySelector('.pane-path-input');
-  const { onActivate, onChange, onNavigate, onContextMenu } = opts;
+  const columnsEl = rootEl.querySelector('.pane-columns');
+  const { onActivate, onChange, onNavigate, onContextMenu, onSort } = opts;
+  // 現在のソート状態を返す（app.js が共有状態を注入。既定は名前昇順）。
+  const getSort = typeof opts.getSort === 'function' ? opts.getSort : () => DEFAULT_SORT;
+  const collator = defaultCollator();
 
   let currentDir = null;
   let allEntries = []; // 読み込んだ全件
-  let entries = []; // 表示対象（フィルタ後）
+  let entries = []; // 表示対象（フィルタ+ソート後）
   let cursor = 0;
   let showHidden = opts.showHidden === true;
   let selected = new Set(); // 選択されたパス（FR-11）
   let anchor = -1; // Shift+クリックの起点
 
   function recompute(keepPath) {
-    entries = filterEntries(allEntries, showHidden);
+    entries = sortEntries(filterEntries(allEntries, showHidden), getSort(), collator);
     // 表示から消えたものを選択に残さない（隠しファイル切替・再読込・外部削除）
     selected = pruneSelection(
       selected,
@@ -73,6 +88,19 @@ export function createFilePane(rootEl, opts = {}) {
     } else {
       cursor = clampCursor(cursor, entries.length);
     }
+  }
+
+  /** 列ヘッダのソート方向インジケータ（▲▼）と aria-sort を現在状態に同期する。 */
+  function renderColumns() {
+    if (!columnsEl) return;
+    const { key, dir } = getSort();
+    columnsEl.querySelectorAll('.pane-col').forEach((btn) => {
+      const active = btn.dataset.sort === key;
+      if (!btn.dataset.label) btn.dataset.label = btn.textContent.trim();
+      btn.textContent = btn.dataset.label + (active ? (dir === 'asc' ? ' ▲' : ' ▼') : '');
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-sort', active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none');
+    });
   }
 
   /** パス表示を階層ごとにクリックできるブレッドクラムとして描画する (FR-12) */
@@ -154,7 +182,10 @@ export function createFilePane(rootEl, opts = {}) {
       const size = document.createElement('span');
       size.className = 'entry-size';
       size.textContent = e.is_dir ? '' : formatSize(e.size);
-      li.append(name, size);
+      const mtime = document.createElement('span');
+      mtime.className = 'entry-mtime';
+      mtime.textContent = formatMtime(e.modified);
+      li.append(name, size, mtime);
       li.addEventListener('mousedown', (ev) => {
         if (onActivate) onActivate();
         // Shift+クリックの範囲選択でテキスト選択が走ると見た目が壊れるので抑止
@@ -190,8 +221,17 @@ export function createFilePane(rootEl, opts = {}) {
       });
       listEl.appendChild(li);
     });
+    renderColumns();
     const cur = listEl.children[cursor];
     if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+  }
+
+  /** ソート状態が変わったときに再ソート・再描画する（カーソル対象は維持）。 */
+  function refresh() {
+    const keep = entries[cursor] ? entries[cursor].path : null;
+    recompute(keep);
+    render();
+    notify();
   }
 
   /** ディレクトリを読み込んで表示する */
@@ -307,6 +347,17 @@ export function createFilePane(rootEl, opts = {}) {
     pathEl.hidden = false;
   }
 
+  // 列ヘッダのクリックでソート（app.js の共有状態を onSort 経由で更新）
+  if (columnsEl) {
+    columnsEl.querySelectorAll('.pane-col').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (onActivate) onActivate();
+        if (onSort) onSort(btn.dataset.sort);
+      });
+    });
+    renderColumns();
+  }
+
   // 一覧の余白で右クリックしたときは「対象なし」のメニューを出す
   if (listEl) {
     listEl.addEventListener('contextmenu', (ev) => {
@@ -343,6 +394,7 @@ export function createFilePane(rootEl, opts = {}) {
     enter,
     goParent,
     setShowHidden,
+    refresh,
     toggleSelection,
     selectAllEntries,
     clearSelection,
