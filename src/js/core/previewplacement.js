@@ -1,10 +1,10 @@
-// previewplacement.js — プレビューの開閉・配置(右/下)・分割比率の真実源 (FR-09)
+// previewplacement.js — プレビューの開閉と高さ比率の真実源 (FR-09)
 // theme.js と同型のファクトリ + localStorage 永続化。状態は #app の
 // data-preview 属性（既存の data-theme / data-mode と同じ流儀）に反映する。
+//
+// 配置は「下」固定（当面）。左右2ペインは横幅を使うため、下に置くのが自然。
+// 右配置は複雑さ（二重表示バグ）に見合わないため一旦廃止した。
 
-export const PLACEMENTS = Object.freeze(['right', 'bottom']);
-// 既定は下配置。2ペインは横幅を使うため、下に置くとペインの列幅を保てる。
-export const DEFAULT_PLACEMENT = 'bottom';
 export const DEFAULT_RATIO = 0.32;
 const RATIO_MIN = 0.15;
 const RATIO_MAX = 0.7;
@@ -18,17 +18,16 @@ function clampRatio(r) {
 }
 
 /**
- * プレビュー配置状態のファクトリ。
- * @param {{open?:boolean, placement?:string, ratio?:number}} [initial]
+ * プレビュー状態のファクトリ。
+ * @param {{open?:boolean, ratio?:number}} [initial]
  */
 export function createPreviewPlacement(initial = {}) {
   let open = Boolean(initial.open);
-  let placement = PLACEMENTS.includes(initial.placement) ? initial.placement : DEFAULT_PLACEMENT;
   let ratio = clampRatio(initial.ratio ?? DEFAULT_RATIO);
   const listeners = new Set();
 
   function state() {
-    return { open, placement, ratio };
+    return { open, ratio };
   }
   function emit() {
     const s = state();
@@ -59,23 +58,6 @@ export function createPreviewPlacement(initial = {}) {
       emit();
       return open;
     },
-    getPlacement() {
-      return placement;
-    },
-    setPlacement(next) {
-      const p = PLACEMENTS.includes(next) ? next : placement;
-      if (p !== placement) {
-        placement = p;
-        emit();
-      }
-      return placement;
-    },
-    /** 右 ⇄ 下 を切り替える */
-    togglePlacement() {
-      placement = placement === 'right' ? 'bottom' : 'right';
-      emit();
-      return placement;
-    },
     getRatio() {
       return ratio;
     },
@@ -100,15 +82,11 @@ export function createPreviewPlacement(initial = {}) {
 export function loadStoredPlacement(storage = safeStorage()) {
   try {
     const raw = storage && storage.getItem(STORAGE_KEY);
-    if (!raw) return { open: false, placement: DEFAULT_PLACEMENT, ratio: DEFAULT_RATIO };
+    if (!raw) return { open: false, ratio: DEFAULT_RATIO };
     const o = JSON.parse(raw);
-    return {
-      open: Boolean(o.open),
-      placement: PLACEMENTS.includes(o.placement) ? o.placement : DEFAULT_PLACEMENT,
-      ratio: clampRatio(o.ratio),
-    };
+    return { open: Boolean(o.open), ratio: clampRatio(o.ratio) };
   } catch {
-    return { open: false, placement: DEFAULT_PLACEMENT, ratio: DEFAULT_RATIO };
+    return { open: false, ratio: DEFAULT_RATIO };
   }
 }
 
@@ -118,11 +96,7 @@ export function storePlacement(state, storage = safeStorage()) {
     if (!storage) return;
     storage.setItem(
       STORAGE_KEY,
-      JSON.stringify({
-        open: Boolean(state.open),
-        placement: PLACEMENTS.includes(state.placement) ? state.placement : DEFAULT_PLACEMENT,
-        ratio: clampRatio(state.ratio),
-      }),
+      JSON.stringify({ open: Boolean(state.open), ratio: clampRatio(state.ratio) }),
     );
   } catch {
     // 永続化失敗は無視（プライベートモード等）

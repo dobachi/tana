@@ -802,16 +802,8 @@ body[data-mode='operation'] .mode-indicator {
   background: var(--border);
 }
 
-/* 右配置: サイドバー | ワークスペース | 区切り | プレビュー */
-#app[data-preview='right'] {
-  grid-template-columns: 220px 1fr 4px minmax(240px, 34%);
-  grid-template-areas:
-    'menubar   menubar    menubar   menubar'
-    'sidebar   workspace  pvdivider preview'
-    'statusbar statusbar  statusbar statusbar';
-}
-/* 下配置: ワークスペースの下にプレビュー */
-#app[data-preview='bottom'] {
+/* 配置は下固定: ワークスペースの下にプレビュー（当面、右配置は廃止） */
+#app[data-preview] {
   grid-template-rows: auto 1fr 4px minmax(140px, 34%) 26px;
   grid-template-areas:
     'menubar   menubar'

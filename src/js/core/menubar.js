@@ -5,13 +5,16 @@
 // 切り替え、localStorage に永続化する。既定は非表示。
 
 import { showMenu, closeMenu } from './menu.js';
+import { menuIndexForAccessKey } from './menu-nav.js';
 
 const VISIBLE_KEY = 'tana.menuBarVisible';
 
 let barEl = null;
-/** @type {Array<{label:string, items: any[]|(() => any[])}>} */
+/** @type {Array<{label:string, accessKey?:string, items: any[]|(() => any[])}>} */
 let menuDef = [];
 let openIndex = -1;
+// Alt から開いたときだけ一時的に表示している状態（永続化しない）。
+let temporarilyShown = false;
 
 /** Whether the menu bar is currently shown. */
 export function isMenuBarVisible() {
@@ -66,15 +69,82 @@ function itemsFor(menu) {
   return typeof menu.items === 'function' ? menu.items() : menu.items;
 }
 
-function openMenuAt(index) {
+/**
+ * ドロップダウンが閉じたときの後始末。別メニューへ切り替えただけの場合は
+ * openMenuAt が直後に openIndex を立て直すので、次のタスクで見て -1 のままなら
+ * 本当に閉じたと判断し、一時表示を元に戻す。
+ */
+function handleDropdownClosed() {
+  openIndex = -1;
+  syncOpenClass();
+  setTimeout(() => {
+    if (openIndex === -1 && temporarilyShown) {
+      temporarilyShown = false;
+      if (barEl) barEl.classList.add('hidden'); // 永続化はしない
+    }
+  }, 0);
+}
+
+/** 非表示なら一時的に表示する（永続化しない）。 */
+function revealTemporarily() {
+  if (!barEl || isMenuBarVisible()) return;
+  barEl.classList.remove('hidden');
+  temporarilyShown = true;
+}
+
+function openMenuAt(index, opts = {}) {
   if (!barEl) return;
   const btn = barEl.querySelectorAll('.menu-bar-item')[index];
   if (!btn) return;
   const rect = btn.getBoundingClientRect();
+  // showMenu が内部で前のメニューを閉じ、その onClose が openIndex を -1 に
+  // するので、index の設定は showMenu の後に行う。
+  showMenu(rect.left, rect.bottom, itemsFor(menuDef[index]), {
+    onClose: handleDropdownClosed,
+    focusFirst: opts.fromKeyboard === true,
+  });
   openIndex = index;
   syncOpenClass();
-  // Anchor the dropdown just under the menu button.
-  showMenu(rect.left, rect.bottom, itemsFor(menuDef[index]));
+}
+
+/**
+ * Alt 単押しで呼ばれる。メニューバーを（必要なら一時表示して）出し、先頭の
+ * メニューを開く。既に開いていれば閉じる。
+ */
+export function focusMenuBar() {
+  if (!barEl || !menuDef.length) return;
+  if (openIndex !== -1) {
+    closeMenu();
+    return;
+  }
+  revealTemporarily();
+  openMenuAt(0, { fromKeyboard: true });
+}
+
+/**
+ * Alt+文字。対応するメニューがあれば開いて true を返す。無ければ false。
+ * @param {string} key
+ */
+export function openMenuByAccessKey(key) {
+  if (!barEl || !menuDef.length) return false;
+  const index = menuIndexForAccessKey(menuDef, key);
+  if (index < 0) return false;
+  revealTemporarily();
+  openMenuAt(index, { fromKeyboard: true });
+  return true;
+}
+
+/** 開いているメニューの左右移動（←→）。 */
+export function moveOpenMenu(step) {
+  if (openIndex === -1 || !menuDef.length) return false;
+  const next = (openIndex + step + menuDef.length) % menuDef.length;
+  openMenuAt(next, { fromKeyboard: true });
+  return true;
+}
+
+/** メニューが開いているか（キー処理の分岐に使う）。 */
+export function isMenuOpen() {
+  return openIndex !== -1;
 }
 
 /**
@@ -93,6 +163,11 @@ export function initMenuBar(container, menus) {
     btn.className = 'menu-bar-item';
     btn.textContent = menu.label;
     btn.setAttribute('role', 'menuitem');
+    if (menu.accessKey) {
+      // 実際の Alt+文字処理は app.js。ここは表示/支援技術向けの情報のみ。
+      btn.setAttribute('aria-keyshortcuts', `Alt+${menu.accessKey}`);
+      btn.title = `Alt+${menu.accessKey}`;
+    }
 
     btn.addEventListener('click', () => {
       // Toggle: clicking the open menu closes it.

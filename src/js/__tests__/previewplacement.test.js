@@ -1,16 +1,15 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   createPreviewPlacement,
   loadStoredPlacement,
   storePlacement,
-  DEFAULT_PLACEMENT,
   DEFAULT_RATIO,
 } from '../core/previewplacement.js';
 
 describe('createPreviewPlacement', () => {
-  it('defaults to closed / default placement / default ratio', () => {
+  it('defaults to closed / default ratio', () => {
     const p = createPreviewPlacement();
-    expect(p.get()).toEqual({ open: false, placement: DEFAULT_PLACEMENT, ratio: DEFAULT_RATIO });
+    expect(p.get()).toEqual({ open: false, ratio: DEFAULT_RATIO });
     expect(p.isOpen()).toBe(false);
   });
 
@@ -25,24 +24,12 @@ describe('createPreviewPlacement', () => {
     expect(seen).toEqual([false, true, false, true]);
   });
 
-  it('togglePlacement flips right/bottom', () => {
-    const p = createPreviewPlacement({ placement: 'right' });
-    expect(p.togglePlacement()).toBe('bottom');
-    expect(p.togglePlacement()).toBe('right');
-  });
-
-  it('clamps ratio into range', () => {
+  it('clamps ratio into range, ignores invalid', () => {
     const p = createPreviewPlacement();
     expect(p.setRatio(0.01)).toBeCloseTo(0.15);
     expect(p.setRatio(0.99)).toBeCloseTo(0.7);
     expect(p.setRatio(0.4)).toBeCloseTo(0.4);
-    expect(p.setRatio('bad')).toBeCloseTo(0.4); // unchanged (invalid → default clamp)
-  });
-
-  it('rejects invalid placement, keeps current', () => {
-    const p = createPreviewPlacement({ placement: 'bottom' });
-    expect(p.setPlacement('nonsense')).toBe('bottom');
-    expect(p.setPlacement('right')).toBe('right');
+    expect(p.setRatio('bad')).toBeCloseTo(0.4); // unchanged
   });
 });
 
@@ -57,29 +44,22 @@ describe('loadStoredPlacement / storePlacement', () => {
   }
 
   it('returns defaults when nothing stored', () => {
-    expect(loadStoredPlacement(memStorage())).toEqual({
-      open: false,
-      placement: DEFAULT_PLACEMENT,
-      ratio: DEFAULT_RATIO,
-    });
+    expect(loadStoredPlacement(memStorage())).toEqual({ open: false, ratio: DEFAULT_RATIO });
   });
 
   it('round-trips a stored value', () => {
     const s = memStorage();
-    storePlacement({ open: true, placement: 'bottom', ratio: 0.5 }, s);
-    expect(loadStoredPlacement(s)).toEqual({ open: true, placement: 'bottom', ratio: 0.5 });
+    storePlacement({ open: true, ratio: 0.5 }, s);
+    expect(loadStoredPlacement(s)).toEqual({ open: true, ratio: 0.5 });
   });
 
   it('recovers from corrupt / invalid stored data', () => {
     expect(loadStoredPlacement(memStorage({ 'tana.preview': 'not json' }))).toEqual({
       open: false,
-      placement: DEFAULT_PLACEMENT,
       ratio: DEFAULT_RATIO,
     });
-    const s = memStorage({ 'tana.preview': JSON.stringify({ placement: 'x', ratio: 9 }) });
-    const loaded = loadStoredPlacement(s);
-    expect(loaded.placement).toBe(DEFAULT_PLACEMENT);
-    expect(loaded.ratio).toBeCloseTo(0.7); // 9 clamped
+    const s = memStorage({ 'tana.preview': JSON.stringify({ ratio: 9 }) });
+    expect(loadStoredPlacement(s).ratio).toBeCloseTo(0.7); // 9 clamped
   });
 
   it('tolerates a throwing storage', () => {
@@ -92,10 +72,6 @@ describe('loadStoredPlacement / storePlacement', () => {
       },
     };
     expect(() => storePlacement({ open: true }, bad)).not.toThrow();
-    expect(loadStoredPlacement(bad)).toEqual({
-      open: false,
-      placement: DEFAULT_PLACEMENT,
-      ratio: DEFAULT_RATIO,
-    });
+    expect(loadStoredPlacement(bad)).toEqual({ open: false, ratio: DEFAULT_RATIO });
   });
 });

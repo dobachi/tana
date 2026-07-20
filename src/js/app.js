@@ -22,8 +22,16 @@ import {
 import { createToast } from './core/toast.js';
 import { checkForUpdates } from './core/updater.js';
 import { resolveInputPath } from './core/pathnav.js';
-import { initMenuBar, toggleMenuBar } from './core/menubar.js';
+import {
+  initMenuBar,
+  toggleMenuBar,
+  focusMenuBar,
+  openMenuByAccessKey,
+  moveOpenMenu,
+  isMenuOpen,
+} from './core/menubar.js';
 import { showMenu } from './core/menu.js';
+import { createAltTap } from './core/menu-nav.js';
 import { openSettings, closeSettings, isSettingsOpen } from './core/settings.js';
 import { createFileOps } from './core/fileops.js';
 import { createConflictDialog } from './core/conflictdialog.js';
@@ -79,12 +87,16 @@ const preview = createPreview({
   getInfoContainer: () => document.getElementById('preview-info'),
 });
 
+// Alt 単押しでメニューバーを開く（Fude と同じ操作感）。他キーを挟まず Alt を
+// 押して離したときだけ発火する状態機械。
+const altTap = createAltTap({ onTap: () => focusMenuBar() });
+
 /** プレビューの開閉/配置を DOM と同期し、永続化する。 */
 function syncPreviewPlacement(state) {
   const app = document.getElementById('app');
   if (!app) return;
   if (state.open) {
-    app.dataset.preview = state.placement;
+    app.dataset.preview = 'bottom'; // 配置は下固定（当面）
     const fp = activeFilePane();
     preview.setTarget(fp ? fp.getCursorEntry() : null);
     preview.open();
@@ -280,7 +292,8 @@ function toggleSettings() {
 function buildMenuDefinition() {
   return [
     {
-      label: 'ファイル',
+      label: 'ファイル(F)',
+      accessKey: 'F',
       items: () => [
         { label: 'お気に入りに現在地を追加', shortcut: 'Ctrl+D', action: addCurrentToFavorites },
         { separator: true },
@@ -288,20 +301,13 @@ function buildMenuDefinition() {
       ],
     },
     {
-      label: '表示',
+      label: '表示(V)',
+      accessKey: 'V',
       items: () => [
         {
           label: previewPlacement.isOpen() ? '✓ プレビュー' : 'プレビュー',
           shortcut: 'Ctrl+P',
           action: () => previewPlacement.toggle(),
-        },
-        {
-          label: `プレビュー配置: ${previewPlacement.getPlacement() === 'right' ? '右' : '下'}`,
-          shortcut: 'Ctrl+Shift+P',
-          action: () => {
-            if (!previewPlacement.isOpen()) previewPlacement.open();
-            previewPlacement.togglePlacement();
-          },
         },
         { separator: true },
         {
@@ -329,7 +335,8 @@ function buildMenuDefinition() {
       ],
     },
     {
-      label: 'ヘルプ',
+      label: 'ヘルプ(H)',
+      accessKey: 'H',
       items: () => [
         { label: 'ショートカット一覧', shortcut: '?', action: () => help.toggle() },
         { separator: true },
@@ -476,6 +483,22 @@ function isEditableTarget(t) {
 }
 
 function onKeydown(e) {
+  // メニューが開いている間は ←→ で隣のメニューへ移動
+  if (isMenuOpen() && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+    if (moveOpenMenu(e.key === 'ArrowRight' ? 1 : -1)) {
+      e.preventDefault();
+      return;
+    }
+  }
+  // Alt+文字 で対応するメニューを直接開く（Alt 単押しは altTap 側で処理）。
+  // Tana はエディタを持たないので Alt+文字は安全に奪える。
+  if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.length === 1) {
+    if (openMenuByAccessKey(e.key)) {
+      e.preventDefault();
+      return;
+    }
+  }
+
   // 安全/操作モード切替: Ctrl+Shift+Space
   if (e.ctrlKey && e.shiftKey && (e.code === 'Space' || e.key === ' ')) {
     e.preventDefault();
@@ -536,14 +559,7 @@ function onKeydown(e) {
     if (fp) fp.selectAllEntries();
     return;
   }
-  // プレビュー配置切替: Ctrl+Shift+P (FR-09)
-  if (e.ctrlKey && e.shiftKey && !e.altKey && (e.code === 'KeyP' || e.key.toLowerCase() === 'p')) {
-    e.preventDefault();
-    if (!previewPlacement.isOpen()) previewPlacement.open();
-    previewPlacement.togglePlacement();
-    return;
-  }
-  // プレビュー開閉: Ctrl+P (FR-09)
+  // プレビュー開閉: Ctrl+P (FR-09)。配置は下固定。
   if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === 'KeyP' || e.key.toLowerCase() === 'p')) {
     e.preventDefault();
     previewPlacement.toggle();
@@ -650,6 +666,11 @@ async function init() {
   panes.subscribe(syncActivePane);
   previewPlacement.subscribe(syncPreviewPlacement);
   document.addEventListener('keydown', onKeydown);
+  // Alt 単押し検出（keydown/keyup を素通しで監視）。Alt を押している間に他キーが
+  // 来たら単押しではないと判断。フォーカスが外れた間の押下は無効（Alt+Tab 対策）。
+  window.addEventListener('keydown', (e) => altTap.keydown(e), true);
+  window.addEventListener('keyup', (e) => altTap.keyup(e), true);
+  window.addEventListener('blur', () => altTap.reset());
 
   // お気に入りサイドバー
   favView = createFavoritesView({
