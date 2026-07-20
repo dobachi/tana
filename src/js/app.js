@@ -40,6 +40,7 @@ import { createFavoritesView } from './core/favoritesview.js';
 import { createHelp } from './core/help.js';
 import {
   homeDir,
+  appVersion,
   getCliPath,
   copyPath,
   movePath,
@@ -108,6 +109,9 @@ function syncPreviewPlacement(state) {
 
 // 隠しファイル表示（両ペイン共通, FR-15）
 let showHidden = false;
+
+// アプリのバージョン（起動時に取得。ヘルプ表示・更新チェックのメッセージで使う）
+let appVer = '';
 
 function paneEl(pane) {
   return document.getElementById(pane === PANE.LEFT ? 'pane-left' : 'pane-right');
@@ -337,11 +341,13 @@ function buildMenuDefinition() {
       label: 'ヘルプ(H)',
       accessKey: 'H',
       items: () => [
+        { label: `Tana${appVer ? ' v' + appVer : ''}`, disabled: true },
+        { separator: true },
         { label: 'ショートカット一覧', shortcut: '?', action: () => help.toggle() },
         { separator: true },
         {
           label: '更新を確認',
-          action: () => checkForUpdates({ manual: true, notify: toast }),
+          action: () => checkForUpdates({ manual: true, notify: toast, currentVersion: appVer }),
         },
       ],
     },
@@ -667,6 +673,13 @@ function onKeydown(e) {
 }
 
 async function init() {
+  // バージョンを取得（デスクトップのみ。失敗しても続行）。
+  try {
+    appVer = (await appVersion()) || '';
+  } catch {
+    appVer = '';
+  }
+  help.setVersion(appVer);
   theme.subscribe(syncTheme);
   fontScale.subscribe(syncFontScale);
   safemode.subscribe(syncMode);
@@ -733,6 +746,12 @@ async function init() {
   const updateBtn = document.getElementById('check-updates');
   if (updateBtn) {
     updateBtn.addEventListener('click', () => checkForUpdates({ manual: true, notify: toast }));
+  }
+
+  // プレビューを閉じる（マウス操作用の ✕ ボタン）
+  const previewCloseBtn = document.getElementById('preview-close');
+  if (previewCloseBtn) {
+    previewCloseBtn.addEventListener('click', () => previewPlacement.close());
   }
 
   // 起動ディレクトリ: CLI 引数 > ホーム > カレント

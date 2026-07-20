@@ -11,7 +11,7 @@ import { isDesktop } from '../backend.js';
  * @param {{isDesktop: boolean, update: object|null, error: string|null}} state
  * @returns {{kind: string, type?: string, message?: string, version?: string}}
  */
-export function describeManualCheck({ isDesktop: desktop, update, error }) {
+export function describeManualCheck({ isDesktop: desktop, update, error, currentVersion }) {
   if (!desktop) {
     return {
       kind: 'unsupported',
@@ -25,7 +25,8 @@ export function describeManualCheck({ isDesktop: desktop, update, error }) {
   if (update) {
     return { kind: 'update', version: update.version };
   }
-  return { kind: 'latest', type: 'info', message: '最新版を使用しています。' };
+  const ver = currentVersion ? ` (v${currentVersion})` : '';
+  return { kind: 'latest', type: 'info', message: `最新版を使用しています${ver}。` };
 }
 
 /**
@@ -35,7 +36,7 @@ export function describeManualCheck({ isDesktop: desktop, update, error }) {
  *   リリース未公開のたびにトーストが出ると邪魔になるため。
  */
 export async function checkForUpdates(opts = {}) {
-  const { manual = false, notify } = opts;
+  const { manual = false, notify, currentVersion = '' } = opts;
 
   if (!isDesktop()) {
     if (manual) {
@@ -62,7 +63,7 @@ export async function checkForUpdates(opts = {}) {
     if (error) console.info('更新チェックをスキップ:', error);
     return;
   }
-  const r = describeManualCheck({ isDesktop: true, update: null, error });
+  const r = describeManualCheck({ isDesktop: true, update: null, error, currentVersion });
   notify?.(r.message);
 }
 

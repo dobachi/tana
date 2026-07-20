@@ -32,6 +32,17 @@ describe('describeManualCheck', () => {
     expect(r.type).toBe('info');
     expect(r.message).toContain('最新');
   });
+
+  it('現在バージョンがあれば最新メッセージに含める', () => {
+    const r = describeManualCheck({
+      isDesktop: true,
+      update: null,
+      error: null,
+      currentVersion: '0.4.1',
+    });
+    expect(r.kind).toBe('latest');
+    expect(r.message).toContain('v0.4.1');
+  });
 });
 
 describe('checkForUpdates（ブラウザ単体）', () => {

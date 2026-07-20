@@ -84,6 +84,12 @@ fn home_dir() -> Option<String> {
     dirs::home_dir().map(|p| p.to_string_lossy().to_string())
 }
 
+/// アプリのバージョン（Cargo.toml の version）を返す Tauri コマンド。
+#[tauri::command]
+fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 /// 親ディレクトリのパスを返す Tauri コマンド（ルートでは None）。
 #[tauri::command]
 fn parent_dir(path: String) -> Option<String> {
@@ -409,7 +415,8 @@ pub fn run() {
             delete_permanent,
             rename_path,
             make_dir,
-            read_preview
+            read_preview,
+            app_version
         ])
         .run(tauri::generate_context!())
         .expect("error while running tana application");
@@ -638,6 +645,12 @@ mod tests {
     }
 
     // ── プレビュー (FR-09) ──────────────────────────────
+
+    #[test]
+    fn app_version_matches_cargo() {
+        assert_eq!(app_version(), env!("CARGO_PKG_VERSION"));
+        assert!(!app_version().is_empty());
+    }
 
     #[test]
     fn clamp_max_bytes_caps_at_ceiling() {

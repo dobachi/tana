@@ -71,6 +71,7 @@ export const SHORTCUTS = [
  */
 export function createHelp(doc = typeof document !== 'undefined' ? document : null) {
   let overlay = null;
+  let version = '';
 
   function onKey(e) {
     if (e.key === 'Escape') {
@@ -99,6 +100,11 @@ export function createHelp(doc = typeof document !== 'undefined' ? document : nu
     title.className = 'help-title';
     title.textContent = 'キーボードショートカット';
     box.appendChild(title);
+
+    const ver = doc.createElement('p');
+    ver.className = 'help-version';
+    ver.textContent = `Tana${version ? ' v' + version : ''}`;
+    box.appendChild(ver);
 
     for (const sec of SHORTCUTS) {
       const h = doc.createElement('h3');
@@ -136,5 +142,13 @@ export function createHelp(doc = typeof document !== 'undefined' ? document : nu
     else open();
   }
 
-  return { open, close, toggle, isOpen: () => overlay !== null };
+  return {
+    open,
+    close,
+    toggle,
+    isOpen: () => overlay !== null,
+    setVersion: (v) => {
+      version = v || '';
+    },
+  };
 }

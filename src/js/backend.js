@@ -57,6 +57,11 @@ export function assetUrl(path) {
   return path;
 }
 
+/** アプリのバージョンを取得する (app_version コマンド)。Tauri 不在時は null */
+export async function appVersion() {
+  return invoke('app_version');
+}
+
 /** ホームディレクトリのパスを取得する (home_dir コマンド) */
 export async function homeDir() {
   return invoke('home_dir');
