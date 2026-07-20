@@ -14,11 +14,14 @@ seed_sandbox() {
   # 使い捨てサンプル（コピー/移動/削除を安全に試す）
   rm -rf "$SANDBOX"
   mkdir -p "$SANDBOX/docs" "$SANDBOX/src" "$SANDBOX/work" "$SANDBOX/空フォルダ"
-  echo "# サンプル README" >"$SANDBOX/README.md"
+  printf '# サンプル README\n\n**Markdown プレビュー**の確認用。\n\n- 箇条書き\n- `コード`\n\n```js\nconsole.log("hi");\n```\n' >"$SANDBOX/README.md"
   echo "メモ" >"$SANDBOX/docs/note.txt"
   printf 'console.log("hi");\n' >"$SANDBOX/src/index.js"
   head -c 2048 /dev/zero >"$SANDBOX/work/blob.bin" 2>/dev/null || true
   echo "secret" >"$SANDBOX/.hidden"
+  # 画像プレビュー確認用のサンプル画像（リポジトリ同梱）
+  cp docker/fixtures/sample.png "$SANDBOX/sample.png" 2>/dev/null || true
+  cp docker/fixtures/circle.png "$SANDBOX/work/circle.png" 2>/dev/null || true
   echo "==> サンドボックスを用意: $SANDBOX"
 }
 
