@@ -44,6 +44,8 @@ export const SHORTCUTS = [
   {
     section: '表示',
     items: [
+      ['Ctrl + P', 'プレビューの表示/非表示'],
+      ['Ctrl + Shift + P', 'プレビューの配置切替（右 ⇄ 下）'],
       ['Ctrl + H', '隠しファイルの表示/非表示'],
       ['Ctrl + Shift + B', 'メニューバーを隠す/戻す'],
       ['Ctrl + ,', '設定を開く（テーマ切替はここ、または表示メニュー）'],

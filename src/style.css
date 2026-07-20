@@ -722,3 +722,99 @@ body[data-mode='operation'] .toast {
 body[data-mode='operation'] .mode-indicator {
   color: var(--accent-op);
 }
+
+/* ===== プレビュー (FR-09) ===== */
+/* 既定（data-preview なし）は区切り・本体を隠す。 */
+#preview,
+.preview-divider {
+  display: none;
+}
+#app[data-preview] #preview {
+  display: block;
+  grid-area: preview;
+  overflow: auto;
+  background: var(--bg-pane);
+  border-left: 1px solid var(--border);
+}
+#app[data-preview='bottom'] #preview {
+  border-left: none;
+  border-top: 1px solid var(--border);
+}
+#app[data-preview] .preview-divider {
+  display: block;
+  grid-area: pvdivider;
+  background: var(--border);
+}
+
+/* 右配置: サイドバー | ワークスペース | 区切り | プレビュー */
+#app[data-preview='right'] {
+  grid-template-columns: 220px 1fr 4px minmax(240px, 34%);
+  grid-template-areas:
+    'menubar   menubar    menubar   menubar'
+    'sidebar   workspace  pvdivider preview'
+    'statusbar statusbar  statusbar statusbar';
+}
+/* 下配置: ワークスペースの下にプレビュー */
+#app[data-preview='bottom'] {
+  grid-template-rows: auto 1fr 4px minmax(140px, 34%) 26px;
+  grid-template-areas:
+    'menubar   menubar'
+    'sidebar   workspace'
+    'sidebar   pvdivider'
+    'sidebar   preview'
+    'statusbar statusbar';
+}
+
+.preview-body {
+  padding: 10px 12px;
+  color: var(--fg);
+  font-size: 0.92em;
+}
+.preview-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+.preview-truncated {
+  margin: 8px 0 0;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+}
+.preview-image {
+  display: flex;
+  justify-content: center;
+}
+.preview-image img {
+  max-width: 100%;
+  height: auto;
+}
+.preview-meta {
+  color: var(--fg);
+}
+.preview-meta-name {
+  font-weight: 600;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+.preview-meta-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 0;
+  font-size: 0.9em;
+}
+.preview-meta-list dt {
+  color: var(--fg-dim);
+}
+.preview-meta-list dd {
+  margin: 0;
+  word-break: break-all;
+}
+.preview-meta-note {
+  margin: 10px 0 0;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+}

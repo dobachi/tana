@@ -37,6 +37,26 @@ export async function parentDir(path) {
   return invoke('parent_dir', { path });
 }
 
+/** プレビュー用データを取得する (read_preview コマンド, FR-09)。Tauri 不在時は null */
+export async function readPreview(path, maxBytes) {
+  return invoke('read_preview', { path, maxBytes });
+}
+
+/**
+ * ファイルパスを webview で表示可能な asset URL に変換する（画像プレビュー用）。
+ * Tauri 不在（テスト/ブラウザ）ではパスをそのまま返す。
+ */
+export function assetUrl(path) {
+  try {
+    if (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) {
+      return window.__TAURI__.core.convertFileSrc(path);
+    }
+  } catch {
+    // fall through
+  }
+  return path;
+}
+
 /** ホームディレクトリのパスを取得する (home_dir コマンド) */
 export async function homeDir() {
   return invoke('home_dir');

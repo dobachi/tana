@@ -13,6 +13,12 @@ import {
   fontScaleAction,
 } from './core/fontscale.js';
 import { createFilePane } from './core/filepane.js';
+import { createPreview } from './core/preview.js';
+import {
+  createPreviewPlacement,
+  loadStoredPlacement,
+  storePlacement,
+} from './core/previewplacement.js';
 import { createToast } from './core/toast.js';
 import { checkForUpdates } from './core/updater.js';
 import { resolveInputPath } from './core/pathnav.js';
@@ -37,6 +43,8 @@ import {
   makeDir,
   confirmDialog,
   isDesktop,
+  readPreview,
+  assetUrl,
 } from './backend.js';
 
 const safemode = createSafeMode(MODE.SAFE);
@@ -62,6 +70,29 @@ const fileOps = createFileOps({
 // 各ペインの DOM 要素とファイルペイン・コントローラ
 const filePanes = { left: null, right: null };
 let favView = null;
+
+// プレビュー (FR-09): 配置状態の真実源 + コントローラ
+const previewPlacement = createPreviewPlacement(loadStoredPlacement());
+const preview = createPreview({
+  backend: { readPreview, assetUrl },
+  getContainer: () => document.getElementById('preview-body'),
+});
+
+/** プレビューの開閉/配置を DOM と同期し、永続化する。 */
+function syncPreviewPlacement(state) {
+  const app = document.getElementById('app');
+  if (!app) return;
+  if (state.open) {
+    app.dataset.preview = state.placement;
+    const fp = activeFilePane();
+    preview.setTarget(fp ? fp.getCursorEntry() : null);
+    preview.open();
+  } else {
+    delete app.dataset.preview;
+    preview.close();
+  }
+  storePlacement(state);
+}
 
 // 隠しファイル表示（両ペイン共通, FR-15）
 let showHidden = false;
@@ -259,6 +290,20 @@ function buildMenuDefinition() {
       label: '表示',
       items: () => [
         {
+          label: previewPlacement.isOpen() ? '✓ プレビュー' : 'プレビュー',
+          shortcut: 'Ctrl+P',
+          action: () => previewPlacement.toggle(),
+        },
+        {
+          label: `プレビュー配置: ${previewPlacement.getPlacement() === 'right' ? '右' : '下'}`,
+          shortcut: 'Ctrl+Shift+P',
+          action: () => {
+            if (!previewPlacement.isOpen()) previewPlacement.open();
+            previewPlacement.togglePlacement();
+          },
+        },
+        { separator: true },
+        {
           label: showHidden ? '✓ 隠しファイルを表示' : '隠しファイルを表示',
           shortcut: 'Ctrl+H',
           action: toggleHidden,
@@ -327,6 +372,9 @@ function syncActivePane(active) {
   const el = paneEl(active);
   if (el && document.activeElement !== el) el.focus();
   updateStatus();
+  // プレビューはアクティブペインのカーソルに追従する
+  const fp = filePanes[active];
+  preview.setTarget(fp ? fp.getCursorEntry() : null);
 }
 
 function updateStatus(info) {
@@ -487,6 +535,19 @@ function onKeydown(e) {
     if (fp) fp.selectAllEntries();
     return;
   }
+  // プレビュー配置切替: Ctrl+Shift+P (FR-09)
+  if (e.ctrlKey && e.shiftKey && !e.altKey && (e.code === 'KeyP' || e.key.toLowerCase() === 'p')) {
+    e.preventDefault();
+    if (!previewPlacement.isOpen()) previewPlacement.open();
+    previewPlacement.togglePlacement();
+    return;
+  }
+  // プレビュー開閉: Ctrl+P (FR-09)
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === 'KeyP' || e.key.toLowerCase() === 'p')) {
+    e.preventDefault();
+    previewPlacement.toggle();
+    return;
+  }
   // 文字サイズ: Ctrl++ / Ctrl+- / Ctrl+0 (NFR-U5)
   const fsAction = fontScaleAction(e);
   if (fsAction) {
@@ -586,6 +647,7 @@ async function init() {
   fontScale.subscribe(syncFontScale);
   safemode.subscribe(syncMode);
   panes.subscribe(syncActivePane);
+  previewPlacement.subscribe(syncPreviewPlacement);
   document.addEventListener('keydown', onKeydown);
 
   // お気に入りサイドバー
@@ -615,7 +677,10 @@ async function init() {
       onNavigate: (value, o) => navigatePane(p, value, o),
       onContextMenu: (info) => showEntryMenu(p, info),
       onChange: (info) => {
-        if (p === panes.getActive()) updateStatus(info);
+        if (p === panes.getActive()) {
+          updateStatus(info);
+          preview.setTarget(info.entry); // カーソル追従（閉じていれば記録のみ）
+        }
       },
     });
     el.addEventListener('mousedown', () => panes.setActive(p));
