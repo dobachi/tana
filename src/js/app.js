@@ -28,9 +28,8 @@ import {
   focusMenuBar,
   openMenuByAccessKey,
   moveOpenMenu,
-  isMenuOpen,
 } from './core/menubar.js';
-import { showMenu } from './core/menu.js';
+import { showMenu, isMenuVisible } from './core/menu.js';
 import { createAltTap } from './core/menu-nav.js';
 import { openSettings, closeSettings, isSettingsOpen } from './core/settings.js';
 import { createFileOps } from './core/fileops.js';
@@ -483,12 +482,20 @@ function isEditableTarget(t) {
 }
 
 function onKeydown(e) {
-  // メニューが開いている間は ←→ で隣のメニューへ移動
-  if (isMenuOpen() && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
-    if (moveOpenMenu(e.key === 'ArrowRight' ? 1 : -1)) {
-      e.preventDefault();
+  // ドロップダウンが開いている間はファイラのキー操作をしない（カーソルが動く
+  // 等の漏れを防ぐ）。menu.js が ↑↓/Home/End/Enter/Esc を、ここが ←→（隣
+  // メニュー）と Alt+文字（隣メニューへ切替）を担当する。判定は menu.js の
+  // 実ドロップダウン有無を唯一の真実源にする。
+  if (isMenuVisible()) {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      if (moveOpenMenu(e.key === 'ArrowRight' ? 1 : -1)) e.preventDefault();
       return;
     }
+    if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.length === 1) {
+      if (openMenuByAccessKey(e.key)) e.preventDefault();
+      return;
+    }
+    return;
   }
   // Alt+文字 で対応するメニューを直接開く（Alt 単押しは altTap 側で処理）。
   // Tana はエディタを持たないので Alt+文字は安全に奪える。

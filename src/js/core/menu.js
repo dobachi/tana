@@ -9,6 +9,11 @@ let menuEl = null;
 let cleanup = null;
 let onCloseCallback = null;
 
+/** ドロップダウンが実際に表示されているか（キー処理の唯一の真実源）。 */
+export function isMenuVisible() {
+  return menuEl != null;
+}
+
 export function closeMenu() {
   if (cleanup) {
     cleanup();
@@ -90,47 +95,33 @@ export function showMenu(x, y, items, opts = {}) {
     if (el && el.focus) el.focus();
   };
   const currentIndex = () => buttons().findIndex((el) => el === document.activeElement);
+  // ↑↓Home/End/Esc のみ扱う。ファイラへの漏れは app.js 側が isMenuVisible()
+  // を見て早期 return することで防ぐ（stopPropagation に依存しない）。
+  // Enter/Space はボタンの既定動作で項目が実行される。←→ は app.js（隣メニュー）。
   const onKey = (e) => {
     if (!menuEl) return;
-    // メニューが開いている間のキーはアプリ側（ファイラのカーソル移動など）へ
-    // 渡さない。キャプチャで先取りして伝播を止める。Enter/Space はボタンの
-    // 既定動作で項目を実行させたいので preventDefault はしない。
     switch (e.key) {
       case 'Escape':
         e.preventDefault();
-        e.stopPropagation();
         closeMenu();
         return;
       case 'ArrowDown':
         e.preventDefault();
-        e.stopPropagation();
         focusIndex(nextEnabledIndex(items, currentIndex(), 1));
         return;
       case 'ArrowUp':
         e.preventDefault();
-        e.stopPropagation();
         focusIndex(nextEnabledIndex(items, currentIndex(), -1));
         return;
       case 'Home':
         e.preventDefault();
-        e.stopPropagation();
         focusIndex(edgeEnabledIndex(items, 'first'));
         return;
       case 'End':
         e.preventDefault();
-        e.stopPropagation();
         focusIndex(edgeEnabledIndex(items, 'last'));
         return;
-      case 'Enter':
-      case ' ':
-        e.stopPropagation(); // 実行はボタンの既定動作に任せる
-        return;
-      case 'ArrowLeft':
-      case 'ArrowRight':
-        // 隣メニューへの移動は menubar 側（app.js）で処理するため素通し
-        return;
       default:
-        e.stopPropagation(); // その他のキーもファイラへ渡さない
         break;
     }
   };
@@ -138,13 +129,12 @@ export function showMenu(x, y, items, opts = {}) {
   // Defer so the opening right-click doesn't immediately close it.
   setTimeout(() => document.addEventListener('mousedown', onDocMouseDown), 0);
   if (opts.focusFirst) focusIndex(edgeEnabledIndex(items, 'first'));
-  // キャプチャで登録して、document バブルの app.js より先に処理する。
-  document.addEventListener('keydown', onKey, true);
+  document.addEventListener('keydown', onKey);
   window.addEventListener('blur', closeMenu);
   document.addEventListener('scroll', onScroll, true);
   cleanup = () => {
     document.removeEventListener('mousedown', onDocMouseDown);
-    document.removeEventListener('keydown', onKey, true);
+    document.removeEventListener('keydown', onKey);
     window.removeEventListener('blur', closeMenu);
     document.removeEventListener('scroll', onScroll, true);
   };
