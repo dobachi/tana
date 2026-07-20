@@ -1,7 +1,7 @@
 # Tana (棚) - プレビュー機能 設計ドキュメント (FR-09)
 
 > 最終更新: 2026-07-20
-> ステータス: ドラフト(未実装)
+> ステータス: 段階1(基盤)・段階2(画像/テキスト/メタ)・段階3(Markdown)実装済み。markdown-it は esbuild コード分割で遅延ロード、CSP 設定済み
 > 親ドキュメント: [DESIGN.md §3.6](DESIGN.md) / 要求: [REQUIREMENTS.md](REQUIREMENTS.md) FR-09, Q2
 
 ---

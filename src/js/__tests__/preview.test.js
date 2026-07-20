@@ -40,6 +40,7 @@ function deferred() {
 function setup(over = {}) {
   const container = { innerHTML: 'x' };
   const R = makeRenderers();
+  const M = { renderMarkdown: vi.fn() };
   const scheduler = makeScheduler();
   const readPreview = over.readPreview || vi.fn(async () => ({ text: 'hi', sniff: [104, 105] }));
   const assetUrl = vi.fn((p) => `asset://${p}`);
@@ -47,13 +48,15 @@ function setup(over = {}) {
     backend: { readPreview, assetUrl },
     getContainer: () => container,
     loadRenderers: async () => R,
+    loadMarkdown: async () => M,
     doc: {},
     scheduler,
   });
-  return { preview, R, scheduler, readPreview, assetUrl, container };
+  return { preview, R, M, scheduler, readPreview, assetUrl, container };
 }
 
-const textFile = { name: 'a.md', path: '/p/a.md', size: 10, is_dir: false };
+const textFile = { name: 'a.txt', path: '/p/a.txt', size: 10, is_dir: false };
+const mdFile = { name: 'a.md', path: '/p/a.md', size: 10, is_dir: false };
 const imgFile = { name: 'p.png', path: '/p/p.png', size: 999, is_dir: false };
 const dir = { name: 'd', path: '/p/d', size: 4096, is_dir: true };
 
@@ -74,8 +77,18 @@ describe('createPreview — routing', () => {
     preview.open();
     await Promise.resolve();
     await Promise.resolve();
-    expect(readPreview).toHaveBeenCalledWith('/p/a.md', expect.any(Number));
+    expect(readPreview).toHaveBeenCalledWith('/p/a.txt', expect.any(Number));
     expect(R.renderText).toHaveBeenCalledTimes(1);
+  });
+
+  it('markdown → loads markdown renderer (lazy), not renderText', async () => {
+    const { preview, R, M, readPreview } = setup();
+    preview.setTarget(mdFile);
+    preview.open();
+    await flushAll();
+    expect(readPreview).toHaveBeenCalledWith('/p/a.md', expect.any(Number));
+    expect(M.renderMarkdown).toHaveBeenCalledTimes(1);
+    expect(R.renderText).not.toHaveBeenCalled();
   });
 
   it('image → renderImage with asset URL, no read', async () => {
@@ -102,16 +115,16 @@ describe('createPreview — generation token', () => {
     const calls = [];
     const readPreview = vi.fn((path) => {
       calls.push(path);
-      return path.endsWith('A.md') ? dA.promise : dB.promise;
+      return path.endsWith('A.txt') ? dA.promise : dB.promise;
     });
     const { preview, R, scheduler } = setup({ readPreview });
 
-    preview.setTarget({ name: 'A.md', path: '/p/A.md', size: 5, is_dir: false });
+    preview.setTarget({ name: 'A.txt', path: '/p/A.txt', size: 5, is_dir: false });
     preview.open(); // loads A immediately (gen 1)
     await flushAll();
 
     // move cursor to B while A is still pending
-    preview.setTarget({ name: 'B.md', path: '/p/B.md', size: 5, is_dir: false });
+    preview.setTarget({ name: 'B.txt', path: '/p/B.txt', size: 5, is_dir: false });
     scheduler.flush(); // debounced load B (gen 2)
     await flushAll();
 

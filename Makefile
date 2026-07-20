@@ -90,7 +90,7 @@ format-check:
 check: format-check lint test build-frontend
 
 clean:
-	rm -rf dist/bundle.js dist/index.html dist/style.css
+	rm -rf dist/*.js dist/index.html dist/style.css
 	cd src-tauri && cargo clean
 
 # ---- Docker 動作確認（安全・隔離） ----

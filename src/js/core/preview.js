@@ -28,6 +28,7 @@ export function createPreview(deps) {
     backend,
     getContainer,
     loadRenderers = () => import('../features/preview/render.js'),
+    loadMarkdown = () => import('../features/preview/markdown.js'),
     doc = typeof document !== 'undefined' ? document : null,
     debounceMs = LIMITS.debounceMs,
     limits = LIMITS,
@@ -95,6 +96,10 @@ export function createPreview(deps) {
       const kind2 = detectKind(entry, data.sniff, limits);
       if (kind2 === KIND.BINARY) {
         R.renderMeta(container, { entry, kind: KIND.BINARY, note: NOTE[KIND.BINARY] }, doc);
+      } else if (kind2 === KIND.MARKDOWN) {
+        const M = await loadMarkdown(); // 遅延: markdown-it は .md のときだけ読む
+        if (gen !== generation) return;
+        M.renderMarkdown(container, { data }, doc);
       } else {
         R.renderText(container, { data }, doc);
       }
