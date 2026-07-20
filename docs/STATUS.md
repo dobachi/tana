@@ -168,6 +168,9 @@ make docker-check  # CI相当チェック
 4. M2 着手: **FR-07 Places 検出**（OS別、`places` モジュール新設 + Rust 側 `places.rs` 切り出し）→ **FR-08 タブ** → **FR-12 パス入力/パンくず**。
 5. モジュールを増やすたびに `__tests__` と Rust `#[cfg(test)]` を追加し、`make check` を green に保つ。コードを増やすにつれ DESIGN.md §2.2 の目標構成へ寄せる。
 
+### バックログ（設計検討済み・未着手）
+- **詳細表示＆ソート**（列表示: 名前/サイズ/更新日時、列ヘッダクリック＆キーボードでソート）: 設計・ベストプラクティス調査は [DETAIL-VIEW-SORT.md](DETAIL-VIEW-SORT.md)。要点は `core/sort.js`(純粋・Intl.Collator 自然順・フォルダ先頭・安定ソート) + 列ヘッダ▲▼ + `s` プレフィックスのキーボードソート + 表示メニュー。
+
 ---
 
 ## 8. 更新ルール
