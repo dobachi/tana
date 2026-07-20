@@ -1,6 +1,6 @@
-// features/preview/render.js — 形式別レンダラ (FR-09 段階2: 画像/テキスト/メタ)
+// features/preview/render.js — 形式別レンダラ + ファイル情報パネル (FR-09)
 // 遅延ロードされる（NFR-P2）。DOM を触るが Tauri には依存せず、doc を注入可能に
-// してテストできる。Markdown レンダリングは段階3で別チャンクとして追加する。
+// してテストできる。プレビュー領域は「内容(左)」と「情報パネル(右)」の2つ。
 
 import { KIND } from '../../core/previewkind.js';
 
@@ -45,26 +45,63 @@ function el(doc, tag, className, text) {
   return node;
 }
 
-/** メタ情報カード（フォルダ/未対応/上限超過/エラー/空）。必ず何か出す（PV-5）。 */
-export function renderMeta(container, { entry, kind, note }, doc) {
+/**
+ * ファイル情報パネル（プレビューの右）。常に表示し、名前・種別・サイズ・更新・
+ * パスと、種別ごとの追加情報（画像=寸法、テキスト=エンコード/切り詰め）を出す。
+ * @param {HTMLElement} container
+ * @param {{entry:object, kind:string, data?:object, src?:string}} arg
+ * @param {Document} doc
+ */
+export function renderInfo(container, { entry, kind, data, src }, doc) {
   container.innerHTML = '';
-  const card = el(doc, 'div', 'preview-meta');
-  card.appendChild(el(doc, 'div', 'preview-meta-name', entry?.name || '—'));
-  const kindLabel = KIND_LABEL[kind] || '不明';
-  const rows = [
-    ['種別', kindLabel],
-    ['サイズ', entry?.is_dir ? '—' : formatSize(entry?.size)],
-    ['更新', formatMtime(entry?.modified)],
-    ['パス', entry?.path || '—'],
-  ];
-  const dl = el(doc, 'dl', 'preview-meta-list');
-  for (const [k, v] of rows) {
+  if (!entry) return;
+  container.appendChild(el(doc, 'div', 'preview-info-name', entry.name || '—'));
+
+  const dl = el(doc, 'dl', 'preview-info-list');
+  const add = (k, v) => {
     dl.appendChild(el(doc, 'dt', null, k));
-    dl.appendChild(el(doc, 'dd', null, v));
+    return dl.appendChild(el(doc, 'dd', null, v));
+  };
+  add('種別', KIND_LABEL[kind] || '不明');
+  add('サイズ', entry.is_dir ? '—' : formatSize(entry.size));
+  add('更新', formatMtime(entry.modified));
+
+  // 種別ごとの追加情報
+  let dimDd = null;
+  if (kind === KIND.IMAGE) dimDd = add('寸法', '…');
+  if ((kind === KIND.TEXT || kind === KIND.MARKDOWN) && data) {
+    if (data.encoding) add('エンコード', data.encoding);
+    if (data.truncated) add('表示', '先頭のみ');
   }
-  card.appendChild(dl);
-  if (note) card.appendChild(el(doc, 'p', 'preview-meta-note', note));
-  container.appendChild(card);
+  container.appendChild(dl);
+
+  // パスは長いので全幅で最後に
+  const pathBox = el(doc, 'div', 'preview-info-path');
+  pathBox.appendChild(el(doc, 'div', 'preview-info-path-label', 'パス'));
+  pathBox.appendChild(el(doc, 'div', 'preview-info-path-value', entry.path || '—'));
+  container.appendChild(pathBox);
+
+  // 画像は寸法を非同期に取得（asset を再ロードするがブラウザキャッシュに載る）。
+  // 情報パネルが差し替えられていたら（dimDd が切断）反映しない。
+  if (kind === KIND.IMAGE && src && dimDd) {
+    const probe = doc.createElement('img');
+    probe.addEventListener('load', () => {
+      if (dimDd.isConnected) dimDd.textContent = `${probe.naturalWidth} × ${probe.naturalHeight}`;
+    });
+    probe.addEventListener('error', () => {
+      if (dimDd.isConnected) dimDd.textContent = '—';
+    });
+    probe.src = src;
+  }
+}
+
+/** 非プレビュー種別（フォルダ/バイナリ/上限超過/空/エラー）の内容側の短い表示。 */
+export function renderPlaceholder(container, { kind, note }, doc) {
+  container.innerHTML = '';
+  const box = el(doc, 'div', 'preview-placeholder');
+  box.appendChild(el(doc, 'div', 'preview-placeholder-kind', KIND_LABEL[kind] || '—'));
+  if (note) box.appendChild(el(doc, 'div', 'preview-placeholder-note', note));
+  container.appendChild(box);
 }
 
 /** 画像プレビュー（asset URL を <img> で表示。バイト列は読まない）。 */

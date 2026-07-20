@@ -75,7 +75,8 @@ let favView = null;
 const previewPlacement = createPreviewPlacement(loadStoredPlacement());
 const preview = createPreview({
   backend: { readPreview, assetUrl },
-  getContainer: () => document.getElementById('preview-body'),
+  getContainer: () => document.getElementById('preview-content'),
+  getInfoContainer: () => document.getElementById('preview-info'),
 });
 
 /** プレビューの開閉/配置を DOM と同期し、永続化する。 */

@@ -27,6 +27,7 @@ export function createPreview(deps) {
   const {
     backend,
     getContainer,
+    getInfoContainer = () => null,
     loadRenderers = () => import('../features/preview/render.js'),
     loadMarkdown = () => import('../features/preview/markdown.js'),
     doc = typeof document !== 'undefined' ? document : null,
@@ -60,16 +61,24 @@ export function createPreview(deps) {
     }
     if (gen !== generation) return; // 追い越された
 
+    const infoEl = getInfoContainer();
+    const info = (kind, data, src) => {
+      if (infoEl) R.renderInfo(infoEl, { entry, kind, data, src }, doc);
+    };
+
     try {
       if (!entry) {
         container.innerHTML = '';
+        if (infoEl) infoEl.innerHTML = '';
         renderedPath = null;
         return;
       }
       const kind1 = detectKind(entry, null, limits);
 
       if (kind1 === KIND.IMAGE) {
-        R.renderImage(container, { entry, src: backend.assetUrl(entry.path) }, doc);
+        const src = backend.assetUrl(entry.path);
+        R.renderImage(container, { entry, src }, doc);
+        info(KIND.IMAGE, null, src);
         renderedPath = entry.path;
         return;
       }
@@ -80,33 +89,39 @@ export function createPreview(deps) {
         kind1 === KIND.BINARY ||
         kind1 === KIND.PDF
       ) {
-        R.renderMeta(container, { entry, kind: kind1, note: NOTE[kind1] }, doc);
+        R.renderPlaceholder(container, { kind: kind1, note: NOTE[kind1] }, doc);
+        info(kind1, null, null);
         renderedPath = entry.path;
         return;
       }
 
-      // TEXT / MARKDOWN → 上限付きで読む（段階2では Markdown もソース表示）
+      // TEXT / MARKDOWN → 上限付きで読む
       const data = await backend.readPreview(entry.path, maxBytesFor(kind1, limits));
       if (gen !== generation) return;
       if (!data) {
-        R.renderMeta(container, { entry, kind: KIND.BINARY, note: '読み取れませんでした' }, doc);
+        R.renderPlaceholder(container, { kind: KIND.BINARY, note: '読み取れませんでした' }, doc);
+        info(KIND.BINARY, null, null);
         renderedPath = entry.path;
         return;
       }
       const kind2 = detectKind(entry, data.sniff, limits);
       if (kind2 === KIND.BINARY) {
-        R.renderMeta(container, { entry, kind: KIND.BINARY, note: NOTE[KIND.BINARY] }, doc);
+        R.renderPlaceholder(container, { kind: KIND.BINARY, note: NOTE[KIND.BINARY] }, doc);
+        info(KIND.BINARY, data, null);
       } else if (kind2 === KIND.MARKDOWN) {
         const M = await loadMarkdown(); // 遅延: markdown-it は .md のときだけ読む
         if (gen !== generation) return;
         M.renderMarkdown(container, { data }, doc);
+        info(KIND.MARKDOWN, data, null);
       } else {
         R.renderText(container, { data }, doc);
+        info(KIND.TEXT, data, null);
       }
       renderedPath = entry.path;
     } catch {
       if (gen !== generation) return;
-      R.renderMeta(container, { entry, kind: KIND.BINARY, note: '読み取れませんでした' }, doc);
+      R.renderPlaceholder(container, { kind: KIND.BINARY, note: '読み取れませんでした' }, doc);
+      info(KIND.BINARY, null, null);
       renderedPath = entry.path;
     }
   }
@@ -141,6 +156,8 @@ export function createPreview(deps) {
       generation += 1; // 進行中の読み込みを無効化
       const c = getContainer();
       if (c) c.innerHTML = '';
+      const i = getInfoContainer();
+      if (i) i.innerHTML = '';
       renderedPath = null;
     },
     isOpen() {

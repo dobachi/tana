@@ -25,7 +25,8 @@ function makeRenderers() {
   return {
     renderImage: vi.fn(),
     renderText: vi.fn(),
-    renderMeta: vi.fn(),
+    renderPlaceholder: vi.fn(),
+    renderInfo: vi.fn(),
   };
 }
 
@@ -39,6 +40,7 @@ function deferred() {
 
 function setup(over = {}) {
   const container = { innerHTML: 'x' };
+  const infoContainer = { innerHTML: 'x' };
   const R = makeRenderers();
   const M = { renderMarkdown: vi.fn() };
   const scheduler = makeScheduler();
@@ -47,12 +49,13 @@ function setup(over = {}) {
   const preview = createPreview({
     backend: { readPreview, assetUrl },
     getContainer: () => container,
+    getInfoContainer: () => infoContainer,
     loadRenderers: async () => R,
     loadMarkdown: async () => M,
     doc: {},
     scheduler,
   });
-  return { preview, R, M, scheduler, readPreview, assetUrl, container };
+  return { preview, R, M, scheduler, readPreview, assetUrl, container, infoContainer };
 }
 
 const textFile = { name: 'a.txt', path: '/p/a.txt', size: 10, is_dir: false };
@@ -168,24 +171,36 @@ describe('createPreview — debounce & dedupe', () => {
 });
 
 describe('createPreview — meta routing', () => {
-  it('directory → renderMeta, no read', async () => {
+  it('directory → placeholder + info, no read', async () => {
     const { preview, R, readPreview } = setup();
     preview.setTarget(dir);
     preview.open();
     await flushAll();
     expect(readPreview).not.toHaveBeenCalled();
-    expect(R.renderMeta).toHaveBeenCalledTimes(1);
-    expect(R.renderMeta.mock.calls[0][1].kind).toBe('dir');
+    expect(R.renderPlaceholder).toHaveBeenCalledTimes(1);
+    expect(R.renderPlaceholder.mock.calls[0][1].kind).toBe('dir');
+    expect(R.renderInfo).toHaveBeenCalledTimes(1);
+    expect(R.renderInfo.mock.calls[0][1].kind).toBe('dir');
   });
 
-  it('text that sniffs binary → renderMeta', async () => {
+  it('text that sniffs binary → placeholder, not renderText', async () => {
     const readPreview = vi.fn(async () => ({ text: null, sniff: [0, 1, 2] }));
     const { preview, R } = setup({ readPreview });
     preview.setTarget({ name: 'x.dat', path: '/p/x.dat', size: 9, is_dir: false });
     preview.open();
     await flushAll();
-    expect(R.renderMeta).toHaveBeenCalled();
+    expect(R.renderPlaceholder).toHaveBeenCalled();
     expect(R.renderText).not.toHaveBeenCalled();
+  });
+
+  it('always renders the info panel alongside content (text)', async () => {
+    const { preview, R } = setup();
+    preview.setTarget(textFile);
+    preview.open();
+    await flushAll();
+    expect(R.renderText).toHaveBeenCalledTimes(1);
+    expect(R.renderInfo).toHaveBeenCalledTimes(1);
+    expect(R.renderInfo.mock.calls[0][1].kind).toBe('text');
   });
 });
 
