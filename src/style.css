@@ -133,7 +133,10 @@ body {
   color: var(--fg);
   cursor: pointer;
 }
-.context-menu-item:hover {
+.context-menu-item:hover,
+.context-menu-item:focus,
+.context-menu-item:focus-visible {
+  outline: none;
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .context-menu-item.danger {
