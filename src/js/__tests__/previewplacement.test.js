@@ -8,9 +8,9 @@ import {
 } from '../core/previewplacement.js';
 
 describe('createPreviewPlacement', () => {
-  it('defaults to closed / right / default ratio', () => {
+  it('defaults to closed / default placement / default ratio', () => {
     const p = createPreviewPlacement();
-    expect(p.get()).toEqual({ open: false, placement: 'right', ratio: DEFAULT_RATIO });
+    expect(p.get()).toEqual({ open: false, placement: DEFAULT_PLACEMENT, ratio: DEFAULT_RATIO });
     expect(p.isOpen()).toBe(false);
   });
 

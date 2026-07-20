@@ -328,7 +328,7 @@ Fude の Markdown パイプライン(markdown-it 周り)は流用価値がある
 | キー | 内容 | 既定 |
 |---|---|---|
 | `preview.open` | プレビューの開閉 | `false`(PV-4) |
-| `preview.placement` | `'right'` / `'bottom'` | `'right'` |
+| `preview.placement` | `'right'` / `'bottom'` | `'bottom'`（2ペインは横幅を使うため下を既定に） |
 | `preview.ratio` | 分割比率 | `0.32` |
 | `preview.imageFit` | 画像の等倍/フィット | `'fit'` |
 

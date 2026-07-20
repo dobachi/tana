@@ -3,7 +3,8 @@
 // data-preview 属性（既存の data-theme / data-mode と同じ流儀）に反映する。
 
 export const PLACEMENTS = Object.freeze(['right', 'bottom']);
-export const DEFAULT_PLACEMENT = 'right';
+// 既定は下配置。2ペインは横幅を使うため、下に置くとペインの列幅を保てる。
+export const DEFAULT_PLACEMENT = 'bottom';
 export const DEFAULT_RATIO = 0.32;
 const RATIO_MIN = 0.15;
 const RATIO_MAX = 0.7;
