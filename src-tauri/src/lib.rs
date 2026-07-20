@@ -10,6 +10,15 @@ pub struct DirEntry {
     pub is_dir: bool,
     pub size: u64,
     pub is_hidden: bool,
+    /// 最終更新時刻（UNIXエポック秒）。取得できない場合は None。
+    pub modified: Option<u64>,
+}
+
+/// メタデータから最終更新時刻（エポック秒）を取り出す。取得不能なら None。
+fn modified_secs(meta: Option<&std::fs::Metadata>) -> Option<u64> {
+    meta.and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
 }
 
 /// 隠しエントリ判定。先頭ドット（Unix 慣習）に加え、Windows では隠し属性も見る。
@@ -45,12 +54,14 @@ fn read_dir_entries(path: &Path) -> Result<Vec<DirEntry>, String> {
         let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
         let name = item.file_name().to_string_lossy().to_string();
         let is_hidden = is_hidden_entry(&name, meta.as_ref().ok());
+        let modified = modified_secs(meta.as_ref().ok());
         entries.push(DirEntry {
             name,
             path: item.path().to_string_lossy().to_string(),
             is_dir,
             size,
             is_hidden,
+            modified,
         });
     }
     entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
@@ -244,6 +255,141 @@ fn make_dir(parent: String, name: String) -> Result<String, String> {
     Ok(target.to_string_lossy().to_string())
 }
 
+// ── プレビュー用データ取得 (FR-09) ─────────────────────────
+
+/// プレビュー可能な最大読み取りバイト数の絶対上限（フロント指定値も再クランプ）。
+const PREVIEW_READ_CEILING: usize = 1_048_576; // 1 MiB
+
+/// 種別判定用に先頭から返すバイト数。
+const SNIFF_BYTES: usize = 16;
+
+/// プレビュー用のファイル内容（上限付き）。バイト列は JS に渡さず、テキストは
+/// 常に妥当な UTF-8 にデコード済みで返す（`sniff` の先頭数バイトのみ例外）。
+#[derive(Debug, Serialize, PartialEq)]
+pub struct PreviewData {
+    pub kind: String, // "text" | "binary" | "empty"
+    pub size: u64,    // ファイル全体のバイト数
+    pub read_bytes: usize,
+    pub truncated: bool,  // size > read_bytes
+    pub encoding: String, // "utf-8" | "utf-8-lossy" | "binary"
+    pub text: Option<String>,
+    pub sniff: Vec<u8>, // 先頭最大 SNIFF_BYTES バイト
+}
+
+/// フロント指定の上限を絶対上限にクランプする。
+fn clamp_max_bytes(n: usize) -> usize {
+    n.min(PREVIEW_READ_CEILING)
+}
+
+/// 先頭バイト列からテキストかバイナリかを判定する。NUL を含む、または非テキスト
+/// 制御文字の比率が高い場合はバイナリとみなす（拡張子が .txt でもこちらを優先）。
+fn is_binary_head(bytes: &[u8]) -> bool {
+    if bytes.is_empty() {
+        return false;
+    }
+    let mut suspicious = 0usize;
+    for &b in bytes {
+        if b == 0 {
+            return true; // NUL は即バイナリ
+        }
+        // タブ(9)/改行(10)/復帰(13)以外の C0 制御文字を疑わしいとカウント
+        if b < 9 || (b > 13 && b < 32) {
+            suspicious += 1;
+        }
+    }
+    // 3% 超が疑わしければバイナリ
+    suspicious * 100 > bytes.len() * 3
+}
+
+/// `n` バイト以下で、UTF-8 のマルチバイト文字の途中に落ちない最大の文字境界を
+/// 返す。位置 i が文字境界とは i==0 / i==len / bytes[i] が継続バイトでないこと。
+fn truncate_at_char_boundary(bytes: &[u8], n: usize) -> usize {
+    let len = bytes.len();
+    let mut end = n.min(len);
+    while end > 0 && end < len && (bytes[end] & 0b1100_0000) == 0b1000_0000 {
+        end -= 1;
+    }
+    end
+}
+
+/// バイト列をテキストにデコードする。先頭 BOM を除去し、妥当な UTF-8 ならその
+/// まま、そうでなければ lossy 変換する。戻り値は (テキスト, エンコーディング名)。
+fn decode_text(bytes: &[u8]) -> (String, &'static str) {
+    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
+    match std::str::from_utf8(bytes) {
+        Ok(s) => (s.to_string(), "utf-8"),
+        Err(_) => (String::from_utf8_lossy(bytes).to_string(), "utf-8-lossy"),
+    }
+}
+
+/// 指定ファイルの内容を上限付きで読み、プレビュー用に整形して返す純粋ロジック。
+fn read_preview_impl(path: &Path, max_bytes: usize) -> Result<PreviewData, String> {
+    use std::io::Read;
+
+    let meta = std::fs::metadata(path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    if meta.is_dir() {
+        return Err("ディレクトリはプレビューできません".to_string());
+    }
+    if !meta.is_file() {
+        // シンボリックリンク先以外の特殊ファイル（FIFO/デバイス等）は読まない
+        return Err("通常ファイルではありません".to_string());
+    }
+    let size = meta.len();
+    if size == 0 {
+        return Ok(PreviewData {
+            kind: "empty".to_string(),
+            size: 0,
+            read_bytes: 0,
+            truncated: false,
+            encoding: "utf-8".to_string(),
+            text: Some(String::new()),
+            sniff: Vec::new(),
+        });
+    }
+
+    let limit = clamp_max_bytes(max_bytes);
+    let mut file = std::fs::File::open(path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let mut buf = Vec::new();
+    file.by_ref()
+        .take(limit as u64)
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("{}: {}", path.display(), e))?;
+
+    let read_bytes = buf.len();
+    let truncated = size as usize > read_bytes;
+    let sniff = buf[..buf.len().min(SNIFF_BYTES)].to_vec();
+
+    if is_binary_head(&buf[..buf.len().min(4096)]) {
+        return Ok(PreviewData {
+            kind: "binary".to_string(),
+            size,
+            read_bytes,
+            truncated,
+            encoding: "binary".to_string(),
+            text: None,
+            sniff,
+        });
+    }
+
+    let cut = truncate_at_char_boundary(&buf, buf.len());
+    let (text, encoding) = decode_text(&buf[..cut]);
+    Ok(PreviewData {
+        kind: "text".to_string(),
+        size,
+        read_bytes,
+        truncated,
+        encoding: encoding.to_string(),
+        text: Some(text),
+        sniff,
+    })
+}
+
+/// プレビュー用データを取得する Tauri コマンド。
+#[tauri::command]
+fn read_preview(path: String, max_bytes: usize) -> Result<PreviewData, String> {
+    read_preview_impl(Path::new(&path), max_bytes)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -262,7 +408,8 @@ pub fn run() {
             delete_to_trash,
             delete_permanent,
             rename_path,
-            make_dir
+            make_dir,
+            read_preview
         ])
         .run(tauri::generate_context!())
         .expect("error while running tana application");
@@ -488,5 +635,103 @@ mod tests {
         fs::write(d.join("inner.txt"), b"y").unwrap();
         delete_permanent(d.to_string_lossy().into()).unwrap();
         assert!(!d.exists());
+    }
+
+    // ── プレビュー (FR-09) ──────────────────────────────
+
+    #[test]
+    fn clamp_max_bytes_caps_at_ceiling() {
+        assert_eq!(clamp_max_bytes(0), 0);
+        assert_eq!(clamp_max_bytes(100), 100);
+        assert_eq!(
+            clamp_max_bytes(PREVIEW_READ_CEILING + 1),
+            PREVIEW_READ_CEILING
+        );
+        assert_eq!(clamp_max_bytes(usize::MAX), PREVIEW_READ_CEILING);
+    }
+
+    #[test]
+    fn is_binary_head_detects_nul_and_control_ratio() {
+        assert!(!is_binary_head(b""));
+        assert!(!is_binary_head(b"hello world\n\ttab"));
+        assert!(!is_binary_head("日本語テキスト".as_bytes()));
+        assert!(is_binary_head(b"ab\0cd")); // NUL
+                                            // 制御文字だらけ
+        assert!(is_binary_head(&[0x01, 0x02, 0x03, 0x04, 0x05, b'a']));
+    }
+
+    #[test]
+    fn truncate_at_char_boundary_keeps_multibyte_whole() {
+        // "あ" は 3 バイト (0xE3 0x81 0x82)
+        let s = "あい".as_bytes(); // 6 バイト
+        assert_eq!(truncate_at_char_boundary(s, 6), 6); // ぴったり
+        assert_eq!(truncate_at_char_boundary(s, 5), 3); // 2文字目の途中→1文字で切る
+        assert_eq!(truncate_at_char_boundary(s, 4), 3); // 同上
+        assert_eq!(truncate_at_char_boundary(s, 3), 3); // 1文字目ぴったり
+        assert_eq!(truncate_at_char_boundary(s, 2), 0); // 1文字目の途中→空
+        assert_eq!(truncate_at_char_boundary(s, 1), 0);
+        // 常に有効な UTF-8 になること
+        for n in 0..=6 {
+            let cut = truncate_at_char_boundary(s, n);
+            assert!(std::str::from_utf8(&s[..cut]).is_ok());
+        }
+    }
+
+    #[test]
+    fn decode_text_strips_bom_and_handles_invalid() {
+        let (t, e) = decode_text(&[0xEF, 0xBB, 0xBF, b'h', b'i']);
+        assert_eq!(t, "hi");
+        assert_eq!(e, "utf-8");
+        let (t2, e2) = decode_text(&[0xff, 0xfe, b'x']);
+        assert_eq!(e2, "utf-8-lossy");
+        assert!(t2.contains('x'));
+    }
+
+    #[test]
+    fn read_preview_impl_handles_missing_dir_empty_and_text() {
+        let tmp = tempfile::tempdir().unwrap();
+        // 存在しない
+        assert!(read_preview_impl(&tmp.path().join("nope.txt"), 1024).is_err());
+        // ディレクトリ
+        assert!(read_preview_impl(tmp.path(), 1024).is_err());
+        // 空ファイル
+        let empty = tmp.path().join("empty.txt");
+        fs::write(&empty, b"").unwrap();
+        let p = read_preview_impl(&empty, 1024).unwrap();
+        assert_eq!(p.kind, "empty");
+        assert_eq!(p.size, 0);
+        assert!(!p.truncated);
+        // テキスト
+        let txt = tmp.path().join("a.md");
+        fs::write(&txt, "# 見出し\n本文".as_bytes()).unwrap();
+        let p = read_preview_impl(&txt, 1024).unwrap();
+        assert_eq!(p.kind, "text");
+        assert_eq!(p.encoding, "utf-8");
+        assert_eq!(p.text.as_deref(), Some("# 見出し\n本文"));
+        assert!(!p.truncated);
+    }
+
+    #[test]
+    fn read_preview_impl_truncates_and_flags() {
+        let tmp = tempfile::tempdir().unwrap();
+        let big = tmp.path().join("big.txt");
+        fs::write(&big, "x".repeat(1000).as_bytes()).unwrap();
+        let p = read_preview_impl(&big, 100).unwrap();
+        assert_eq!(p.kind, "text");
+        assert_eq!(p.read_bytes, 100);
+        assert!(p.truncated);
+        assert_eq!(p.size, 1000);
+    }
+
+    #[test]
+    fn read_preview_impl_flags_binary() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("data.bin");
+        fs::write(&bin, [0u8, 1, 2, 3, 4, 0, 255]).unwrap();
+        let p = read_preview_impl(&bin, 1024).unwrap();
+        assert_eq!(p.kind, "binary");
+        assert!(p.text.is_none());
+        assert_eq!(p.encoding, "binary");
+        assert!(!p.sniff.is_empty());
     }
 }
