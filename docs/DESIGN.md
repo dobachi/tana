@@ -29,20 +29,60 @@
 
 ### 2.1 全体構成
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│                        Tauri Window                            │
-│ ┌──────────┐ ┌──────────────────────────┐ ┌────────────────┐  │
-│ │ Sidebar   │ │        Workspace          │ │   Preview      │  │
-│ │           │ │ ┌──────────┬───────────┐ │ │  (Should)      │  │
-│ │ Places    │ │ │  Pane L   │  Pane R   │ │ │                │  │
-│ │ Favorites │ │ │ (file     │ (file     │ │ │ 画像/テキスト/ │  │
-│ │ (nested,  │ │ │  list +   │  list +   │ │ │ Markdown ...   │  │
-│ │  search)  │ │ │  tabs)    │  tabs)    │ │ │                │  │
-│ │           │ │ └──────────┴───────────┘ │ │                │  │
-│ └──────────┘ └──────────────────────────┘ └────────────────┘  │
-│ [Status Bar:  ●安全モード / ●操作モード  |  パス  |  選択数 ]   │
-└────────────────────────────────────────────────────────────────┘
+```mermaid
+%% 位置固定のため ~~~（不可視リンク）で並び順を強制している
+flowchart TB
+  subgraph window["Tauri Window"]
+    direction TB
+
+    subgraph body[" "]
+      direction LR
+
+      subgraph sidebar["Sidebar"]
+        direction TB
+        places["Places"]
+        favorites["Favorites<br/>nested + search"]
+        places ~~~ favorites
+      end
+
+      subgraph workspace["Workspace"]
+        direction LR
+
+        subgraph pane_l["Pane L"]
+          direction TB
+          tabs_l["tabs"]
+          files_l["file list"]
+          tabs_l ~~~ files_l
+        end
+
+        subgraph pane_r["Pane R"]
+          direction TB
+          tabs_r["tabs"]
+          files_r["file list"]
+          tabs_r ~~~ files_r
+        end
+
+        pane_l ~~~ pane_r
+      end
+
+      subgraph preview["Preview（Should）"]
+        direction TB
+        preview_types["画像 / テキスト / Markdown"]
+      end
+
+      sidebar ~~~ workspace ~~~ preview
+    end
+
+    subgraph status["Status Bar"]
+      direction LR
+      mode["安全 / 操作モード"]
+      path["パス"]
+      selection["選択数"]
+      mode ~~~ path ~~~ selection
+    end
+
+    body ~~~ status
+  end
 ```
 
 - **Sidebar**: 場所(Places)一覧(FR-07)とお気に入り(FR-05,06)
@@ -169,9 +209,15 @@ Backend (Rust / Tauri Commands)
 
 ### 3.6 プレビュー (FR-09 / Should)
 
+> 詳細設計は [PREVIEW.md](PREVIEW.md) を参照。以下は要約。
+
 - `features/preview/` に形式別レンダラ。最小セット: 画像・プレーンテキスト・Markdown(Fude の markdown-it 流用余地)
 - PDF・コード ハイライト等は段階拡張。重量級は遅延ロード(NFR-P2)
 - **配置**: 「2ペインの右」/「2ペインの下」を切替可能。CSS Grid のテンプレートを差し替えるだけで実現し、選択値はセッションに保存(FR-14)
+- **ファイル内容の取得**: 汎用の `read_file` は作らず、上限付きの `read_preview(path, max_bytes)` 1コマンドに閉じる。バイト列は JS に渡さず Rust 側でデコード
+- **カーソル追従**: `j`/`k` の連打で I/O が殺到し、遅い読み込みが新しい選択を上書きするため、デバウンス(150ms)+ 世代トークンによる破棄を設計に組み込む(PREVIEW.md §7)
+- **前提工事**: 現状 `tauri.conf.json` に `csp` が未設定。`withGlobalTauri: true` と組み合わさると、悪意ある Markdown/SVG にカーソルを合わせるだけで invoke を叩かれうる。**CSP 設定と Markdown サニタイズはプレビュー実装より先に行う**(PREVIEW.md §9)
+- プレビューは読み取り専用のため、安全モードでは常に許可(REQUIREMENTS.md §5)
 
 ### 3.7 コンテキストメニュー & 外部アプリ連携 (FR-13 / Must)
 
