@@ -21,6 +21,7 @@ import {
 } from './core/previewplacement.js';
 import { createSortState, loadStoredSort, storeSort } from './core/sortstate.js';
 import { SORT_KEYS, SORT_LABELS } from './core/sort.js';
+import { loadSession, storeSession, createSessionSaver } from './core/session.js';
 import { createToast } from './core/toast.js';
 import { checkForUpdates } from './core/updater.js';
 import { resolveInputPath } from './core/pathnav.js';
@@ -117,6 +118,18 @@ let appVer = '';
 
 // ソート・プレフィックス（s に続けて種別キーを待つ）中かどうか
 let sortPending = false;
+
+// セッション復元 (FR-14): 各ペインのカレントdir・アクティブペインを保存/復元
+const sessionSaver = createSessionSaver({
+  getState: () => ({
+    dirs: {
+      left: filePanes[PANE.LEFT] ? filePanes[PANE.LEFT].getCurrentDir() : null,
+      right: filePanes[PANE.RIGHT] ? filePanes[PANE.RIGHT].getCurrentDir() : null,
+    },
+    active: panes.getActive(),
+  }),
+  store: storeSession,
+});
 
 // ソート状態（両ペイン共通, 詳細表示の並べ替え）
 const sortState = createSortState(loadStoredSort());
@@ -413,6 +426,7 @@ function syncActivePane(active) {
   // プレビューはアクティブペインのカーソルに追従する
   const fp = filePanes[active];
   preview.setTarget(fp ? fp.getCursorEntry() : null);
+  sessionSaver.schedule(); // アクティブペインの変更を保存
 }
 
 function updateStatus(info) {
@@ -764,6 +778,7 @@ async function init() {
       onNavigate: (value, o) => navigatePane(p, value, o),
       onContextMenu: (info) => showEntryMenu(p, info),
       onChange: (info) => {
+        sessionSaver.schedule(); // ディレクトリ移動をセッションに保存（デバウンス）
         if (p === panes.getActive()) {
           updateStatus(info);
           preview.setTarget(info.entry); // カーソル追従（閉じていれば記録のみ）
@@ -799,9 +814,27 @@ async function init() {
     previewCloseBtn.addEventListener('click', () => previewPlacement.close());
   }
 
-  // 起動ディレクトリ: CLI 引数 > ホーム > カレント
-  const start = (await getCliPath()) || (await homeDir()) || '.';
-  await Promise.all([filePanes.left.load(start), filePanes.right.load(start)]);
+  // 起動ディレクトリ: CLI 引数 > セッション復元(FR-14) > ホーム
+  const cli = await getCliPath();
+  const home = (await homeDir()) || '.';
+  const loadOr = async (fp, dir) => {
+    try {
+      await fp.load(dir || home);
+    } catch {
+      // 存在しなくなったパス等はホームへフォールバック（堅牢性）
+      await fp.load(home);
+    }
+  };
+  if (cli) {
+    await Promise.all([loadOr(filePanes.left, cli), loadOr(filePanes.right, cli)]);
+  } else {
+    const session = loadSession();
+    await Promise.all([
+      loadOr(filePanes.left, session && session.dirs.left),
+      loadOr(filePanes.right, session && session.dirs.right),
+    ]);
+    if (session && session.active === PANE.RIGHT) panes.setActive(PANE.RIGHT);
+  }
   updateStatus();
 
   // 起動時の更新検知。待たない・失敗しても黙る（起動を妨げないため）。
