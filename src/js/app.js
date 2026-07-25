@@ -36,6 +36,7 @@ import { showMenu, isMenuVisible } from './core/menu.js';
 import { createAltTap } from './core/menu-nav.js';
 import { openSettings, closeSettings, isSettingsOpen } from './core/settings.js';
 import { createFileOps } from './core/fileops.js';
+import { createDragSession } from './core/dragdrop.js';
 import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
 import { createFavorites, loadStoredFavorites, storeFavorites } from './core/favorites.js';
@@ -80,6 +81,18 @@ const fileOps = createFileOps({
 
 // 各ペインの DOM 要素とファイルペイン・コントローラ
 const filePanes = { left: null, right: null };
+
+// ドラッグ＆ドロップ (FR-02/FR-11)。既定はコピー、Shift 押下中は移動。
+// 実際のファイル操作・衝突解決・安全モードのゲートは fileOps 側が持つ。
+const dragSession = createDragSession({
+  getPaneDir: (pane) => (filePanes[pane] ? filePanes[pane].getCurrentDir() : null),
+  canMutate: () => safemode.canMutate(),
+  onDrop: ({ sources, destDir, effect }) => {
+    if (effect === 'move') fileOps.move(sources, destDir);
+    else fileOps.copy(sources, destDir);
+  },
+  toast,
+});
 let favView = null;
 
 // プレビュー (FR-09): 配置状態の真実源 + コントローラ
@@ -777,6 +790,7 @@ async function init() {
       onActivate: () => panes.setActive(p),
       onNavigate: (value, o) => navigatePane(p, value, o),
       onContextMenu: (info) => showEntryMenu(p, info),
+      onDragStart: (info) => dragSession.begin(info),
       onChange: (info) => {
         sessionSaver.schedule(); // ディレクトリ移動をセッションに保存（デバウンス）
         if (p === panes.getActive()) {

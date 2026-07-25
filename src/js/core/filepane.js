@@ -5,6 +5,7 @@ import { listDir, parentDir } from '../backend.js';
 import { pathSegments } from './pathnav.js';
 import { applyClick, toggleAt, selectAll, pruneSelection, targetEntries } from './selection.js';
 import { sortEntries, defaultCollator, DEFAULT_SORT } from './sort.js';
+import { exceededThreshold } from './dnd.js';
 
 /** バイト数を人間可読なサイズ文字列にする */
 export function formatSize(bytes) {
@@ -61,7 +62,7 @@ export function createFilePane(rootEl, opts = {}) {
   const pathEl = rootEl.querySelector('.pane-path');
   const inputEl = rootEl.querySelector('.pane-path-input');
   const columnsEl = rootEl.querySelector('.pane-columns');
-  const { onActivate, onChange, onNavigate, onContextMenu, onSort } = opts;
+  const { onActivate, onChange, onNavigate, onContextMenu, onSort, onDragStart } = opts;
   // 現在のソート状態を返す（app.js が共有状態を注入。既定は名前昇順）。
   const getSort = typeof opts.getSort === 'function' ? opts.getSort : () => DEFAULT_SORT;
   const collator = defaultCollator();
@@ -73,6 +74,8 @@ export function createFilePane(rootEl, opts = {}) {
   let showHidden = opts.showHidden === true;
   let selected = new Set(); // 選択されたパス（FR-11）
   let anchor = -1; // Shift+クリックの起点
+  // 複数選択したままドラッグできるようにするための保留（下の mousedown を参照）
+  let pendingCollapse = null;
 
   function recompute(keepPath) {
     entries = sortEntries(filterEntries(allEntries, showHidden), getSort(), collator);
@@ -185,20 +188,56 @@ export function createFilePane(rootEl, opts = {}) {
       const mtime = document.createElement('span');
       mtime.className = 'entry-mtime';
       mtime.textContent = formatMtime(e.modified);
+      li.dataset.path = e.path; // ドロップ先の解決に使う（core/dragdrop.js）
       li.append(name, size, mtime);
       li.addEventListener('mousedown', (ev) => {
         if (onActivate) onActivate();
         // Shift+クリックの範囲選択でテキスト選択が走ると見た目が壊れるので抑止
         if (ev.shiftKey) ev.preventDefault();
-        const next = applyClick({ paths: entries.map((x) => x.path), selected, anchor }, i, {
-          ctrl: ev.ctrlKey || ev.metaKey,
-          shift: ev.shiftKey,
-        });
-        selected = next.selected;
-        anchor = next.anchor;
-        cursor = i;
+
+        // 左ボタン以外では選択に触らず、ドラッグも始めない。
+        // 右クリックは mousedown → contextmenu → mouseup と流れるので、ここで
+        // applyClick を走らせると選択が1件に畳まれ、contextmenu 側の
+        // 「選択済みの行を右クリックしたら選択を保つ」が成立しなくなる。
+        if (ev.button !== 0 && ev.button !== undefined) return;
+
+        const plain = !ev.ctrlKey && !ev.metaKey && !ev.shiftKey;
+        // 複数選択済みの行を無修飾で掴んだ場合、ここで選択を1件に畳むと
+        // 「複数選択したままドラッグ」ができなくなる。畳むのは mouseup まで
+        // 遅らせ、実際にドラッグされたら畳まない。
+        if (plain && selected.size > 1 && selected.has(e.path)) {
+          pendingCollapse = { index: i, point: { x: ev.clientX, y: ev.clientY } };
+          cursor = i;
+        } else {
+          pendingCollapse = null;
+          const next = applyClick({ paths: entries.map((x) => x.path), selected, anchor }, i, {
+            ctrl: ev.ctrlKey || ev.metaKey,
+            shift: ev.shiftKey,
+          });
+          selected = next.selected;
+          anchor = next.anchor;
+          cursor = i;
+        }
         syncRowStates();
         notify();
+
+        if (onDragStart) {
+          onDragStart({ entries, selected, path: e.path, x: ev.clientX, y: ev.clientY });
+        }
+      });
+      li.addEventListener('mouseup', (ev) => {
+        // 掴んだだけで動かさなかった（＝ドラッグではなくクリックだった）なら、
+        // 保留していた選択の解除をここで実行する。
+        if (ev.button !== 0 && ev.button !== undefined) return;
+        if (!pendingCollapse || pendingCollapse.index !== i) return;
+        const point = { x: ev.clientX, y: ev.clientY };
+        if (!exceededThreshold(pendingCollapse.point, point)) {
+          selected = new Set([e.path]);
+          anchor = i;
+          syncRowStates();
+          notify();
+        }
+        pendingCollapse = null;
       });
       li.addEventListener('dblclick', () => {
         cursor = i;
