@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   fontScaleAction,
+  wheelFontScaleAction,
   createFontScale,
   clampScale,
   toPercent,
@@ -53,7 +54,14 @@ describe('createFontScale', () => {
   });
   it('set はクランプして適用', () => {
     const fs = createFontScale();
-    expect(fs.set(2.0)).toBe(MAX_SCALE);
+    expect(fs.set(9)).toBe(MAX_SCALE);
+    expect(fs.set(0.1)).toBe(MIN_SCALE);
+  });
+  it('上限は 200%（従来の 160% から引き上げ）', () => {
+    expect(MAX_SCALE).toBe(2.0);
+    const fs = createFontScale(1.9);
+    expect(fs.increase()).toBe(2.0); // 1.6 で頭打ちにならない
+    expect(toPercent(fs.get())).toBe(200);
   });
   it('subscribe は即時通知し変更で呼ばれる', () => {
     const fs = createFontScale(1.0);
@@ -106,5 +114,35 @@ describe('fontScaleAction', () => {
     expect(fontScaleAction(ev({ key: '1', code: 'Digit1' }))).toBeNull();
     expect(fontScaleAction(null)).toBeNull();
     expect(fontScaleAction(ev({}))).toBeNull();
+  });
+});
+
+describe('wheelFontScaleAction', () => {
+  const wheel = (o) => ({ ctrlKey: true, ...o });
+
+  it('Ctrl+上スクロールで拡大、下スクロールで縮小（ブラウザと同じ向き）', () => {
+    expect(wheelFontScaleAction(wheel({ deltaY: -120 }))).toBe('increase');
+    expect(wheelFontScaleAction(wheel({ deltaY: 120 }))).toBe('decrease');
+  });
+
+  it('deltaY の大小に依らず1段（連続イベントで自然に増える）', () => {
+    expect(wheelFontScaleAction(wheel({ deltaY: -3 }))).toBe('increase');
+    expect(wheelFontScaleAction(wheel({ deltaY: 500 }))).toBe('decrease');
+  });
+
+  it('Ctrl なしは対象外（通常スクロールを奪わない）', () => {
+    expect(wheelFontScaleAction({ deltaY: -120 })).toBeNull();
+  });
+
+  it('Alt/Meta/Shift 併用は対象外', () => {
+    expect(wheelFontScaleAction(wheel({ deltaY: -120, altKey: true }))).toBeNull();
+    expect(wheelFontScaleAction(wheel({ deltaY: -120, metaKey: true }))).toBeNull();
+    expect(wheelFontScaleAction(wheel({ deltaY: -120, shiftKey: true }))).toBeNull();
+  });
+
+  it('縦移動が無ければ null（水平ホイールで誤爆しない）', () => {
+    expect(wheelFontScaleAction(wheel({ deltaY: 0 }))).toBeNull();
+    expect(wheelFontScaleAction(wheel({}))).toBeNull();
+    expect(wheelFontScaleAction(null)).toBeNull();
   });
 });

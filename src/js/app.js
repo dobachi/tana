@@ -11,6 +11,7 @@ import {
   storeFontScale,
   toPercent,
   fontScaleAction,
+  wheelFontScaleAction,
 } from './core/fontscale.js';
 import { createFilePane } from './core/filepane.js';
 import { createPreview } from './core/preview.js';
@@ -441,6 +442,14 @@ function applyFontScale(action) {
   toast(`文字サイズ: ${pct}%`);
 }
 
+/** Ctrl+ホイールで文字サイズを増減する (NFR-U5) */
+function onWheel(e) {
+  const action = wheelFontScaleAction(e);
+  if (!action) return;
+  e.preventDefault(); // webview 既定のズームを抑える
+  applyFontScale(action);
+}
+
 function syncFontScale(scale) {
   if (typeof document !== 'undefined' && document.documentElement) {
     document.documentElement.style.setProperty('--font-scale', String(scale));
@@ -782,6 +791,9 @@ async function init() {
   panes.subscribe(syncActivePane);
   previewPlacement.subscribe(syncPreviewPlacement);
   document.addEventListener('keydown', onKeydown);
+  // Ctrl+ホイールで文字サイズ (NFR-U5)。preventDefault で webview 既定のズームを
+  // 抑えるため passive:false が要る。
+  document.addEventListener('wheel', onWheel, { passive: false });
   // Alt 単押し検出（keydown/keyup を素通しで監視）。Alt を押している間に他キーが
   // 来たら単押しではないと判断。フォーカスが外れた間の押下は無効（Alt+Tab 対策）。
   window.addEventListener('keydown', (e) => altTap.keydown(e), true);

@@ -3,7 +3,7 @@
 // 将来の設定画面はこのモジュールの set/get を呼ぶだけでよい。
 
 export const MIN_SCALE = 0.8;
-export const MAX_SCALE = 1.6;
+export const MAX_SCALE = 2.0;
 export const STEP = 0.1;
 export const DEFAULT_SCALE = 1.0;
 
@@ -38,6 +38,23 @@ export function fontScaleAction(e) {
   if (code === 'Minus' || code === 'NumpadSubtract' || key === '-' || key === '_')
     return 'decrease';
   if (code === 'Digit0' || code === 'Numpad0' || key === '0') return 'reset';
+  return null;
+}
+
+/**
+ * ホイールイベントを文字サイズ操作に対応づける（Ctrl+ホイール, NFR-U5）。
+ *
+ * ブラウザの Ctrl+ホイールと同じ向き: 上スクロール（deltaY<0）で拡大、
+ * 下スクロール（deltaY>0）で縮小。Ctrl 以外の修飾が付いていたら対象外にする
+ * （Alt+ホイールの水平スクロール等と衝突させない）。
+ * @param {{deltaY?: number, ctrlKey?: boolean, altKey?: boolean, metaKey?: boolean, shiftKey?: boolean}} e
+ * @returns {'increase'|'decrease'|null}
+ */
+export function wheelFontScaleAction(e) {
+  if (!e || !e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return null;
+  const dy = typeof e.deltaY === 'number' ? e.deltaY : 0;
+  if (dy < 0) return 'increase';
+  if (dy > 0) return 'decrease';
   return null;
 }
 

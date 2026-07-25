@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { openSettings, closeSettings, isSettingsOpen } from '../core/settings.js';
 import { createTheme } from '../core/theme.js';
-import { createFontScale, toPercent } from '../core/fontscale.js';
+import { createFontScale, toPercent, MAX_SCALE } from '../core/fontscale.js';
 
 let deps;
 let hidden;
@@ -109,11 +109,12 @@ describe('変更が即座に反映される', () => {
   it('範囲外の値はクランプされ、スライダー表示も実値に揃う', () => {
     openSettings(deps);
     const slider = document.querySelector('#setting-fontscale');
-    slider.value = '400'; // MAX_SCALE(160%) を超える
+    const max = toPercent(MAX_SCALE);
+    slider.value = '400'; // MAX_SCALE を超える
     slider.dispatchEvent(new Event('input'));
-    expect(toPercent(deps.fontScale.get())).toBe(160);
-    expect(slider.value).toBe('160');
-    expect(document.querySelector('#setting-fontscale-value').textContent).toBe('160%');
+    expect(toPercent(deps.fontScale.get())).toBe(max);
+    expect(slider.value).toBe(String(max));
+    expect(document.querySelector('#setting-fontscale-value').textContent).toBe(`${max}%`);
   });
 
   it('チェックを入れると setShowHidden が呼ばれる', () => {
