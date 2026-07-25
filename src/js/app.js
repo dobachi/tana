@@ -37,6 +37,7 @@ import { createAltTap } from './core/menu-nav.js';
 import { openSettings, closeSettings, isSettingsOpen } from './core/settings.js';
 import { createFileOps } from './core/fileops.js';
 import { createDragSession } from './core/dragdrop.js';
+import { buildEditMenuItems } from './core/editmenu.js';
 import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
 import { createFavorites, loadStoredFavorites, storeFavorites } from './core/favorites.js';
@@ -341,6 +342,31 @@ function buildMenuDefinition() {
         { separator: true },
         { label: '終了', action: () => window.close() },
       ],
+    },
+    {
+      label: '編集(E)',
+      accessKey: 'E',
+      // 対象・宛先の有無で項目を無効化する判定は core/editmenu.js（純粋）に集約。
+      // ここでは現在の状態を集めて action を注入するだけ。
+      items: () => {
+        const fp = activeFilePane();
+        const targets = fp ? fp.getTargetEntries() : [];
+        return buildEditMenuItems(
+          {
+            targetCount: targets.length,
+            hasDest: !!filePanes[panes.getInactive()]?.getCurrentDir(),
+            hasCursor: !!(fp && fp.getCursorEntry()),
+          },
+          {
+            copy: opCopy,
+            move: opMove,
+            rename: opRename,
+            trash: opTrash,
+            deletePermanent: opDeletePermanent,
+            makeFolder: opMakeFolder,
+          },
+        );
+      },
     },
     {
       label: '表示(V)',
