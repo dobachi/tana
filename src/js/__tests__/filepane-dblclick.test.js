@@ -35,10 +35,13 @@ const rows = () => [...root.querySelectorAll('.entry')];
 const mousedown = (el, init = {}) =>
   el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, ...init }));
 
+let onOpenFile;
+
 beforeEach(async () => {
   listDir.mockClear();
+  onOpenFile = vi.fn();
   root = buildPaneDom();
-  pane = createFilePane(root, {});
+  pane = createFilePane(root, { onOpenFile });
   await pane.load('/base');
 });
 
@@ -88,7 +91,7 @@ describe('ダブルクリックでフォルダを開く', () => {
     expect(listDir).toHaveBeenCalledWith('/base/docs');
   });
 
-  it('ファイルのダブルクリックでは移動しない', async () => {
+  it('ファイルのダブルクリックではディレクトリ移動しない', async () => {
     const row = rows()[2]; // a.txt
     mousedown(row);
     listDir.mockClear();
@@ -97,9 +100,47 @@ describe('ダブルクリックでフォルダを開く', () => {
     expect(listDir).not.toHaveBeenCalled();
   });
 
+  it('ファイルのダブルクリックで onOpenFile が呼ばれる（既定アプリで開く）', async () => {
+    const row = rows()[2]; // a.txt
+    mousedown(row);
+    row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+    expect(onOpenFile).toHaveBeenCalledTimes(1);
+    expect(onOpenFile.mock.calls[0][0].name).toBe('a.txt');
+  });
+
+  it('フォルダのダブルクリックでは onOpenFile を呼ばない（中に入る）', async () => {
+    const row = rows()[0]; // docs
+    mousedown(row);
+    row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onOpenFile).not.toHaveBeenCalled();
+    expect(listDir).toHaveBeenCalledWith('/base/docs');
+  });
+
   it('ディレクトリを読み込み直したときは作り直す（内容が変わるため）', async () => {
     const before = rows()[0];
     await pane.load('/base');
     expect(rows()[0]).not.toBe(before);
+  });
+});
+
+// Enter キー経路（app.js が fp.enter() を呼ぶ）。dblclick と同じ enter() を通す。
+describe('enter() — キーボードでの開く', () => {
+  it('カーソルがファイルなら onOpenFile を呼ぶ', async () => {
+    mousedown(rows()[2]); // a.txt にカーソル
+    await pane.enter();
+    expect(onOpenFile).toHaveBeenCalledTimes(1);
+    expect(onOpenFile.mock.calls[0][0].name).toBe('a.txt');
+    expect(listDir).not.toHaveBeenCalledWith('/base/a.txt');
+  });
+
+  it('カーソルがフォルダなら中に入り、onOpenFile は呼ばない', async () => {
+    mousedown(rows()[0]); // docs にカーソル
+    listDir.mockClear();
+    await pane.enter();
+    expect(listDir).toHaveBeenCalledWith('/base/docs');
+    expect(onOpenFile).not.toHaveBeenCalled();
   });
 });

@@ -258,7 +258,11 @@ function showEntryMenu(pane, info) {
     if (entry.is_dir) {
       items.push({ label: '開く', shortcut: 'Enter', action: () => navigateActive(entry.path) });
     } else {
-      items.push({ label: '外部アプリで開く', action: () => openWith('open', entry.path) });
+      items.push({
+        label: '外部アプリで開く',
+        shortcut: 'Enter',
+        action: () => openWith('open', entry.path),
+      });
     }
     items.push(
       { label: 'ファイルマネージャで表示', action: () => openWith('reveal', entry.path) },
@@ -829,6 +833,7 @@ async function init() {
       onNavigate: (value, o) => navigatePane(p, value, o),
       onContextMenu: (info) => showEntryMenu(p, info),
       onDragStart: (info) => dragSession.begin(info),
+      onOpenFile: (entry) => openWith('open', entry.path),
       onChange: (info) => {
         sessionSaver.schedule(); // ディレクトリ移動をセッションに保存（デバウンス）
         if (p === panes.getActive()) {

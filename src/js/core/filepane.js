@@ -62,7 +62,7 @@ export function createFilePane(rootEl, opts = {}) {
   const pathEl = rootEl.querySelector('.pane-path');
   const inputEl = rootEl.querySelector('.pane-path-input');
   const columnsEl = rootEl.querySelector('.pane-columns');
-  const { onActivate, onChange, onNavigate, onContextMenu, onSort, onDragStart } = opts;
+  const { onActivate, onChange, onNavigate, onContextMenu, onSort, onDragStart, onOpenFile } = opts;
   // 現在のソート状態を返す（app.js が共有状態を注入。既定は名前昇順）。
   const getSort = typeof opts.getSort === 'function' ? opts.getSort : () => DEFAULT_SORT;
   const collator = defaultCollator();
@@ -345,10 +345,16 @@ export function createFilePane(rootEl, opts = {}) {
     return true;
   }
 
-  /** カーソル位置がディレクトリなら入る (l / Enter) */
+  /**
+   * カーソル位置を開く (l / Enter / ダブルクリック)。
+   * フォルダなら中に入り、ファイルなら既定アプリで開く（onOpenFile に委ねる。
+   * ペイン自身は外部アプリ連携を知らない）。
+   */
   async function enter() {
     const e = entries[cursor];
-    if (e && e.is_dir) await load(e.path);
+    if (!e) return;
+    if (e.is_dir) await load(e.path);
+    else if (onOpenFile) onOpenFile(e);
   }
 
   /** 親ディレクトリへ戻る (h / Backspace)。元いたフォルダにカーソルを合わせる */
