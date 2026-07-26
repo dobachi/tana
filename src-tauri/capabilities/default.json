@@ -27,6 +27,10 @@
       "allow": [{ "url": "http://**" }, { "url": "https://**" }, { "url": "mailto:*" }]
     },
     {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "**" }]
+    },
+    {
       "identifier": "opener:allow-reveal-item-in-dir",
       "allow": [{ "path": "**" }]
     }
