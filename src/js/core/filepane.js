@@ -49,6 +49,27 @@ export function filterEntries(entries, showHidden) {
   return showHidden ? entries : entries.filter((e) => !isHidden(e));
 }
 
+/** パス比較用に区切りを "/" に正規化する（Windows の \ と検索の / の差を吸収）。 */
+function normPath(p) {
+  return String(p == null ? '' : p).replace(/\\/g, '/');
+}
+
+/**
+ * entries から、区切り差を無視して path に一致する index を返す（無ければ -1）。
+ * 検索(FR-18)は forward-slash、list_dir はネイティブ区切りなので照合前に揃える。
+ */
+export function indexByPath(entries, path) {
+  if (!path) return -1;
+  const target = normPath(path);
+  return entries.findIndex((e) => normPath(e.path) === target);
+}
+
+/** 保存された選択パス集合を、現在の entries に存在するものだけ（実 path 値）で復元。 */
+export function restoreSelection(entries, selection) {
+  const want = new Set((Array.isArray(selection) ? selection : []).map(normPath));
+  return new Set(entries.filter((e) => want.has(normPath(e.path))).map((e) => e.path));
+}
+
 /**
  * ファイルペインを生成する。
  * @param {HTMLElement} rootEl `.pane` 要素（`.pane-list` と `.pane-path` を含む）
@@ -464,12 +485,10 @@ export function createFilePane(rootEl, opts = {}) {
     /** getViewState で保存した状態を、現在の一覧に対して復元する。 */
     applyViewState: (state) => {
       if (!state) return;
-      if (Array.isArray(state.selection)) {
-        const exist = new Set(entries.map((e) => e.path));
-        selected = new Set(state.selection.filter((p) => exist.has(p)));
-      }
+      // 区切り差（Windows の \ と検索の /）を無視して照合する。
+      if (Array.isArray(state.selection)) selected = restoreSelection(entries, state.selection);
       if (state.cursorPath) {
-        const idx = entries.findIndex((e) => e.path === state.cursorPath);
+        const idx = indexByPath(entries, state.cursorPath);
         if (idx >= 0) cursor = idx;
       }
       cursor = clampCursor(cursor, entries.length);

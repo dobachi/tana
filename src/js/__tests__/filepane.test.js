@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { formatSize, clampCursor, isHidden, filterEntries } from '../core/filepane.js';
+import {
+  formatSize,
+  clampCursor,
+  isHidden,
+  filterEntries,
+  indexByPath,
+  restoreSelection,
+} from '../core/filepane.js';
 
 describe('formatSize', () => {
   it('0 や負値は空文字', () => {
@@ -51,5 +58,30 @@ describe('filterEntries', () => {
   });
   it('showHidden=true で全件', () => {
     expect(filterEntries(entries, true)).toHaveLength(4);
+  });
+});
+
+describe('indexByPath（区切り差を無視）', () => {
+  const entries = [{ path: 'C:\\Users\\x\\a.txt' }, { path: 'C:\\Users\\x\\sub' }];
+  it('forward-slash の検索パスでもネイティブ entries に一致', () => {
+    expect(indexByPath(entries, 'C:/Users/x/sub')).toBe(1);
+    expect(indexByPath(entries, 'C:/Users/x/a.txt')).toBe(0);
+  });
+  it('一致なし・空は -1', () => {
+    expect(indexByPath(entries, 'C:/Users/x/none')).toBe(-1);
+    expect(indexByPath(entries, '')).toBe(-1);
+    expect(indexByPath(entries, null)).toBe(-1);
+  });
+});
+
+describe('restoreSelection（区切り差を無視し実 path 値で復元）', () => {
+  const entries = [{ path: 'C:\\d\\a' }, { path: 'C:\\d\\b' }, { path: 'C:\\d\\c' }];
+  it('存在するものだけを entries の実 path で返す', () => {
+    const got = restoreSelection(entries, ['C:/d/a', 'C:/d/c', 'C:/d/gone']);
+    expect([...got]).toEqual(['C:\\d\\a', 'C:\\d\\c']);
+  });
+  it('空/非配列は空 Set', () => {
+    expect(restoreSelection(entries, []).size).toBe(0);
+    expect(restoreSelection(entries, null).size).toBe(0);
   });
 });
