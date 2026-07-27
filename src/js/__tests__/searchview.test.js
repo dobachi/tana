@@ -45,6 +45,7 @@ describe('createSearch', () => {
       includeHidden: false,
       caseInsensitive: true,
       regex: false,
+      searchContent: false,
     });
     const rows = document.querySelectorAll('.search-row');
     expect(rows).toHaveLength(2);

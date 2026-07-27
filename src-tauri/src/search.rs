@@ -28,6 +28,8 @@ pub struct SearchOpts {
     pub case_insensitive: bool,
     pub regex: bool,
     pub include_hidden: bool,
+    /// テキストファイルの内容も検索するか（false なら名前のみ＝高速）。
+    pub search_content: bool,
     pub max_results: usize,
     pub max_file_bytes: u64,
     pub max_hits_per_file: usize,
@@ -40,12 +42,30 @@ impl Default for SearchOpts {
             case_insensitive: true,
             regex: false,
             include_hidden: false,
+            search_content: true,
             max_results: 500,
             max_file_bytes: 1_000_000,
             max_hits_per_file: 20,
             max_visited: 50_000,
         }
     }
+}
+
+/// 走査から除外する重いディレクトリ（依存/ビルド生成物など）。名前ヒットは残すが
+/// 中には降りない（大量ファイルで検索が重くなる主因を避ける）。
+fn is_excluded_dir(name: &str) -> bool {
+    matches!(
+        name,
+        "node_modules"
+            | "target"
+            | ".git"
+            | ".venv"
+            | "venv"
+            | "__pycache__"
+            | ".cache"
+            | ".mypy_cache"
+            | ".pytest_cache"
+    )
 }
 
 /// needle が haystack に含まれるか（ci=大小無視）。空の needle は常に false。
@@ -154,7 +174,15 @@ pub fn search_dir_impl(root: &Path, query: &str, opts: &SearchOpts) -> Vec<Searc
             }
 
             if is_dir {
-                stack.push(path);
+                // 重いディレクトリ（node_modules 等）には降りない
+                if !is_excluded_dir(&name) {
+                    stack.push(path);
+                }
+                continue;
+            }
+
+            // 本文検索が無効なら以降（ファイル読取）はスキップ＝高速
+            if !opts.search_content {
                 continue;
             }
 
@@ -201,11 +229,13 @@ pub fn search_dir(
     case_insensitive: bool,
     include_hidden: bool,
     regex: bool,
+    search_content: bool,
 ) -> Vec<SearchHit> {
     let opts = SearchOpts {
         case_insensitive,
         regex,
         include_hidden,
+        search_content,
         ..Default::default()
     };
     search_dir_impl(Path::new(&dir), &query, &opts)
@@ -310,6 +340,34 @@ mod tests {
         assert!(!hits
             .iter()
             .any(|h| h.name == "bin.dat" && h.kind == "content"));
+    }
+
+    #[test]
+    fn name_only_skips_content_scan() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("plain.txt"), b"needle inside body\n").unwrap();
+        let opts = SearchOpts {
+            search_content: false,
+            ..Default::default()
+        };
+        // 本文一致は拾わない（ファイル名に needle が無いので 0 件）
+        assert!(search_dir_impl(tmp.path(), "needle", &opts).is_empty());
+        // ファイル名一致は拾う
+        assert!(!search_dir_impl(tmp.path(), "plain", &opts).is_empty());
+    }
+
+    #[test]
+    fn excluded_dirs_are_not_descended() {
+        let tmp = tempfile::tempdir().unwrap();
+        let nm = tmp.path().join("node_modules");
+        fs::create_dir(&nm).unwrap();
+        fs::write(nm.join("dep.txt"), b"needle in dep\n").unwrap();
+        // node_modules の中身は内容検索されない
+        let hits = search_dir_impl(tmp.path(), "needle", &SearchOpts::default());
+        assert!(!hits.iter().any(|h| h.name == "dep.txt"));
+        // ただし node_modules 自体は名前一致では見つかる
+        let by_name = search_dir_impl(tmp.path(), "node_modules", &SearchOpts::default());
+        assert!(by_name.iter().any(|h| h.name == "node_modules"));
     }
 
     #[test]

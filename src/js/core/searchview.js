@@ -28,6 +28,7 @@ export function createSearch(deps) {
   let hiddenChk = null;
   let caseChk = null;
   let regexChk = null;
+  let contentChk = null;
   let rows = []; // { el, hit }
   let gen = 0;
   let timer = null;
@@ -109,6 +110,7 @@ export function createSearch(deps) {
         includeHidden: !!(hiddenChk && hiddenChk.checked),
         caseInsensitive: !(caseChk && caseChk.checked),
         regex: !!(regexChk && regexChk.checked),
+        searchContent: !!(contentChk && contentChk.checked),
       });
     } catch {
       hits = [];
@@ -176,7 +178,7 @@ export function createSearch(deps) {
     inputEl = doc.createElement('input');
     inputEl.type = 'search';
     inputEl.className = 'search-input';
-    inputEl.placeholder = '現在ディレクトリ内を検索（名前・本文）…';
+    inputEl.placeholder = '現在ディレクトリ内を名前で検索（本文も検索は「本文」をON）…';
     inputEl.spellcheck = false;
     inputEl.autocomplete = 'off';
     head.appendChild(inputEl);
@@ -194,6 +196,7 @@ export function createSearch(deps) {
       head.appendChild(l);
       return chk;
     };
+    contentChk = mkOpt('本文', 'ファイル本文も検索する（重い。既定は名前のみで高速）');
     caseChk = mkOpt('Aa', '大文字小文字を区別');
     regexChk = mkOpt('.*', '正規表現で検索');
     hiddenChk = mkOpt('隠し', '隠しファイルも対象にする');
@@ -227,7 +230,7 @@ export function createSearch(deps) {
     gen += 1;
     overlay.remove();
     overlay = null;
-    inputEl = statusEl = listEl = hiddenChk = caseChk = regexChk = null;
+    inputEl = statusEl = listEl = hiddenChk = caseChk = regexChk = contentChk = null;
     rows = [];
   }
 

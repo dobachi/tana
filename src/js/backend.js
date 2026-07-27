@@ -50,9 +50,16 @@ export async function listPlaces() {
 export async function searchDir(
   dir,
   query,
-  { caseInsensitive = true, includeHidden = false, regex = false } = {},
+  { caseInsensitive = true, includeHidden = false, regex = false, searchContent = false } = {},
 ) {
-  const hits = await invoke('search_dir', { dir, query, caseInsensitive, includeHidden, regex });
+  const hits = await invoke('search_dir', {
+    dir,
+    query,
+    caseInsensitive,
+    includeHidden,
+    regex,
+    searchContent,
+  });
   return hits || [];
 }
 
