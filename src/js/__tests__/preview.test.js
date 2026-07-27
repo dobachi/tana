@@ -46,16 +46,18 @@ function setup(over = {}) {
   const scheduler = makeScheduler();
   const readPreview = over.readPreview || vi.fn(async () => ({ text: 'hi', sniff: [104, 105] }));
   const assetUrl = vi.fn((p) => `asset://${p}`);
+  const onImage = over.onImage || vi.fn();
   const preview = createPreview({
     backend: { readPreview, assetUrl },
     getContainer: () => container,
     getInfoContainer: () => infoContainer,
+    onImage,
     loadRenderers: async () => R,
     loadMarkdown: async () => M,
     doc: {},
     scheduler,
   });
-  return { preview, R, M, scheduler, readPreview, assetUrl, container, infoContainer };
+  return { preview, R, M, scheduler, readPreview, assetUrl, container, infoContainer, onImage };
 }
 
 const textFile = { name: 'a.txt', path: '/p/a.txt', size: 10, is_dir: false };
@@ -104,6 +106,17 @@ describe('createPreview — routing', () => {
     expect(readPreview).not.toHaveBeenCalled();
     expect(R.renderImage).toHaveBeenCalledTimes(1);
     expect(assetUrl).toHaveBeenCalledWith('/p/p.png');
+  });
+
+  it('image → onImage(container) を呼ぶ（表示モードの結線用, FR-16）', async () => {
+    const { preview, onImage, container, scheduler } = setup();
+    preview.open();
+    await flushAll();
+    preview.setTarget(imgFile);
+    scheduler.flush();
+    await flushAll();
+    expect(onImage).toHaveBeenCalledTimes(1);
+    expect(onImage).toHaveBeenCalledWith(container);
   });
 });
 

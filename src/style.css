@@ -963,12 +963,34 @@ body[data-mode='operation'] .mode-indicator {
   color: var(--fg-dim);
   font-size: 0.85em;
 }
+/* 画像プレビューの表示制御 (FR-16) */
 .preview-image {
   display: flex;
   justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  cursor: zoom-in;
 }
-.preview-image img {
+/* フィット（既定）: ペインに縦横とも収める。下配置でも縦幅に合って全体が見える */
+.preview-image.fit img {
   max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+/* 実寸: 原寸で表示し、はみ出しは preview-content 側でスクロール */
+.preview-image.actual {
+  cursor: zoom-out;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+.preview-image.actual img {
+  max-width: none;
+  max-height: none;
+  width: auto;
   height: auto;
 }
 .preview-placeholder-note {

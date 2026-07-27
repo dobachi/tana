@@ -20,6 +20,7 @@ import {
   loadStoredPlacement,
   storePlacement,
 } from './core/previewplacement.js';
+import { createPreviewZoom } from './core/previewzoom.js';
 import { createSortState, loadStoredSort, storeSort } from './core/sortstate.js';
 import { SORT_KEYS, SORT_LABELS } from './core/sort.js';
 import { loadSession, storeSession, createSessionSaver } from './core/session.js';
@@ -107,11 +108,36 @@ let placesView = null;
 
 // プレビュー (FR-09): 配置状態の真実源 + コントローラ
 const previewPlacement = createPreviewPlacement(loadStoredPlacement());
+// プレビュー画像の表示モード (FR-16): 既定フィット、クリックで実寸切替。
+const previewZoom = createPreviewZoom();
 const preview = createPreview({
   backend: { readPreview, assetUrl },
   getContainer: () => document.getElementById('preview-content'),
   getInfoContainer: () => document.getElementById('preview-info'),
+  onImage: (container) => wireImageZoom(container),
 });
+
+/**
+ * 描画された画像に表示モード（フィット/実寸）を結線する (FR-16)。
+ * 画像が変わるたびにフィットへ戻し、クリックで実寸⇄フィットを切り替える。
+ */
+function wireImageZoom(container) {
+  const holder = container && container.querySelector('.preview-image');
+  if (!holder) return;
+  previewZoom.reset();
+  applyImageMode(holder);
+  holder.addEventListener('click', () => {
+    previewZoom.toggle();
+    applyImageMode(holder);
+  });
+}
+
+/** 表示モードを holder の class に反映する（CSS が見た目を担当）。 */
+function applyImageMode(holder) {
+  const fit = previewZoom.isFit();
+  holder.classList.toggle('fit', fit);
+  holder.classList.toggle('actual', !fit);
+}
 
 // Alt 単押しでメニューバーを開く（Fude と同じ操作感）。他キーを挟まず Alt を
 // 押して離したときだけ発火する状態機械。

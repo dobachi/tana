@@ -94,4 +94,13 @@ describe('content renderers (jsdom)', () => {
     expect(img.getAttribute('src')).toBe('asset://x');
     expect(img.getAttribute('alt')).toBe('p.png');
   });
+
+  it('renderImage は既定でフィット表示（.preview-image.fit + 切替ヒント）(FR-16)', () => {
+    const c = document.createElement('div');
+    renderImage(c, { entry: { name: 'p.png' }, src: 'asset://x' }, document);
+    const holder = c.querySelector('.preview-image');
+    expect(holder).not.toBeNull();
+    expect(holder.classList.contains('fit')).toBe(true);
+    expect(holder.title).toContain('フィット');
+  });
 });

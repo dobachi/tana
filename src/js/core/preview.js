@@ -28,6 +28,7 @@ export function createPreview(deps) {
     backend,
     getContainer,
     getInfoContainer = () => null,
+    onImage = null, // 画像を描画した直後に呼ぶ (FR-16: 表示モードの結線)
     loadRenderers = () => import('../features/preview/render.js'),
     loadMarkdown = () => import('../features/preview/markdown.js'),
     doc = typeof document !== 'undefined' ? document : null,
@@ -78,6 +79,7 @@ export function createPreview(deps) {
       if (kind1 === KIND.IMAGE) {
         const src = backend.assetUrl(entry.path);
         R.renderImage(container, { entry, src }, doc);
+        if (onImage) onImage(container);
         info(KIND.IMAGE, null, src);
         renderedPath = entry.path;
         return;

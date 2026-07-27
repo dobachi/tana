@@ -107,7 +107,10 @@ export function renderPlaceholder(container, { kind, note }, doc) {
 /** 画像プレビュー（asset URL を <img> で表示。バイト列は読まない）。 */
 export function renderImage(container, { entry, src }, doc) {
   container.innerHTML = '';
-  const holder = el(doc, 'div', 'preview-image');
+  // 既定は 'fit'（ペインに収める）。app 側が画像クリックで 'actual'（実寸）へ
+  // 切り替える。切替のヒントとして title とズームカーソルを付ける (FR-16)。
+  const holder = el(doc, 'div', 'preview-image fit');
+  holder.title = 'クリックで実寸 / フィット切替';
   const img = doc.createElement('img');
   img.src = src;
   img.alt = entry?.name || '';
