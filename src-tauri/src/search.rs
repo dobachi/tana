@@ -1,0 +1,260 @@
+//! search.rs — 現在ディレクトリ配下の検索 (FR-18)。
+//!
+//! ファイル名の一致と、テキストファイルの内容一致（grep 相当）を再帰的に探す。
+//! バイナリ・大きすぎるファイル・（既定で）隠しファイルは内容走査から除外する。
+//! マッチ判定・スニペット整形は純粋関数に切り出してテスト可能にし、実際の
+//! ディレクトリ走査(FS)は search_dir_impl が担う。結果は件数上限で頭打ちにして
+//! 応答性を確保する（真のキャンセルは将来対応）。
+
+use crate::is_binary_head;
+use serde::Serialize;
+use std::path::Path;
+
+/// 検索ヒット1件（ファイル名一致 or 内容一致）。
+#[derive(Debug, Serialize, PartialEq, Clone)]
+pub struct SearchHit {
+    pub path: String,
+    pub name: String,
+    pub is_dir: bool,
+    /// "name" | "content"
+    pub kind: String,
+    /// content のときのマッチ行番号（1始まり）
+    pub line_no: Option<u32>,
+    /// content のときのマッチ行（トリム＋最大長）
+    pub line: Option<String>,
+}
+
+pub struct SearchOpts {
+    pub case_insensitive: bool,
+    pub include_hidden: bool,
+    pub max_results: usize,
+    pub max_file_bytes: u64,
+    pub max_hits_per_file: usize,
+    pub max_visited: usize,
+}
+
+impl Default for SearchOpts {
+    fn default() -> Self {
+        SearchOpts {
+            case_insensitive: true,
+            include_hidden: false,
+            max_results: 500,
+            max_file_bytes: 1_000_000,
+            max_hits_per_file: 20,
+            max_visited: 50_000,
+        }
+    }
+}
+
+/// needle が haystack に含まれるか（ci=大小無視）。空の needle は常に false。
+pub fn contains_match(haystack: &str, needle: &str, ci: bool) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+    if ci {
+        haystack.to_lowercase().contains(&needle.to_lowercase())
+    } else {
+        haystack.contains(needle)
+    }
+}
+
+/// 表示用に行を trim し、max 文字を超えたら省略記号を付けて切る（純粋）。
+pub fn snippet(line: &str, max: usize) -> String {
+    let t = line.trim();
+    if t.chars().count() <= max {
+        t.to_string()
+    } else {
+        let s: String = t.chars().take(max).collect();
+        format!("{s}…")
+    }
+}
+
+/// 先頭ドットの隠し判定（走査の枝刈り用。Unix 慣習のみ）。
+fn is_hidden_name(name: &str) -> bool {
+    name.starts_with('.')
+}
+
+/// root 配下を再帰的に検索する。名前一致と内容一致を集める。
+pub fn search_dir_impl(root: &Path, query: &str, opts: &SearchOpts) -> Vec<SearchHit> {
+    let mut hits = Vec::new();
+    if query.is_empty() {
+        return hits;
+    }
+    let mut visited = 0usize;
+    let mut stack = vec![root.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        let read = match std::fs::read_dir(&dir) {
+            Ok(r) => r,
+            Err(_) => continue, // 権限なし等は黙って飛ばす
+        };
+        for entry in read.flatten() {
+            if hits.len() >= opts.max_results || visited >= opts.max_visited {
+                return hits;
+            }
+            visited += 1;
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let hidden = is_hidden_name(&name);
+            if hidden && !opts.include_hidden {
+                continue;
+            }
+            let is_dir = path.is_dir();
+            let path_s = path.to_string_lossy().replace('\\', "/");
+
+            // ファイル名一致
+            if contains_match(&name, query, opts.case_insensitive) {
+                hits.push(SearchHit {
+                    path: path_s.clone(),
+                    name: name.clone(),
+                    is_dir,
+                    kind: "name".into(),
+                    line_no: None,
+                    line: None,
+                });
+            }
+
+            if is_dir {
+                stack.push(path);
+                continue;
+            }
+
+            // 内容一致（テキスト・サイズ上限内のみ）
+            let too_big =
+                entry.metadata().map(|m| m.len()).unwrap_or(u64::MAX) > opts.max_file_bytes;
+            if too_big {
+                continue;
+            }
+            let Ok(bytes) = std::fs::read(&path) else {
+                continue;
+            };
+            if is_binary_head(&bytes[..bytes.len().min(4096)]) {
+                continue;
+            }
+            let text = String::from_utf8_lossy(&bytes);
+            let mut per_file = 0usize;
+            for (i, raw) in text.lines().enumerate() {
+                if per_file >= opts.max_hits_per_file || hits.len() >= opts.max_results {
+                    break;
+                }
+                if contains_match(raw, query, opts.case_insensitive) {
+                    per_file += 1;
+                    hits.push(SearchHit {
+                        path: path_s.clone(),
+                        name: name.clone(),
+                        is_dir: false,
+                        kind: "content".into(),
+                        line_no: Some((i + 1) as u32),
+                        line: Some(snippet(raw, 200)),
+                    });
+                }
+            }
+        }
+    }
+    hits
+}
+
+/// 「現在ディレクトリ配下を検索」する Tauri コマンド。
+#[tauri::command]
+pub fn search_dir(
+    dir: String,
+    query: String,
+    case_insensitive: bool,
+    include_hidden: bool,
+) -> Vec<SearchHit> {
+    let opts = SearchOpts {
+        case_insensitive,
+        include_hidden,
+        ..Default::default()
+    };
+    search_dir_impl(Path::new(&dir), &query, &opts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn contains_match_respects_case_flag() {
+        assert!(contains_match("Hello World", "hello", true));
+        assert!(!contains_match("Hello World", "hello", false));
+        assert!(contains_match("Hello World", "World", false));
+        assert!(!contains_match("abc", "", true)); // 空は常に false
+    }
+
+    #[test]
+    fn snippet_trims_and_truncates() {
+        assert_eq!(snippet("  hi there  ", 100), "hi there");
+        assert_eq!(snippet("abcdef", 3), "abc…");
+        assert_eq!(snippet("あいうえお", 2), "あい…"); // マルチバイトも文字数で
+    }
+
+    #[test]
+    fn finds_name_and_content_matches_recursively() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::create_dir(root.join("sub")).unwrap();
+        fs::write(root.join("needle_file.txt"), b"nothing here\n").unwrap();
+        fs::write(
+            root.join("sub/data.txt"),
+            b"line one\nhas NEEDLE inside\nlast\n",
+        )
+        .unwrap();
+        fs::write(root.join("sub/bin.dat"), [0u8, 1, 2, 3, 0, 255]).unwrap();
+
+        let hits = search_dir_impl(root, "needle", &SearchOpts::default());
+        // 名前一致（needle_file.txt）と内容一致（data.txt の 2 行目）
+        let names: Vec<_> = hits
+            .iter()
+            .filter(|h| h.kind == "name")
+            .map(|h| &h.name)
+            .collect();
+        assert!(names.iter().any(|n| n.contains("needle_file.txt")));
+        let content: Vec<_> = hits.iter().filter(|h| h.kind == "content").collect();
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0].line_no, Some(2));
+        assert_eq!(content[0].line.as_deref(), Some("has NEEDLE inside"));
+        // バイナリは内容走査されない
+        assert!(!hits
+            .iter()
+            .any(|h| h.name == "bin.dat" && h.kind == "content"));
+    }
+
+    #[test]
+    fn hidden_excluded_by_default_included_on_request() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(root.join(".secret.txt"), b"needle\n").unwrap();
+
+        let d = search_dir_impl(root, "needle", &SearchOpts::default());
+        assert!(d.is_empty()); // 既定では隠しを除外
+
+        let opts = SearchOpts {
+            include_hidden: true,
+            ..Default::default()
+        };
+        let h = search_dir_impl(root, "needle", &opts);
+        assert!(!h.is_empty());
+    }
+
+    #[test]
+    fn empty_query_returns_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("a.txt"), b"x").unwrap();
+        assert!(search_dir_impl(tmp.path(), "", &SearchOpts::default()).is_empty());
+    }
+
+    #[test]
+    fn respects_max_results() {
+        let tmp = tempfile::tempdir().unwrap();
+        for i in 0..10 {
+            fs::write(tmp.path().join(format!("needle_{i}.txt")), b"x").unwrap();
+        }
+        let opts = SearchOpts {
+            max_results: 3,
+            ..Default::default()
+        };
+        assert_eq!(search_dir_impl(tmp.path(), "needle", &opts).len(), 3);
+    }
+}

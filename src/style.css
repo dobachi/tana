@@ -770,6 +770,88 @@ body[data-mode='operation'] .entry.selected.cursor {
 body[data-mode='operation'] .modal {
   border-top-color: var(--accent-op);
 }
+
+/* 現在ディレクトリ内検索 (FR-18) */
+.search-overlay {
+  align-items: flex-start;
+}
+.search-box {
+  margin-top: 8vh;
+  width: 720px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  max-height: 76vh;
+}
+.search-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.search-input {
+  flex: 1;
+  font: inherit;
+  padding: 6px 10px;
+  color: var(--fg);
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.search-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+.search-status {
+  color: var(--fg-dim);
+  font-size: 0.82em;
+  padding: 6px 2px;
+}
+.search-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+}
+.search-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.search-row:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.search-row:focus {
+  outline: none;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.search-kind {
+  flex-shrink: 0;
+  font-size: 0.72em;
+  color: var(--fg-dim);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.search-main {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 0.86em;
+}
 .modal-msg {
   margin: 0 0 12px;
   white-space: pre-line;

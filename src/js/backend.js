@@ -43,6 +43,19 @@ export async function listPlaces() {
   return places || [];
 }
 
+/**
+ * 現在ディレクトリ配下を検索する (search_dir コマンド, FR-18)。名前一致 + 内容一致。
+ * Tauri 不在時は []。引数は Rust snake_case を camelCase で渡す（Tauri v2）。
+ */
+export async function searchDir(
+  dir,
+  query,
+  { caseInsensitive = true, includeHidden = false } = {},
+) {
+  const hits = await invoke('search_dir', { dir, query, caseInsensitive, includeHidden });
+  return hits || [];
+}
+
 /** プレビュー用データを取得する (read_preview コマンド, FR-09)。Tauri 不在時は null */
 export async function readPreview(path, maxBytes) {
   return invoke('read_preview', { path, maxBytes });

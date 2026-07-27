@@ -27,7 +27,8 @@ import { SORT_KEYS, SORT_LABELS } from './core/sort.js';
 import { loadSession, storeSession, createSessionSaver } from './core/session.js';
 import { createToast } from './core/toast.js';
 import { checkForUpdates } from './core/updater.js';
-import { resolveInputPath, describeOpenError } from './core/pathnav.js';
+import { resolveInputPath, describeOpenError, parentPath } from './core/pathnav.js';
+import { createSearch } from './core/searchview.js';
 import {
   initMenuBar,
   toggleMenuBar,
@@ -56,6 +57,7 @@ import {
   appVersion,
   getCliPath,
   listPlaces,
+  searchDir,
   copyPath,
   movePath,
   deleteToTrash,
@@ -382,6 +384,33 @@ const dragSession = createDragSession({
 });
 let favView = null;
 let placesView = null;
+
+// 現在ディレクトリ内検索 (FR-18)。オーバーレイUIは searchview.js。
+const search = createSearch({
+  searchDir,
+  getDir: () => {
+    const fp = activeFilePane();
+    return fp ? fp.getCurrentDir() : null;
+  },
+  onOpen: (hit) => openSearchHit(hit),
+});
+
+/** 検索ヒットを開く。ディレクトリは中へ、ファイルは親へ移動してカーソルを合わせる。 */
+function openSearchHit(hit) {
+  const fp = activeFilePane();
+  if (!fp || !hit || !hit.path) return;
+  if (hit.is_dir) {
+    fp.load(hit.path).catch((e) => toast(describeOpenError(hit.path, e)));
+    focusActivePane();
+    return;
+  }
+  const parent = parentPath(hit.path);
+  if (!parent) return;
+  fp.load(parent)
+    .then(() => fp.applyViewState({ cursorPath: hit.path, selection: [] }))
+    .catch((e) => toast(describeOpenError(parent, e)));
+  focusActivePane();
+}
 
 // プレビュー (FR-09): 配置状態の真実源 + コントローラ
 const previewPlacement = createPreviewPlacement(loadStoredPlacement());
@@ -1053,6 +1082,26 @@ function onKeydown(e) {
     }
     return;
   }
+  // 検索オーバーレイ (FR-18): 表示中は Ctrl+F で閉じる以外を searchview に委ねる。
+  if (search.isOpen()) {
+    if (
+      e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      (e.code === 'KeyF' || e.key.toLowerCase() === 'f')
+    ) {
+      e.preventDefault();
+      search.close();
+    }
+    return;
+  }
+  // 検索を開く: Ctrl+F
+  if (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === 'KeyF' || e.key.toLowerCase() === 'f')) {
+    e.preventDefault();
+    search.open();
+    return;
+  }
+
   // ナビゲーション履歴: Alt+← 戻る / Alt+→ 進む (FR-17)。h(親)/l(開く) とは
   // 別概念（時系列の移動）。ブラウザ/Explorer と同じ操作感。
   if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {

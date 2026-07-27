@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 mod places;
+mod search;
 
 /// ディレクトリ内の 1 エントリ（ファイル/フォルダ）
 #[derive(Debug, Serialize, PartialEq)]
@@ -291,7 +292,7 @@ fn clamp_max_bytes(n: usize) -> usize {
 
 /// 先頭バイト列からテキストかバイナリかを判定する。NUL を含む、または非テキスト
 /// 制御文字の比率が高い場合はバイナリとみなす（拡張子が .txt でもこちらを優先）。
-fn is_binary_head(bytes: &[u8]) -> bool {
+pub(crate) fn is_binary_head(bytes: &[u8]) -> bool {
     if bytes.is_empty() {
         return false;
     }
@@ -419,7 +420,8 @@ pub fn run() {
             make_dir,
             read_preview,
             app_version,
-            places::list_places
+            places::list_places,
+            search::search_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tana application");

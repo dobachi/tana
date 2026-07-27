@@ -5,8 +5,8 @@
 > 機能の追加・変更時は **このファイルも更新** してください（特に「実装ステータス」「次の一手」）。
 
 - **スナップショット日**: 2026-07-27
-- **基準コミット**: v0.4.7 リリース済み。以降 M2 として FR-07 Places の第1スライス（ドライブ/標準フォルダ検出）を追加
-- **現在のフェーズ**: **M2 進行中**（M1 完了済み）。FR-07 Places 着手 → 次はクラウド/WSL 検出・Places 永続化・FR-08 タブ
+- **基準コミット**: v0.4.11 リリース済み。以降 FR-18 現在ディレクトリ内検索(grep) を追加
+- **現在のフェーズ**: **M2 進行中**（M1 完了済み）。FR-08 タブ・FR-16 画像表示制御・FR-17 履歴・FR-18 検索を実装。残: FR-07 続き(WSL/永続化)・FR-16 パン 等
 
 関連: [README](../README.md) / [要求分析](REQUIREMENTS.md) / [設計](DESIGN.md) / [プレビュー](PREVIEW.md) / [ドラッグ＆ドロップ](DRAG-AND-DROP.md) / [詳細表示＆ソート](DETAIL-VIEW-SORT.md) / [Docker動作確認](DOCKER.md) / [コントリビューション](../CONTRIBUTING.md)
 
@@ -55,8 +55,8 @@ make docker-check  # CI相当チェック
 
 | 項目 | 状態（2026-07-27 実測） |
 |------|------|
-| Vitest (JS) | ✅ 495 passed / 41 files |
-| cargo test (Rust) | ✅ 27 passed（places 検出の純粋ロジック: ドライブ 4 + クラウド 2） |
+| Vitest (JS) | ✅ 505 passed / 42 files |
+| cargo test (Rust) | ✅ 33 passed（places 6 + search 6 の純粋ロジック含む） |
 | ESLint | ✅ クリーン |
 | Prettier | ✅ クリーン |
 | build:frontend | ✅ 成功（成果物に新ロジックが含まれることを確認） |
@@ -103,17 +103,19 @@ make docker-check  # CI相当チェック
 | `core/navhistory.js` | **ナビゲーション履歴 (FR-17)**。ペインごとの戻る/進む（ブラウザ型スタック+index）の純粋な状態。配線は app.js（onChange で積む・Alt+←/→・マウス戻る/進む） |
 | `core/tabs.js` | **タブの純粋な状態 (FR-08)**。ペインごとの add/close/activate/next/prev/move、各タブは dir + 表示状態。読み込み/保存の結線は app.js（`renderTabs`/`switchToActiveTab` と filepane の `getViewState`/`applyViewState`） |
 | `core/keyprefix.js` | **二打鍵プレフィックスの純粋マッピング**。`(prefix, key)→アクションID`（s=並替/t=タブ移動/y=コピー/o=開く）とヒント文言。実行は app.js `runPrefixAction`。方針は memory `feedback_tana_prefix_shortcuts` |
+| `core/searchview.js` | **現在ディレクトリ内検索のオーバーレイUI (FR-18)**。`Ctrl+F`。入力→debounce→backend `search_dir`→結果一覧（名前/本文）、Enter でジャンプ。マッチングは Rust `search.rs`（純粋部テスト済み） |
 | `core/dnd.js` | **D&D の判定（純粋）**。掴んだ対象・効果(copy/move)・不正ドロップの拒否。詳細: [DRAG-AND-DROP.md](DRAG-AND-DROP.md) |
 | `core/dragdrop.js` | **D&D の追跡（DOM）**。ポインタイベントで自作。`resolveDropTarget` は将来の OS ドロップでも再利用する。安全モードは拒否ゴースト＋トーストで示す |
 | `core/editmenu.js` | **メニューバー「編集」の項目（純粋）**。対象・宛先の有無で無効化を判定。app.js が状態と action を注入 |
 
-テストは `src/js/__tests__/<name>.test.js` に対応（41ファイル）。
+テストは `src/js/__tests__/<name>.test.js` に対応（42ファイル）。
 
 ### バックエンド `src-tauri/src/`
 `lib.rs` に集約（ファイル操作系）。`places.rs`（FR-07 の場所検出）を分離済み。`main.rs` は薄いエントリ。
 
 - Tauri コマンド: `list_dir` / `home_dir` / `parent_dir` / `unique_name` / `copy_path` / `move_path` / `delete_to_trash` / `delete_permanent` / `rename_path` / `make_dir` / `read_preview` / `app_version` / `places::list_places`
 - テスト対象の純粋関数: `is_hidden_entry` / `read_dir_entries` / `target_path` / `unique_target_name` / `copy_recursive` / `remove_any`
+- **`search.rs`** (FR-18): `contains_match`/`snippet`（純粋・テスト済み）+ `search_dir_impl`（再帰走査: 名前一致＋テキスト内容一致、バイナリ/大サイズ/隠し除外、件数上限）。コマンド `search_dir`
 - **`places.rs`**: `build_places`（存在フィルタ+パス重複除去、注入で純粋テスト）/ `windows_drive_candidates`（A:〜Z: 生成）/ `standard_candidates`（dirs でホーム/デスクトップ/ドキュメント/ダウンロード）/ `is_cloud_folder`・`cloud_places_from`（クラウド同期フォルダ検出、純粋）/ OS 別 `drive_candidates`（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）
 - 依存は最小（tauri / tauri-cli / plugin-dialog / opener / updater / process / serde / dirs）
 
@@ -141,6 +143,7 @@ make docker-check  # CI相当チェック
 | FR-13 | コンテキストメニュー + 外部アプリ連携 | M | ✅ | 右クリック / Shift+F10。外部アプリ・ファイルマネージャ表示は opener。ファイルのダブルクリック / Enter で既定アプリを開く |
 | FR-14 | セッション復元 | M/S | ✅ | ディレクトリ・アクティブペイン＋**各ペインのタブ構成（タブ dir 一覧・アクティブ index）**を localStorage で復元(core/session.js)。旧セッションとも後方互換 |
 | FR-15 | 隠しファイル表示トグル | M | ✅ | Ctrl+H、両ペイン共通 |
+| FR-18 | 現在ディレクトリ内検索(grep) | S | 🟡 | `Ctrl+F` で現在地配下を再帰検索。ファイル名＋テキスト内容一致を一覧、Enter でジャンプ（ファイルは親へ移動しカーソル）。バイナリ/大サイズ/隠し除外(隠しは切替)、件数上限500。`search.rs`+`searchview.js`。**残**: 真のキャンセル・正規表現・検索結果のプレビュー |
 | FR-16 | プレビューの表示制御(フィット/ズーム/パン) | S | 🟡 | 画像で先行。既定フィット(contain)⇄実寸(100%)をクリックで切替＋**Ctrl+ホイールで連続ズーム**（画像上ではフォント拡縮より優先するよう `onWheel` で調停）。横スクロール問題を解消（core/previewzoom.js）。**残**: パン(ドラッグ移動)、＋/−キーでのズーム |
 | FR-17 | ナビゲーション履歴(戻る/進む) | S | ✅ | ペインごとの履歴。`Alt+←`/`Alt+→`＋マウスの戻る/進むボタン。親移動(`h`)とは別概念（時系列）。`core/navhistory.js`（純粋）+ app.js 配線 |
 
@@ -185,7 +188,7 @@ make docker-check  # CI相当チェック
 1. ~~**FR-10 キーボード到達性の点検**~~ ✅ 完了（2026-07-27）。全操作を棚卸しし、(a) キーボードで開いたコンテキストメニューの先頭フォーカス、(b) メニュー専用操作のヘルプ明記、(c) ファイルクリップボード Ctrl+C/Ctrl+X→Ctrl+V（任意の現在地へ貼付）の追加で抜けを埋めた。「同ペイン内フォルダへのドロップ」相当もキーボードから到達可能になった。
 2. ~~**D&D のネイティブ実機確認**~~ ✅ 完了（2026-07-27）。`make dev` 起動で `Shift`+ドロップ＝移動・フォルダ行への吸い込み・複数選択ドラッグを目視確認。
 3. ~~**M1 完了の宣言**~~ ✅ **M1 完了（2026-07-27）**。優先度 M の FR/NFR は達成。
-4. **M2 進行中**: **FR-07 Places** の第1スライス完了（ドライブ/標準フォルダの検出・表示・移動。`places.rs` 分離 + `placesview.js` 新設、Ctrl+B 巡回に統合）。**FR-16 プレビュー表示制御**の第1スライス完了（画像フィット⇄実寸のクリック切替、`previewzoom.js`）。クラウド同期フォルダ検出（OneDrive/Box/Dropbox/Google Drive）も追加済み。FR-16 連続ズーム（Ctrl+ホイール、フォント拡縮との競合を `onWheel` で調停）も実装済み。プレビュー縦幅のマウスリサイズ（区切りドラッグ＋永続化, `previewresize.js`）も実装済み。ナビゲーション履歴(FR-17)・**FR-08 タブ第1スライス（ペイン単位・状態保持）**も実装済み。**FR-08 タブは完了**（切替・状態保持・セッション復元・D&D 並べ替え）。**次**: (a) タブ構成をお気に入り保存(backlog `#idea`)、(b) FR-16 パン/＋−キー、(c) FR-07 WSL 検出・Places 永続化、(d) `make release` 非対話化。Q4（お気に入りの永続化を localStorage から設定ディレクトリJSONへ移すか）はタブのセッション復元と絡むのでそこで決める。
+4. **M2 進行中（実装済み）**: FR-07 Places（ドライブ/標準フォルダ/クラウド同期検出）、FR-16 画像表示制御（フィット⇄実寸・Ctrl+ホイール連続ズーム・中央維持）、プレビュー縦幅リサイズ、FR-17 履歴（Alt+←/→）、**FR-08 タブ完了**（切替・状態保持・セッション復元・D&D 並べ替え）、二打鍵プレフィックス（t/y/o）、**FR-18 現在ディレクトリ内検索（Ctrl+F, grep）**。**次**: (a) タブ構成をお気に入り保存(backlog `#idea`)、(b) FR-16 パン/＋−キー、(c) FR-07 WSL 検出・Places 永続化、(d) FR-18 真のキャンセル/正規表現、(e) `make release` 非対話化。Q4（お気に入りの永続化を localStorage→設定JSON）は残課題。
 5. モジュールを増やすたびに `__tests__` と Rust `#[cfg(test)]` を追加し、`make check` を green に保つ。コードを増やすにつれ DESIGN.md §2.2 の目標構成へ寄せる。
 
 ### バックログ（設計検討済み・未着手）

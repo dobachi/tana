@@ -75,6 +75,24 @@ export function resolveInputPath(input, ctx = {}) {
 }
 
 /**
+ * 親ディレクトリのパスを返す（純粋）。ルート（"/" や "C:/"）は親なしで null。
+ * ドライブ直下（"C:/a" → "C:/"）や POSIX ルート直下（"/a" → "/"）も扱う。
+ * @param {string} path
+ * @returns {string|null}
+ */
+export function parentPath(path) {
+  const p = normalizeSeparators(String(path || ''));
+  if (!p) return null;
+  if (p === '/' || /^[A-Za-z]:\/$/.test(p)) return null; // ルートに親なし
+  const cut = p.replace(/\/+$/, '');
+  const i = cut.lastIndexOf('/');
+  if (i < 0) return null;
+  let parent = cut.slice(0, i);
+  if (/^[A-Za-z]:$/.test(parent)) parent += '/'; // ドライブ直下は "C:/" に
+  return parent || '/';
+}
+
+/**
  * 移動に失敗した理由を、エラー文字列から読める形に取り出す。
  *
  * backend の list_dir は Rust 側で `format!("{}: {}", path.display(), e)` の形、

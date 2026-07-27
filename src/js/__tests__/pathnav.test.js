@@ -5,6 +5,7 @@ import {
   normalizePath,
   normalizeSeparators,
   describeOpenError,
+  parentPath,
 } from '../core/pathnav.js';
 
 describe('normalizeSeparators', () => {
@@ -129,6 +130,26 @@ describe('pathSegments', () => {
       { name: 'u', path: '/home/u' },
       { name: '私の 書類', path: '/home/u/私の 書類' },
     ]);
+  });
+});
+
+describe('parentPath', () => {
+  it('通常の親を返す', () => {
+    expect(parentPath('/a/b/c')).toBe('/a/b');
+    expect(parentPath('C:/a/b')).toBe('C:/a');
+    expect(parentPath('C:\\a\\b.txt')).toBe('C:/a');
+  });
+  it('ルート直下は "/" / "C:/"', () => {
+    expect(parentPath('/a')).toBe('/');
+    expect(parentPath('C:/a')).toBe('C:/');
+  });
+  it('ルート自身は親なし(null)', () => {
+    expect(parentPath('/')).toBeNull();
+    expect(parentPath('C:/')).toBeNull();
+    expect(parentPath('')).toBeNull();
+  });
+  it('末尾スラッシュを無視する', () => {
+    expect(parentPath('/a/b/')).toBe('/a');
   });
 });
 
