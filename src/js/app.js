@@ -37,6 +37,7 @@ import { showMenu, isMenuVisible } from './core/menu.js';
 import { createAltTap } from './core/menu-nav.js';
 import { openSettings, closeSettings, isSettingsOpen } from './core/settings.js';
 import { createFileOps } from './core/fileops.js';
+import { createFileClipboard } from './core/clipboard.js';
 import { createDragSession } from './core/dragdrop.js';
 import { buildEditMenuItems } from './core/editmenu.js';
 import { createConflictDialog } from './core/conflictdialog.js';
@@ -80,6 +81,10 @@ const fileOps = createFileOps({
   toast,
   refresh: refreshPanes,
 });
+
+// ファイルクリップボード (FR-02): Ctrl+C コピー / Ctrl+X 切り取り / Ctrl+V 貼り付け。
+// F5/F6 が「反対ペイン固定」なのに対し、こちらは任意の現在地へ貼れる汎用経路。
+const fileClipboard = createFileClipboard();
 
 // 各ペインの DOM 要素とファイルペイン・コントローラ
 const filePanes = { left: null, right: null };
@@ -540,6 +545,40 @@ function opMakeFolder() {
   const fp = activeFilePane();
   if (fp) fileOps.makeNewFolder(fp.getCurrentDir());
 }
+// ファイルクリップボード操作 (FR-02)。登録（コピー/切り取り）は非破壊なので
+// 安全モードでも可。貼り付けの実操作は fileOps 側で安全モードのゲートに掛かる。
+function clipboardCopy() {
+  const fp = activeFilePane();
+  const targets = fp ? fp.getTargetEntries() : [];
+  if (!targets.length) return false;
+  fileClipboard.copy(targets);
+  toast(targets.length === 1 ? 'コピーしました' : `${targets.length} 件をコピー`);
+  return true;
+}
+function clipboardCut() {
+  const fp = activeFilePane();
+  const targets = fp ? fp.getTargetEntries() : [];
+  if (!targets.length) return false;
+  fileClipboard.cut(targets);
+  toast(targets.length === 1 ? '切り取りました' : `${targets.length} 件を切り取り`);
+  return true;
+}
+function clipboardPaste() {
+  if (fileClipboard.isEmpty()) return false;
+  const fp = activeFilePane();
+  const dir = fp && fp.getCurrentDir();
+  if (!dir) return false;
+  const { op, entries } = fileClipboard.get();
+  if (op === 'move') {
+    // 切り取りは一度きり。実行前にクリアして二重貼り付け（元が消えて失敗）を防ぐ。
+    fileClipboard.clear();
+    fileOps.move(entries, dir);
+  } else {
+    fileOps.copy(entries, dir);
+  }
+  return true;
+}
+
 function navigateActive(path) {
   const fp = activeFilePane();
   if (fp && path) fp.load(path);
@@ -670,6 +709,28 @@ function onKeydown(e) {
     const fp = activeFilePane();
     if (fp) fp.selectAllEntries();
     return;
+  }
+  // ファイルクリップボード: Ctrl+C コピー / Ctrl+X 切り取り / Ctrl+V 貼り付け (FR-02)。
+  // 入力欄・お気に入りサイドバーにフォーカス中はテキスト編集を優先し横取りしない。
+  if (
+    e.ctrlKey &&
+    !e.shiftKey &&
+    !e.altKey &&
+    !isEditableTarget(e.target) &&
+    !(favView && favView.isFocused())
+  ) {
+    if (e.code === 'KeyC' || e.key.toLowerCase() === 'c') {
+      if (clipboardCopy()) e.preventDefault();
+      return;
+    }
+    if (e.code === 'KeyX' || e.key.toLowerCase() === 'x') {
+      if (clipboardCut()) e.preventDefault();
+      return;
+    }
+    if (e.code === 'KeyV' || e.key.toLowerCase() === 'v') {
+      if (clipboardPaste()) e.preventDefault();
+      return;
+    }
   }
   // プレビュー開閉: Ctrl+P (FR-09)。配置は下固定。
   if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === 'KeyP' || e.key.toLowerCase() === 'p')) {
