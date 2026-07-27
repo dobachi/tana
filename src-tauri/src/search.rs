@@ -26,6 +26,7 @@ pub struct SearchHit {
 
 pub struct SearchOpts {
     pub case_insensitive: bool,
+    pub regex: bool,
     pub include_hidden: bool,
     pub max_results: usize,
     pub max_file_bytes: u64,
@@ -37,6 +38,7 @@ impl Default for SearchOpts {
     fn default() -> Self {
         SearchOpts {
             case_insensitive: true,
+            regex: false,
             include_hidden: false,
             max_results: 500,
             max_file_bytes: 1_000_000,
@@ -55,6 +57,42 @@ pub fn contains_match(haystack: &str, needle: &str, ci: bool) -> bool {
         haystack.to_lowercase().contains(&needle.to_lowercase())
     } else {
         haystack.contains(needle)
+    }
+}
+
+/// マッチ方式（部分一致 or 正規表現）。行/名前の両方に使い回す。
+pub enum Matcher {
+    Substring { needle: String, ci: bool },
+    Regex(regex_lite::Regex),
+}
+
+impl Matcher {
+    pub fn is_match(&self, hay: &str) -> bool {
+        match self {
+            Matcher::Substring { needle, ci } => contains_match(hay, needle, *ci),
+            Matcher::Regex(re) => re.is_match(hay),
+        }
+    }
+}
+
+/// クエリからマッチャを作る。空クエリ・正規表現の構文エラーは None（＝検索しない）。
+pub fn build_matcher(query: &str, ci: bool, regex: bool) -> Option<Matcher> {
+    if query.is_empty() {
+        return None;
+    }
+    if regex {
+        // 大小無視は (?i) フラグで表現する
+        let pat = if ci {
+            format!("(?i){query}")
+        } else {
+            query.to_string()
+        };
+        regex_lite::Regex::new(&pat).ok().map(Matcher::Regex)
+    } else {
+        Some(Matcher::Substring {
+            needle: query.to_string(),
+            ci,
+        })
     }
 }
 
@@ -77,9 +115,10 @@ fn is_hidden_name(name: &str) -> bool {
 /// root 配下を再帰的に検索する。名前一致と内容一致を集める。
 pub fn search_dir_impl(root: &Path, query: &str, opts: &SearchOpts) -> Vec<SearchHit> {
     let mut hits = Vec::new();
-    if query.is_empty() {
-        return hits;
-    }
+    let matcher = match build_matcher(query, opts.case_insensitive, opts.regex) {
+        Some(m) => m,
+        None => return hits, // 空クエリ or 不正な正規表現
+    };
     let mut visited = 0usize;
     let mut stack = vec![root.to_path_buf()];
 
@@ -103,7 +142,7 @@ pub fn search_dir_impl(root: &Path, query: &str, opts: &SearchOpts) -> Vec<Searc
             let path_s = path.to_string_lossy().replace('\\', "/");
 
             // ファイル名一致
-            if contains_match(&name, query, opts.case_insensitive) {
+            if matcher.is_match(&name) {
                 hits.push(SearchHit {
                     path: path_s.clone(),
                     name: name.clone(),
@@ -137,7 +176,7 @@ pub fn search_dir_impl(root: &Path, query: &str, opts: &SearchOpts) -> Vec<Searc
                 if per_file >= opts.max_hits_per_file || hits.len() >= opts.max_results {
                     break;
                 }
-                if contains_match(raw, query, opts.case_insensitive) {
+                if matcher.is_match(raw) {
                     per_file += 1;
                     hits.push(SearchHit {
                         path: path_s.clone(),
@@ -161,9 +200,11 @@ pub fn search_dir(
     query: String,
     case_insensitive: bool,
     include_hidden: bool,
+    regex: bool,
 ) -> Vec<SearchHit> {
     let opts = SearchOpts {
         case_insensitive,
+        regex,
         include_hidden,
         ..Default::default()
     };
@@ -181,6 +222,56 @@ mod tests {
         assert!(!contains_match("Hello World", "hello", false));
         assert!(contains_match("Hello World", "World", false));
         assert!(!contains_match("abc", "", true)); // 空は常に false
+    }
+
+    #[test]
+    fn build_matcher_substring_and_regex() {
+        // 部分一致
+        let m = build_matcher("cat", true, false).unwrap();
+        assert!(m.is_match("concatenate"));
+        assert!(m.is_match("CAT")); // ci
+                                    // 正規表現
+        let re = build_matcher(r"ab\d+", false, true).unwrap();
+        assert!(re.is_match("ab123"));
+        assert!(!re.is_match("abc"));
+        // 正規表現 + 大小無視
+        let rei = build_matcher("foo", true, true).unwrap();
+        assert!(rei.is_match("FOO bar"));
+        // 空クエリ・不正な正規表現は None
+        assert!(build_matcher("", true, false).is_none());
+        assert!(build_matcher("a(", true, true).is_none());
+    }
+
+    #[test]
+    fn search_with_regex_matches_pattern() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(
+            tmp.path().join("log.txt"),
+            b"error 404\nok 200\nerror 500\n",
+        )
+        .unwrap();
+        let opts = SearchOpts {
+            regex: true,
+            ..Default::default()
+        };
+        let hits = search_dir_impl(tmp.path(), r"error \d+", &opts);
+        let lines: Vec<_> = hits
+            .iter()
+            .filter(|h| h.kind == "content")
+            .map(|h| h.line_no.unwrap())
+            .collect();
+        assert_eq!(lines, vec![1, 3]);
+    }
+
+    #[test]
+    fn invalid_regex_returns_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join("a.txt"), b"anything").unwrap();
+        let opts = SearchOpts {
+            regex: true,
+            ..Default::default()
+        };
+        assert!(search_dir_impl(tmp.path(), "a(", &opts).is_empty());
     }
 
     #[test]

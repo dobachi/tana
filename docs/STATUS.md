@@ -56,7 +56,7 @@ make docker-check  # CI相当チェック
 | 項目 | 状態（2026-07-27 実測） |
 |------|------|
 | Vitest (JS) | ✅ 523 passed / 44 files |
-| cargo test (Rust) | ✅ 34 passed（places 7 + search 6 の純粋ロジック含む） |
+| cargo test (Rust) | ✅ 37 passed（places 7 + search 9 の純粋ロジック含む） |
 | ESLint | ✅ クリーン |
 | Prettier | ✅ クリーン |
 | build:frontend | ✅ 成功（成果物に新ロジックが含まれることを確認） |
@@ -119,7 +119,7 @@ make docker-check  # CI相当チェック
 - テスト対象の純粋関数: `is_hidden_entry` / `read_dir_entries` / `target_path` / `unique_target_name` / `copy_recursive` / `remove_any`
 - **`search.rs`** (FR-18): `contains_match`/`snippet`（純粋・テスト済み）+ `search_dir_impl`（再帰走査: 名前一致＋テキスト内容一致、バイナリ/大サイズ/隠し除外、件数上限）。コマンド `search_dir`
 - **`places.rs`**: `build_places`（存在フィルタ+パス重複除去、注入で純粋テスト）/ `windows_drive_candidates`（A:〜Z: 生成）/ `standard_candidates`（dirs）/ `is_cloud_folder`・`cloud_places_from`（クラウド同期検出、純粋）/ `read_subdirs`（ボリューム/WSL 列挙、汎用）/ OS 別 `drive_candidates` / `wsl_places`（Win: `\\wsl$` → UNC）
-- 依存は最小（tauri / tauri-cli / plugin-dialog / opener / updater / process / serde / dirs）
+- 依存は最小（tauri / tauri-cli / plugin-dialog / opener / updater / process / serde / dirs / trash / **regex-lite**（FR-18 正規表現、軽量））
 
 ---
 
@@ -145,7 +145,7 @@ make docker-check  # CI相当チェック
 | FR-13 | コンテキストメニュー + 外部アプリ連携 | M | ✅ | 右クリック / Shift+F10。外部アプリ・ファイルマネージャ表示は opener。ファイルのダブルクリック / Enter で既定アプリを開く |
 | FR-14 | セッション復元 | M/S | ✅ | ディレクトリ・アクティブペイン＋**各ペインのタブ構成（タブ dir 一覧・アクティブ index）**を localStorage で復元(core/session.js)。旧セッションとも後方互換 |
 | FR-15 | 隠しファイル表示トグル | M | ✅ | Ctrl+H、両ペイン共通 |
-| FR-18 | 現在ディレクトリ内検索(grep) | S | 🟡 | `Ctrl+F`・`/` で現在地配下を再帰検索。ファイル名＋テキスト内容一致を一覧、Enter でジャンプ（ファイルは親へ移動しカーソル）。バイナリ/大サイズ/隠し除外(隠しは切替)、件数上限500。`search.rs`+`searchview.js`。**残**: 真のキャンセル・正規表現・検索結果のプレビュー |
+| FR-18 | 現在ディレクトリ内検索(grep) | S | 🟡 | `Ctrl+F`・`/` で現在地配下を再帰検索。ファイル名＋テキスト内容一致を一覧、Enter でジャンプ（ファイルは親へ移動しカーソル）。**正規表現(`.*`)・大文字小文字を区別(`Aa`)・隠し(`隠し`)のトグル**（正規表現は軽量 regex-lite、不正パターンは空結果）。バイナリ/大サイズ除外、件数上限500。`search.rs`+`searchview.js`。**残**: 真のキャンセル・検索結果のプレビュー |
 | FR-16 | プレビューの表示制御(フィット/ズーム/パン) | S | ✅ | 画像で先行。既定フィット(contain)⇄実寸(100%)をクリックで切替＋Ctrl+ホイールで連続ズーム（画像上ではフォント拡縮より優先）＋**ズーム中はドラッグでパン**（クリックと閾値で判別、`img.draggable=false`）。横スクロール問題も解消（core/previewzoom.js）。＋/−キーでのズームは将来 |
 | FR-17 | ナビゲーション履歴(戻る/進む) | S | ✅ | ペインごとの履歴。`Alt+←`/`Alt+→`＋マウスの戻る/進むボタン。親移動(`h`)とは別概念（時系列）。`core/navhistory.js`（純粋）+ app.js 配線 |
 

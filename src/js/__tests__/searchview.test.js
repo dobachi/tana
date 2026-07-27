@@ -41,7 +41,11 @@ describe('createSearch', () => {
     view.open();
     typeQuery('foo');
     await vi.advanceTimersByTimeAsync(300);
-    expect(searchDir).toHaveBeenCalledWith('/root', 'foo', { includeHidden: false });
+    expect(searchDir).toHaveBeenCalledWith('/root', 'foo', {
+      includeHidden: false,
+      caseInsensitive: true,
+      regex: false,
+    });
     const rows = document.querySelectorAll('.search-row');
     expect(rows).toHaveLength(2);
     // content ヒットは path:line と本文

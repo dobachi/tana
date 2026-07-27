@@ -23,6 +23,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "5"
 trash = "5"
+# 検索(FR-18)の正規表現。軽量方針(NFR-P2)に合わせ regex より小さい regex-lite を使う。
+regex-lite = "0.1"
 
 [dev-dependencies]
 tempfile = "3"

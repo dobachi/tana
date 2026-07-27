@@ -26,6 +26,8 @@ export function createSearch(deps) {
   let statusEl = null;
   let listEl = null;
   let hiddenChk = null;
+  let caseChk = null;
+  let regexChk = null;
   let rows = []; // { el, hit }
   let gen = 0;
   let timer = null;
@@ -103,7 +105,11 @@ export function createSearch(deps) {
     statusEl.textContent = '検索中…';
     let hits;
     try {
-      hits = await searchDir(dir, query, { includeHidden: !!(hiddenChk && hiddenChk.checked) });
+      hits = await searchDir(dir, query, {
+        includeHidden: !!(hiddenChk && hiddenChk.checked),
+        caseInsensitive: !(caseChk && caseChk.checked),
+        regex: !!(regexChk && regexChk.checked),
+      });
     } catch {
       hits = [];
     }
@@ -175,13 +181,22 @@ export function createSearch(deps) {
     inputEl.autocomplete = 'off';
     head.appendChild(inputEl);
 
-    const opt = doc.createElement('label');
-    opt.className = 'search-opt';
-    hiddenChk = doc.createElement('input');
-    hiddenChk.type = 'checkbox';
-    opt.appendChild(hiddenChk);
-    opt.appendChild(doc.createTextNode('隠しファイルも'));
-    head.appendChild(opt);
+    // オプション（チェックボックス）。作りつつ再検索の結線もする。
+    const mkOpt = (label, title) => {
+      const l = doc.createElement('label');
+      l.className = 'search-opt';
+      if (title) l.title = title;
+      const chk = doc.createElement('input');
+      chk.type = 'checkbox';
+      chk.addEventListener('change', run);
+      l.appendChild(chk);
+      l.appendChild(doc.createTextNode(label));
+      head.appendChild(l);
+      return chk;
+    };
+    caseChk = mkOpt('Aa', '大文字小文字を区別');
+    regexChk = mkOpt('.*', '正規表現で検索');
+    hiddenChk = mkOpt('隠し', '隠しファイルも対象にする');
     box.appendChild(head);
 
     statusEl = doc.createElement('div');
@@ -198,7 +213,6 @@ export function createSearch(deps) {
     });
     overlay.addEventListener('keydown', onKey);
     inputEl.addEventListener('input', scheduleRun);
-    hiddenChk.addEventListener('change', run);
 
     doc.body.appendChild(overlay);
     inputEl.focus();
@@ -213,7 +227,7 @@ export function createSearch(deps) {
     gen += 1;
     overlay.remove();
     overlay = null;
-    inputEl = statusEl = listEl = hiddenChk = null;
+    inputEl = statusEl = listEl = hiddenChk = caseChk = regexChk = null;
     rows = [];
   }
 
