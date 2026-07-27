@@ -15,13 +15,15 @@ help:
 	@echo "  make install-rust rustup で Rust をインストール（未導入時のみ）"
 	@echo "  make setup        依存関係を一括インストール（doctor 後に実行）"
 	@echo "  make dev          開発モード起動"
-	@echo "  make build        プロダクションビルド"
+	@echo "  make build        プロダクションビルド（各OSのインストーラ/実行ファイル）"
+	@echo "                    ※Windows で make が無い場合は npm run build でも可"
 	@echo "  make test         全テスト実行"
 	@echo "  make lint         全lint実行"
 	@echo "  make format       全フォーマット実行"
 	@echo "  make check        lint + format + test + build"
 	@echo "  make clean        ビルド成果物を削除"
 	@echo "  make release      リリース（check + バージョン更新 + タグ + CIビルド）"
+	@echo "                    非対話: make release VERSION=0.2.0"
 
 doctor:
 	@echo "==> 開発環境をチェックします..."
@@ -119,7 +121,9 @@ docker-down:
 # 手で sed するとどれか1つ取りこぼす。必ずこのターゲット経由で上げること。
 # 各ステップが失敗したら以降を実行しない（&& chain）
 release:
-	@read -p "New version (e.g., 0.2.0): " ver && \
+	@ver="$(VERSION)"; \
+	if [ -z "$$ver" ]; then read -p "New version (e.g., 0.2.0): " ver; fi; \
+	if [ -z "$$ver" ]; then echo "✗ バージョンが指定されていません（make release VERSION=0.2.0）"; exit 1; fi; \
 	echo "==> Pre-release check: make check" && \
 	$(MAKE) check && \
 	echo "==> Bumping version to v$$ver" && \

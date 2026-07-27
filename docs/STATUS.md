@@ -8,7 +8,7 @@
 - **基準コミット**: v0.4.11 リリース済み。以降 FR-18 現在ディレクトリ内検索(grep) を追加
 - **現在のフェーズ**: **M2 進行中**（M1 完了済み）。FR-08 タブ・FR-16 画像表示制御・FR-17 履歴・FR-18 検索を実装。残: FR-07 続き(WSL/永続化)・FR-16 パン 等
 
-関連: [README](../README.md) / [要求分析](REQUIREMENTS.md) / [設計](DESIGN.md) / [プレビュー](PREVIEW.md) / [ドラッグ＆ドロップ](DRAG-AND-DROP.md) / [詳細表示＆ソート](DETAIL-VIEW-SORT.md) / [Docker動作確認](DOCKER.md) / [コントリビューション](../CONTRIBUTING.md)
+関連: [README](../README.md) / [要求分析](REQUIREMENTS.md) / [設計](DESIGN.md) / [ローカルビルド](BUILD.md) / [プレビュー](PREVIEW.md) / [ドラッグ＆ドロップ](DRAG-AND-DROP.md) / [詳細表示＆ソート](DETAIL-VIEW-SORT.md) / [Docker動作確認](DOCKER.md) / [コントリビューション](../CONTRIBUTING.md)
 
 ---
 
