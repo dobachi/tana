@@ -46,6 +46,7 @@ import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
 import { createNavHistory } from './core/navhistory.js';
 import { createTabList } from './core/tabs.js';
+import { isPrefixLeader, resolvePrefixAction, prefixHint } from './core/keyprefix.js';
 import { createFavorites, loadStoredFavorites, storeFavorites } from './core/favorites.js';
 import { createFavoritesView } from './core/favoritesview.js';
 import { createPlacesView } from './core/placesview.js';
@@ -295,6 +296,61 @@ function reorderTab(p, from, to) {
   sessionSaver.schedule(); // 並び順を永続化
 }
 
+/** アクティブタブを左(-1)/右(+1)へ1つ移動する（キーボード並べ替え）。 */
+function moveActiveTab(p, dir) {
+  const tl = paneTabs[p];
+  if (!tl || tl.count() < 2) return;
+  const i = tl.activeIndex();
+  if (dir < 0 && i > 0) reorderTab(p, i, i - 1);
+  else if (dir > 0 && i < tl.count() - 1) reorderTab(p, i, i + 2);
+}
+
+/** 二打鍵プレフィックスで確定したアクションを実行する。 */
+function runPrefixAction(action) {
+  const fp = activeFilePane();
+  const entry = fp ? fp.getCursorEntry() : null;
+  switch (action) {
+    case 'sort:name':
+      sortState.applyKey('name');
+      break;
+    case 'sort:size':
+      sortState.applyKey('size');
+      break;
+    case 'sort:modified':
+      sortState.applyKey('modified');
+      break;
+    case 'sort:ext':
+      sortState.applyKey('ext');
+      break;
+    case 'sort:reverse':
+      sortState.reverse();
+      break;
+    case 'tab:left':
+      moveActiveTab(panes.getActive(), -1);
+      break;
+    case 'tab:right':
+      moveActiveTab(panes.getActive(), 1);
+      break;
+    case 'copy:path':
+      if (entry) copyText(entry.path);
+      break;
+    case 'copy:name':
+      if (entry) copyText(entry.name);
+      break;
+    case 'copy:dir':
+      if (fp) copyText(fp.getCurrentDir());
+      break;
+    case 'open:app':
+      if (entry) openWith('open', entry.path);
+      break;
+    case 'open:reveal':
+      if (entry) openWith('reveal', entry.path);
+      break;
+    default:
+      break;
+  }
+}
+
 /** アクティブペインで戻る/進む。dir を履歴から取り出して読み込む。 */
 function navGo(dir /* -1=戻る / +1=進む */) {
   const pane = panes.getActive();
@@ -450,8 +506,8 @@ let showHidden = false;
 // アプリのバージョン（起動時に取得。ヘルプ表示・更新チェックのメッセージで使う）
 let appVer = '';
 
-// ソート・プレフィックス（s に続けて種別キーを待つ）中かどうか
-let sortPending = false;
+// 二打鍵プレフィックス待ち（s=並替 / t=タブ / y=コピー / o=開く）。null なら待機なし。
+let pendingPrefix = null;
 
 // セッション復元 (FR-14): 各ペインのカレントdir・アクティブペインを保存/復元
 const sessionSaver = createSessionSaver({
@@ -1159,20 +1215,18 @@ function onKeydown(e) {
   // 以降はファイルナビゲーション（修飾キー無し・入力欄以外）
   if (e.ctrlKey || e.altKey || e.metaKey || isEditableTarget(e.target)) return;
 
-  // ソート・プレフィックス: s に続けて n/s/m/e で並べ替え、r で反転、他キーで取消
-  if (sortPending) {
+  // 二打鍵プレフィックス: リーダー(s/t/y/o) に続くキーでアクション確定、他キーで取消
+  if (pendingPrefix) {
     e.preventDefault();
-    sortPending = false;
-    const map = { n: 'name', s: 'size', m: 'modified', e: 'ext' };
-    const k = e.key.toLowerCase();
-    if (k === 'r') sortState.reverse();
-    else if (map[k]) sortState.applyKey(map[k]);
+    const action = resolvePrefixAction(pendingPrefix, e.key);
+    pendingPrefix = null;
+    if (action) runPrefixAction(action);
     return;
   }
-  if (e.key === 's' && !isEditableTarget(e.target)) {
+  if (isPrefixLeader(e.key) && !isEditableTarget(e.target)) {
     e.preventDefault();
-    sortPending = true;
-    toast('並び替え: n=名前 / s=サイズ / m=更新日時 / e=拡張子 / r=反転');
+    pendingPrefix = e.key.toLowerCase();
+    toast(prefixHint(pendingPrefix));
     return;
   }
 

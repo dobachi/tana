@@ -55,7 +55,7 @@ make docker-check  # CI相当チェック
 
 | 項目 | 状態（2026-07-27 実測） |
 |------|------|
-| Vitest (JS) | ✅ 487 passed / 40 files |
+| Vitest (JS) | ✅ 495 passed / 41 files |
 | cargo test (Rust) | ✅ 27 passed（places 検出の純粋ロジック: ドライブ 4 + クラウド 2） |
 | ESLint | ✅ クリーン |
 | Prettier | ✅ クリーン |
@@ -101,12 +101,13 @@ make docker-check  # CI相当チェック
 | `core/previewzoom.js` | **画像プレビューの表示モード (FR-16)**。fit（既定・ペインに収める）⇄ zoom（実寸基準の倍率）の純粋な状態＋Ctrl+ホイール連続ズーム。適用（class 切替・width）は app.js/render.js |
 | `core/previewresize.js` | **プレビュー縦幅リサイズの純粋ロジック**。区切りドラッグ時の高さ計算(clamp)と localStorage 入出力。DOM/ドラッグ配線は app.js `initPreviewResize` |
 | `core/navhistory.js` | **ナビゲーション履歴 (FR-17)**。ペインごとの戻る/進む（ブラウザ型スタック+index）の純粋な状態。配線は app.js（onChange で積む・Alt+←/→・マウス戻る/進む） |
-| `core/tabs.js` | **タブの純粋な状態 (FR-08)**。ペインごとの add/close/activate/next/prev、各タブは dir + 表示状態。読み込み/保存の結線は app.js（`renderTabs`/`switchToActiveTab` と filepane の `getViewState`/`applyViewState`） |
+| `core/tabs.js` | **タブの純粋な状態 (FR-08)**。ペインごとの add/close/activate/next/prev/move、各タブは dir + 表示状態。読み込み/保存の結線は app.js（`renderTabs`/`switchToActiveTab` と filepane の `getViewState`/`applyViewState`） |
+| `core/keyprefix.js` | **二打鍵プレフィックスの純粋マッピング**。`(prefix, key)→アクションID`（s=並替/t=タブ移動/y=コピー/o=開く）とヒント文言。実行は app.js `runPrefixAction`。方針は memory `feedback_tana_prefix_shortcuts` |
 | `core/dnd.js` | **D&D の判定（純粋）**。掴んだ対象・効果(copy/move)・不正ドロップの拒否。詳細: [DRAG-AND-DROP.md](DRAG-AND-DROP.md) |
 | `core/dragdrop.js` | **D&D の追跡（DOM）**。ポインタイベントで自作。`resolveDropTarget` は将来の OS ドロップでも再利用する。安全モードは拒否ゴースト＋トーストで示す |
 | `core/editmenu.js` | **メニューバー「編集」の項目（純粋）**。対象・宛先の有無で無効化を判定。app.js が状態と action を注入 |
 
-テストは `src/js/__tests__/<name>.test.js` に対応（40ファイル）。
+テストは `src/js/__tests__/<name>.test.js` に対応（41ファイル）。
 
 ### バックエンド `src-tauri/src/`
 `lib.rs` に集約（ファイル操作系）。`places.rs`（FR-07 の場所検出）を分離済み。`main.rs` は薄いエントリ。
