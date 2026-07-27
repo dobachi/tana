@@ -184,6 +184,13 @@ function applyImageMode(holder) {
     // 実寸(scale=1)基準で拡大縮小。はみ出しは preview-content がスクロール。
     img.style.width = `${Math.round(img.naturalWidth * scale)}px`;
     img.style.height = 'auto';
+    // ズーム後は中央を保つ（左上に飛ばない）。scrollWidth の読み取りで
+    // レイアウトを確定させてから中央へスクロールする。
+    const sc = holder.parentElement; // .preview-content（スクロール容器）
+    if (sc) {
+      sc.scrollLeft = Math.max(0, (sc.scrollWidth - sc.clientWidth) / 2);
+      sc.scrollTop = Math.max(0, (sc.scrollHeight - sc.clientHeight) / 2);
+    }
   }
 }
 
@@ -1021,6 +1028,9 @@ async function init() {
     appVer = '';
   }
   help.setVersion(appVer);
+  // ステータスバーの「更新を確認」の横にバージョンを表示（取れたときだけ）
+  const verEl = document.getElementById('app-version');
+  if (verEl) verEl.textContent = appVer ? `v${appVer}` : '';
   theme.subscribe(syncTheme);
   fontScale.subscribe(syncFontScale);
   safemode.subscribe(syncMode);
