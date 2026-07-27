@@ -432,9 +432,40 @@ function wireImageZoom(container) {
   if (!holder) return;
   previewZoom.reset();
   applyImageMode(holder);
-  holder.addEventListener('click', () => {
-    previewZoom.toggle();
-    applyImageMode(holder);
+  // クリック=フィット⇄実寸の切替 / ズーム中のドラッグ=パン（表示位置の移動）。
+  // タブ並べ替えと同様に、移動量の閾値でクリックとドラッグを判別する。
+  holder.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const sc = holder.parentElement; // .preview-content（スクロール容器）
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startLeft = sc ? sc.scrollLeft : 0;
+    const startTop = sc ? sc.scrollTop : 0;
+    const canPan = !previewZoom.isFit() && !!sc;
+    let dragging = false;
+    const onMove = (ev) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!dragging && Math.hypot(dx, dy) >= 4) {
+        dragging = true;
+        holder.classList.add('panning');
+      }
+      if (dragging && canPan) {
+        sc.scrollLeft = startLeft - dx;
+        sc.scrollTop = startTop - dy;
+      }
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      holder.classList.remove('panning');
+      if (!dragging) {
+        previewZoom.toggle();
+        applyImageMode(holder);
+      }
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
   });
 }
 

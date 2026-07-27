@@ -1154,7 +1154,11 @@ body[data-mode='operation'] .mode-indicator {
 /* ズーム: 実寸(100%)基準で width を指定。はみ出しは preview-content がスクロール。
    Ctrl+ホイールで連続ズーム、クリックでフィット⇄実寸 (FR-16) */
 .preview-image.zoom {
-  cursor: zoom-out;
+  cursor: grab; /* ドラッグでパン、クリックでフィットへ戻す */
+  touch-action: none;
+}
+.preview-image.panning {
+  cursor: grabbing;
 }
 .preview-image.zoom img {
   max-width: none;

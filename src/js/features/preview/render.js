@@ -115,6 +115,7 @@ export function renderImage(container, { entry, src }, doc) {
   img.src = src;
   img.alt = entry?.name || '';
   img.loading = 'lazy';
+  img.draggable = false; // パン(ドラッグ)を OS の画像ドラッグに奪われないように
   holder.appendChild(img);
   container.appendChild(holder);
 }
