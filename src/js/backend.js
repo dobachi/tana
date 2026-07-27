@@ -37,6 +37,12 @@ export async function parentDir(path) {
   return invoke('parent_dir', { path });
 }
 
+/** 「場所(Places)」一覧を取得する (list_places コマンド, FR-07)。Tauri 不在時は [] */
+export async function listPlaces() {
+  const places = await invoke('list_places');
+  return places || [];
+}
+
 /** プレビュー用データを取得する (read_preview コマンド, FR-09)。Tauri 不在時は null */
 export async function readPreview(path, maxBytes) {
   return invoke('read_preview', { path, maxBytes });

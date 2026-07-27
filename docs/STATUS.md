@@ -5,8 +5,8 @@
 > 機能の追加・変更時は **このファイルも更新** してください（特に「実装ステータス」「次の一手」）。
 
 - **スナップショット日**: 2026-07-27
-- **基準コミット**: `c722d03`（`origin/main` と同期済み）。FR-10 キーボード到達性の仕上げ済み
-- **現在のフェーズ**: **M1 (MVP) 完了** ✅（FR-10 点検・D&D ネイティブ実機確認とも完了）→ **M2 着手**
+- **基準コミット**: v0.4.7 リリース済み。以降 M2 として FR-07 Places の第1スライス（ドライブ/標準フォルダ検出）を追加
+- **現在のフェーズ**: **M2 進行中**（M1 完了済み）。FR-07 Places 着手 → 次はクラウド/WSL 検出・Places 永続化・FR-08 タブ
 
 関連: [README](../README.md) / [要求分析](REQUIREMENTS.md) / [設計](DESIGN.md) / [プレビュー](PREVIEW.md) / [ドラッグ＆ドロップ](DRAG-AND-DROP.md) / [詳細表示＆ソート](DETAIL-VIEW-SORT.md) / [Docker動作確認](DOCKER.md) / [コントリビューション](../CONTRIBUTING.md)
 
@@ -55,8 +55,8 @@ make docker-check  # CI相当チェック
 
 | 項目 | 状態（2026-07-27 実測） |
 |------|------|
-| Vitest (JS) | ✅ 441 passed / 35 files |
-| cargo test (Rust) | ✅ 21 passed（D&D は JS 側のみで Rust は無変更） |
+| Vitest (JS) | ✅ 449 passed / 36 files |
+| cargo test (Rust) | ✅ 25 passed（places 検出の純粋ロジック 4 件を追加） |
 | ESLint | ✅ クリーン |
 | Prettier | ✅ クリーン |
 | build:frontend | ✅ 成功（成果物に新ロジックが含まれることを確認） |
@@ -83,6 +83,7 @@ make docker-check  # CI相当チェック
 | `core/inputdialog.js` | 汎用入力ダイアログ（リネーム・新規フォルダ名） |
 | `core/favorites.js` | ネスト可能お気に入りツリー + 検索 + 永続化（localStorage） |
 | `core/favoritesview.js` | お気に入りサイドバーUI（ツリー/追加/削除/ナビ/検索/Ctrl+B フォーカス） |
+| `core/placesview.js` | **「場所(Places)」サイドバーUI (FR-07)**。ドライブ/標準フォルダの平坦リスト。クリック / j・k・Enter で移動、Esc・Tab でペインへ戻る。Ctrl+B の巡回に組み込み |
 | `core/theme.js` | テーマ（ダーク/ライト等）切替と永続化 |
 | `core/fontscale.js` | 文字サイズ（Ctrl + / - / 0） |
 | `core/help.js` | ショートカット一覧ヘルプ（`?` / `F1`） |
@@ -101,13 +102,14 @@ make docker-check  # CI相当チェック
 | `core/dragdrop.js` | **D&D の追跡（DOM）**。ポインタイベントで自作。`resolveDropTarget` は将来の OS ドロップでも再利用する。安全モードは拒否ゴースト＋トーストで示す |
 | `core/editmenu.js` | **メニューバー「編集」の項目（純粋）**。対象・宛先の有無で無効化を判定。app.js が状態と action を注入 |
 
-テストは `src/js/__tests__/<name>.test.js` に対応（35ファイル）。
+テストは `src/js/__tests__/<name>.test.js` に対応（36ファイル）。
 
 ### バックエンド `src-tauri/src/`
-`lib.rs` に集約（まだ `fs.rs`/`places.rs` 等に分割していない）。`main.rs` は薄いエントリ。
+`lib.rs` に集約（ファイル操作系）。`places.rs`（FR-07 の場所検出）を分離済み。`main.rs` は薄いエントリ。
 
-- Tauri コマンド: `list_dir` / `home_dir` / `parent_dir` / `unique_name` / `copy_path` / `move_path` / `delete_to_trash` / `delete_permanent` / `rename_path` / `make_dir`
+- Tauri コマンド: `list_dir` / `home_dir` / `parent_dir` / `unique_name` / `copy_path` / `move_path` / `delete_to_trash` / `delete_permanent` / `rename_path` / `make_dir` / `read_preview` / `app_version` / `places::list_places`
 - テスト対象の純粋関数: `is_hidden_entry` / `read_dir_entries` / `target_path` / `unique_target_name` / `copy_recursive` / `remove_any`
+- **`places.rs`**: `build_places`（存在フィルタ+パス重複除去、注入で純粋テスト）/ `windows_drive_candidates`（A:〜Z: 生成）/ `standard_candidates`（dirs でホーム/デスクトップ/ドキュメント/ダウンロード）/ OS 別 `drive_candidates`（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）
 - 依存は最小（tauri / tauri-cli / plugin-dialog / opener / updater / process / serde / dirs）
 
 ---
@@ -125,7 +127,7 @@ make docker-check  # CI相当チェック
 | FR-04 | 安全/操作モード切替 | M | ✅ | Ctrl+Shift+Space トグル + 視覚表示 |
 | FR-05 | お気に入り（ネスト） | M | ✅ | ツリー・Ctrl+D 追加・localStorage |
 | FR-06 | お気に入り検索 | M | ✅ | インクリメンタル検索 |
-| FR-07 | 場所(Places)検出 | S | ⬜ | **M2**。OneDrive/Box/WSL/標準フォルダ |
+| FR-07 | 場所(Places)検出 | S | 🟡 | **M2 着手**。ドライブ/ボリューム（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）＋標準フォルダ（ホーム/デスクトップ/ドキュメント/ダウンロード）をサイドバー「場所」に表示し、クリック/キーボードで移動可（`places.rs` + `placesview.js`）。**残**: OneDrive/Box 等クラウド同期フォルダ・WSL ディストロ(`\\wsl$`)の検出、Places の手動追加/永続化 |
 | FR-08 | タブ | S | ⬜ | **M2**。ペイン単位が有力(Q3) |
 | FR-09 | 多形式プレビュー | S | ✅ | 画像/テキスト/Markdown/メタ + 配置(右/下)/Ctrl+P。Markdownは markdown-it を遅延チャンク化(html:false)+CSP。詳細設計: [PREVIEW.md](PREVIEW.md) |
 | FR-10 | 全機能キーボード到達 | M | ✅ | 網羅性点検を実施（2026-07-27）。コンテキストメニューを `Shift+F10`/`≣` で開いたとき先頭項目へフォーカスする（マウスと同じ即操作性）。同メニュー専用の「ファイルマネージャで表示・パス/名前コピー」の開き方をヘルプに明記。「同ペイン内フォルダへのドロップ」相当は Ctrl+C/Ctrl+X→Ctrl+V のファイルクリップボード（任意の現在地へ貼付）でキーボードからも到達可能にした。全機能キーボード到達を達成 |
@@ -176,7 +178,7 @@ make docker-check  # CI相当チェック
 1. ~~**FR-10 キーボード到達性の点検**~~ ✅ 完了（2026-07-27）。全操作を棚卸しし、(a) キーボードで開いたコンテキストメニューの先頭フォーカス、(b) メニュー専用操作のヘルプ明記、(c) ファイルクリップボード Ctrl+C/Ctrl+X→Ctrl+V（任意の現在地へ貼付）の追加で抜けを埋めた。「同ペイン内フォルダへのドロップ」相当もキーボードから到達可能になった。
 2. ~~**D&D のネイティブ実機確認**~~ ✅ 完了（2026-07-27）。`make dev` 起動で `Shift`+ドロップ＝移動・フォルダ行への吸い込み・複数選択ドラッグを目視確認。
 3. ~~**M1 完了の宣言**~~ ✅ **M1 完了（2026-07-27）**。優先度 M の FR/NFR は達成。
-4. **M2 着手（次の主軸）**: **FR-07 Places 検出**（OS別、`places` モジュール新設 + Rust 側 `places.rs` 切り出し）→ **FR-08 タブ**。Q4（お気に入りの永続化を localStorage から設定ディレクトリJSONへ移すか）はタブのセッション復元と絡むのでここで決める。
+4. **M2 進行中**: **FR-07 Places** の第1スライス完了（ドライブ/標準フォルダの検出・表示・移動。`places.rs` 分離 + `placesview.js` 新設、Ctrl+B 巡回に統合）。**次**: (a) クラウド同期(OneDrive/Box)・WSL ディストロ検出、(b) Places の手動追加/永続化、(c) **FR-08 タブ**。Q4（お気に入りの永続化を localStorage から設定ディレクトリJSONへ移すか）はタブのセッション復元と絡むのでそこで決める。
 5. モジュールを増やすたびに `__tests__` と Rust `#[cfg(test)]` を追加し、`make check` を green に保つ。コードを増やすにつれ DESIGN.md §2.2 の目標構成へ寄せる。
 
 ### バックログ（設計検討済み・未着手）

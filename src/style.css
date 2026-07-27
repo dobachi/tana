@@ -338,6 +338,36 @@ body[data-mode='operation'] .settings-panel {
 body[data-mode='operation'] .fav-row:focus {
   box-shadow: inset 2px 0 0 var(--accent-op);
 }
+
+/* 場所(Places) — お気に入りと同じ操作感の平坦リスト (FR-07) */
+.place-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.place-row:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.place-row:focus {
+  outline: none;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+body[data-mode='operation'] .place-row:focus {
+  box-shadow: inset 2px 0 0 var(--accent-op);
+}
+.place-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+.place-drive .place-name {
+  font-weight: 600;
+}
+
 .fav-name {
   overflow: hidden;
   text-overflow: ellipsis;

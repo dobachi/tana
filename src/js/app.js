@@ -44,11 +44,13 @@ import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
 import { createFavorites, loadStoredFavorites, storeFavorites } from './core/favorites.js';
 import { createFavoritesView } from './core/favoritesview.js';
+import { createPlacesView } from './core/placesview.js';
 import { createHelp } from './core/help.js';
 import {
   homeDir,
   appVersion,
   getCliPath,
+  listPlaces,
   copyPath,
   movePath,
   deleteToTrash,
@@ -101,6 +103,7 @@ const dragSession = createDragSession({
   toast,
 });
 let favView = null;
+let placesView = null;
 
 // プレビュー (FR-09): 配置状態の真実源 + コントローラ
 const previewPlacement = createPreviewPlacement(loadStoredPlacement());
@@ -588,9 +591,32 @@ function focusActivePane() {
   const el = paneEl(panes.getActive());
   if (el) el.focus();
 }
+// Ctrl+B でサイドバーのフォーカスを巡回する: ペイン → 場所 → お気に入り → ペイン。
+// 場所/お気に入りが空のセクションは飛ばす。
 function toggleSidebarFocus() {
-  if (favView && favView.isFocused()) focusActivePane();
-  else if (favView) favView.focusFirst();
+  if (placesView && placesView.isFocused()) {
+    if (favView && favView.focusFirst && hasFavoriteRows()) favView.focusFirst();
+    else focusActivePane();
+    return;
+  }
+  if (favView && favView.isFocused()) {
+    focusActivePane();
+    return;
+  }
+  if (placesView) placesView.focusFirst();
+  if (placesView && placesView.isFocused()) return;
+  if (favView) favView.focusFirst();
+}
+
+/** お気に入りに1件以上の行があるか（フォーカス移動先の有無判定に使う） */
+function hasFavoriteRows() {
+  const el = document.getElementById('favorites');
+  return !!(el && el.querySelector('.fav-row'));
+}
+
+/** サイドバー（場所 or お気に入り）のいずれかがフォーカス中か */
+function sidebarFocused() {
+  return !!((placesView && placesView.isFocused()) || (favView && favView.isFocused()));
 }
 async function addCurrentToFavorites() {
   const fp = activeFilePane();
@@ -713,13 +739,7 @@ function onKeydown(e) {
   }
   // ファイルクリップボード: Ctrl+C コピー / Ctrl+X 切り取り / Ctrl+V 貼り付け (FR-02)。
   // 入力欄・お気に入りサイドバーにフォーカス中はテキスト編集を優先し横取りしない。
-  if (
-    e.ctrlKey &&
-    !e.shiftKey &&
-    !e.altKey &&
-    !isEditableTarget(e.target) &&
-    !(favView && favView.isFocused())
-  ) {
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && !isEditableTarget(e.target) && !sidebarFocused()) {
     if (e.code === 'KeyC' || e.key.toLowerCase() === 'c') {
       if (clipboardCopy()) e.preventDefault();
       return;
@@ -754,8 +774,9 @@ function onKeydown(e) {
   }
   // ヘルプ表示中は背後のナビ操作を無効化（閉じるのは ? / F1 / Esc）
   if (help.isOpen()) return;
-  // サイドバーがフォーカス中はペイン操作を無効化（操作は favoritesview 側で処理）
-  if (favView && favView.isFocused()) return;
+  // サイドバー（場所/お気に入り）がフォーカス中はペイン操作を無効化
+  // （操作は placesview / favoritesview 側で処理）
+  if (sidebarFocused()) return;
 
   // ペイン往復: Tab
   if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -883,6 +904,20 @@ async function init() {
     onReturn: focusActivePane,
     promptName,
   });
+  // 「場所(Places)」サイドバー (FR-07)。起動時に検出して並べる。ドライブや
+  // 標準フォルダをクリック / キーボードで開ける（別ドライブへの導線）。
+  const placesEl = document.getElementById('places');
+  if (placesEl) {
+    placesView = createPlacesView({
+      listEl: placesEl,
+      onNavigate: navigateActive,
+      onReturn: focusActivePane,
+    });
+    listPlaces()
+      .then((places) => placesView.render(places))
+      .catch(() => placesView.render([]));
+  }
+
   const addFolderBtn = document.getElementById('fav-add-folder');
   if (addFolderBtn) {
     addFolderBtn.addEventListener('click', async () => {

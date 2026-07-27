@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+mod places;
+
 /// ディレクトリ内の 1 エントリ（ファイル/フォルダ）
 #[derive(Debug, Serialize, PartialEq)]
 pub struct DirEntry {
@@ -416,7 +418,8 @@ pub fn run() {
             rename_path,
             make_dir,
             read_preview,
-            app_version
+            app_version,
+            places::list_places
         ])
         .run(tauri::generate_context!())
         .expect("error while running tana application");
