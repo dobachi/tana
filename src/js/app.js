@@ -21,6 +21,7 @@ import {
   storePlacement,
 } from './core/previewplacement.js';
 import { createPreviewZoom, wheelZoomDir } from './core/previewzoom.js';
+import { nextPreviewHeight, loadPreviewHeight, storePreviewHeight } from './core/previewresize.js';
 import { createSortState, loadStoredSort, storeSort } from './core/sortstate.js';
 import { SORT_KEYS, SORT_LABELS } from './core/sort.js';
 import { loadSession, storeSession, createSessionSaver } from './core/session.js';
@@ -148,6 +149,52 @@ function applyImageMode(holder) {
     img.style.width = `${Math.round(img.naturalWidth * scale)}px`;
     img.style.height = 'auto';
   }
+}
+
+/**
+ * プレビュー(下配置)の区切りをドラッグして高さを変える (マウス)。
+ * 高さは CSS 変数 --preview-h に入れ（grid の該当行が参照）、localStorage に
+ * 永続化する。計算とクランプは previewresize.js（純粋）。
+ */
+function initPreviewResize() {
+  const app = document.getElementById('app');
+  const divider = document.getElementById('preview-divider');
+  const previewEl = document.getElementById('preview');
+  if (!app || !divider || !previewEl) return;
+
+  // 保存済みの高さを復元（現在のウィンドウ高さでクランプ）。
+  const saved = loadPreviewHeight();
+  if (saved != null) {
+    app.style.setProperty('--preview-h', `${nextPreviewHeight(saved, 0, 0, window.innerHeight)}px`);
+  }
+
+  let startY = 0;
+  let startH = 0;
+  const heightAt = (clientY) => nextPreviewHeight(startH, startY, clientY, window.innerHeight);
+  const onMove = (e) => app.style.setProperty('--preview-h', `${heightAt(e.clientY)}px`);
+  const onUp = (e) => {
+    divider.removeEventListener('pointermove', onMove);
+    divider.removeEventListener('pointerup', onUp);
+    try {
+      if (e.pointerId != null) divider.releasePointerCapture(e.pointerId);
+    } catch {
+      /* capture 未対応でも無視 */
+    }
+    storePreviewHeight(heightAt(e.clientY));
+  };
+  divider.addEventListener('pointerdown', (e) => {
+    if (!app.dataset.preview) return; // プレビューが閉じているときは無視
+    e.preventDefault();
+    startY = e.clientY;
+    startH = previewEl.offsetHeight;
+    try {
+      if (e.pointerId != null) divider.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture 未対応でも無視 */
+    }
+    divider.addEventListener('pointermove', onMove);
+    divider.addEventListener('pointerup', onUp);
+  });
 }
 
 // Alt 単押しでメニューバーを開く（Fude と同じ操作感）。他キーを挟まず Alt を
@@ -1026,6 +1073,9 @@ async function init() {
   if (previewCloseBtn) {
     previewCloseBtn.addEventListener('click', () => previewPlacement.close());
   }
+
+  // プレビュー縦幅のマウスリサイズ（区切りドラッグ）
+  initPreviewResize();
 
   // 起動ディレクトリ: CLI 引数 > セッション復元(FR-14) > ホーム
   const cli = await getCliPath();

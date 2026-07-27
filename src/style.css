@@ -932,11 +932,17 @@ body[data-mode='operation'] .mode-indicator {
   display: block;
   grid-area: pvdivider;
   background: var(--border);
+  cursor: row-resize; /* マウスで縦幅リサイズ */
+  touch-action: none;
+}
+#app[data-preview] .preview-divider:hover {
+  background: var(--accent);
 }
 
-/* 配置は下固定: ワークスペースの下にプレビュー（当面、右配置は廃止） */
+/* 配置は下固定: ワークスペースの下にプレビュー（当面、右配置は廃止）。
+   プレビュー行の高さは --preview-h（区切りドラッグで可変）。未設定時は既定比率。 */
 #app[data-preview] {
-  grid-template-rows: auto 1fr 4px minmax(140px, 34%) 26px;
+  grid-template-rows: auto 1fr 6px var(--preview-h, minmax(140px, 34%)) 26px;
   grid-template-areas:
     'menubar   menubar'
     'sidebar   workspace'
