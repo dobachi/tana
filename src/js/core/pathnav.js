@@ -75,6 +75,60 @@ export function resolveInputPath(input, ctx = {}) {
 }
 
 /**
+ * 移動に失敗した理由を、エラー文字列から読める形に取り出す。
+ *
+ * backend の list_dir は Rust 側で `format!("{}: {}", path.display(), e)` の形、
+ * つまり「<パス>: <OSの理由> (os error N)」でエラーを返す。先頭のパス部分
+ * （ドライブのコロンを含むので単純な ": " 分割では誤爆する）と、末尾の
+ * "(os error N)" を落として、人が読む理由だけにする。
+ *
+ * @param {string} target 開こうとした絶対パス
+ * @param {unknown} error listDir 由来のエラー（文字列 or {message}）
+ * @returns {string} 理由部分（取り出せなければ空文字）
+ */
+function extractReason(target, error) {
+  let msg = error && typeof error === 'object' && 'message' in error ? error.message : error;
+  msg = typeof msg === 'string' ? msg : msg == null ? '' : String(msg);
+  msg = msg.trim();
+  if (!msg) return '';
+  // 先頭の「<パス>: 」を剥がす。path.display() は区切りが "/" とも "\" とも
+  // なり得るので両方の綴りを候補にする。
+  if (target) {
+    for (const cand of [String(target), String(target).replace(/\//g, '\\')]) {
+      const pre = `${cand}: `;
+      if (msg.startsWith(pre)) {
+        msg = msg.slice(pre.length);
+        break;
+      }
+    }
+  }
+  // 末尾の "(os error N)" は開発者向けなので落とす
+  return msg.replace(/\s*\(os error \d+\)\s*$/i, '').trim();
+}
+
+/**
+ * 移動失敗時のユーザー向けメッセージを組み立てる。
+ *
+ * ドライブルート（`X:/`）を開けなかったときは「ドライブ X: を開けません」と
+ * 言い換える（存在しないドライブレターを打ったときに気づけるように）。
+ * それ以外は開こうとしたパスを示す。いずれも OS の理由が取れれば括弧で添える。
+ *
+ * @param {string} target 開こうとした絶対パス
+ * @param {unknown} [error] listDir 由来のエラー
+ * @returns {string}
+ */
+export function describeOpenError(target, error) {
+  const reason = extractReason(target, error);
+  const drive = /^([A-Za-z]):[/\\]$/.exec(String(target || ''));
+  if (drive) {
+    const base = `ドライブ ${drive[1].toUpperCase()}: を開けません`;
+    return reason ? `${base}（${reason}）` : `${base}（見つからないかアクセスできません）`;
+  }
+  const base = `開けませんでした: ${target}`;
+  return reason ? `${base}（${reason}）` : base;
+}
+
+/**
  * ブレッドクラム用にパスを区切る。各要素はその階層までの絶対パスを持つ。
  * @param {string} dir
  * @returns {Array<{name: string, path: string}>}

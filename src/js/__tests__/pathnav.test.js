@@ -4,6 +4,7 @@ import {
   pathSegments,
   normalizePath,
   normalizeSeparators,
+  describeOpenError,
 } from '../core/pathnav.js';
 
 describe('normalizeSeparators', () => {
@@ -128,5 +129,53 @@ describe('pathSegments', () => {
       { name: 'u', path: '/home/u' },
       { name: '私の 書類', path: '/home/u/私の 書類' },
     ]);
+  });
+});
+
+describe('describeOpenError', () => {
+  // Rust list_dir は "<path>: <理由> (os error N)" 形式でエラーを返す
+  it('存在しないドライブルートは「ドライブ X: を開けません」＋理由', () => {
+    const msg = describeOpenError('L:/', 'L:/: 指定されたパスが見つかりません。 (os error 3)');
+    expect(msg).toBe('ドライブ L: を開けません（指定されたパスが見つかりません。）');
+  });
+
+  it('ドライブレターは大文字化する', () => {
+    expect(describeOpenError('l:/', 'l:/: not found (os error 3)')).toBe(
+      'ドライブ L: を開けません（not found）',
+    );
+  });
+
+  it('理由が取れないドライブルートは既定の補足を添える', () => {
+    expect(describeOpenError('L:/', '')).toBe(
+      'ドライブ L: を開けません（見つからないかアクセスできません）',
+    );
+  });
+
+  it('通常パスはパスを示し、理由を括弧で添える', () => {
+    const msg = describeOpenError(
+      'C:/Users/x/gone',
+      'C:/Users/x/gone: アクセスが拒否されました。 (os error 5)',
+    );
+    expect(msg).toBe('開けませんでした: C:/Users/x/gone（アクセスが拒否されました。）');
+  });
+
+  it('path.display() がバックスラッシュ綴りでも先頭パスを剥がす', () => {
+    const msg = describeOpenError('L:/', 'L:\\: 指定されたパスが見つかりません。 (os error 3)');
+    expect(msg).toBe('ドライブ L: を開けません（指定されたパスが見つかりません。）');
+  });
+
+  it('error が {message} でも理由を取り出す', () => {
+    const msg = describeOpenError('/x', { message: '/x: No such file or directory (os error 2)' });
+    expect(msg).toBe('開けませんでした: /x（No such file or directory）');
+  });
+
+  it('理由が空なら通常パスは素の文言', () => {
+    expect(describeOpenError('/x', null)).toBe('開けませんでした: /x');
+  });
+
+  it('先頭パスに一致しない理由はそのまま添える', () => {
+    expect(describeOpenError('/x', 'something went wrong')).toBe(
+      '開けませんでした: /x（something went wrong）',
+    );
   });
 });

@@ -55,7 +55,7 @@ make docker-check  # CI相当チェック
 
 | 項目 | 状態（2026-07-27 実測） |
 |------|------|
-| Vitest (JS) | ✅ 433 passed / 35 files |
+| Vitest (JS) | ✅ 441 passed / 35 files |
 | cargo test (Rust) | ✅ 21 passed（D&D は JS 側のみで Rust は無変更） |
 | ESLint | ✅ クリーン |
 | Prettier | ✅ クリーン |

@@ -25,7 +25,7 @@ import { SORT_KEYS, SORT_LABELS } from './core/sort.js';
 import { loadSession, storeSession, createSessionSaver } from './core/session.js';
 import { createToast } from './core/toast.js';
 import { checkForUpdates } from './core/updater.js';
-import { resolveInputPath } from './core/pathnav.js';
+import { resolveInputPath, describeOpenError } from './core/pathnav.js';
 import {
   initMenuBar,
   toggleMenuBar,
@@ -207,9 +207,10 @@ async function navigatePane(pane, value, o = {}) {
     panes.setActive(pane);
     focusActivePane();
     updateStatus();
-  } catch {
-    // 存在しない・ディレクトリでない・権限が無い等はまとめて弾く
-    toast(`開けませんでした: ${target}`);
+  } catch (e) {
+    // 存在しない・ディレクトリでない・権限が無い等。OS の理由を添えて、
+    // 特にドライブルート（存在しないドライブレター）を分かりやすく示す。
+    toast(describeOpenError(target, e));
   }
 }
 
