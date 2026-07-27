@@ -29,6 +29,9 @@ describe('help', () => {
     const keys = [...items].map((dt) => dt.textContent);
     expect(keys).toContain('F5');
     expect(keys).toContain('Ctrl + Shift + Space');
+    // コンテキストメニュー専用の操作（ファイルマネージャで表示・パス/名前コピー）に
+    // キーボードから到達できるよう、その開き方を必ず載せる (FR-10)。
+    expect(keys).toContain('Shift + F10 / ≣');
   });
 
   it('open を二重に呼んでもオーバーレイは1つ', () => {

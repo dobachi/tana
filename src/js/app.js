@@ -240,7 +240,10 @@ async function openWith(kind, path) {
  * 破壊操作は fileOps 側で安全モードのゲートに掛かる（ここでは隠さず、
  * 押したときに理由がトーストで出るほうが分かりやすい）。
  * @param {string} pane PANE.LEFT / PANE.RIGHT
- * @param {{entry: object|null, x: number, y: number}} info
+ * @param {{entry: object|null, x: number, y: number, fromKeyboard?: boolean}} info
+ *   fromKeyboard: キーボード（Shift+F10 / メニューキー）から開いたとき。
+ *   マウスと違いポインタが項目上に無いので、先頭項目へフォーカスして
+ *   矢印キーですぐ操作できるようにする（メニューバーと同じ振る舞い）。
  */
 function showEntryMenu(pane, info) {
   const fp = filePanes[pane];
@@ -316,7 +319,7 @@ function showEntryMenu(pane, info) {
     },
   );
 
-  showMenu(x, y, items);
+  showMenu(x, y, items, { focusFirst: !!info.fromKeyboard });
 }
 
 /** 設定画面を開閉する（Ctrl+, とメニューから） */
@@ -621,7 +624,12 @@ function onKeydown(e) {
     const fp = activeFilePane();
     if (fp) {
       const pt = fp.getCursorPoint();
-      showEntryMenu(panes.getActive(), { entry: fp.getCursorEntry(), x: pt.x, y: pt.y });
+      showEntryMenu(panes.getActive(), {
+        entry: fp.getCursorEntry(),
+        x: pt.x,
+        y: pt.y,
+        fromKeyboard: true,
+      });
     }
     return;
   }
