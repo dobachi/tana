@@ -50,6 +50,21 @@ export function createTabList(firstDir, firstState = null) {
       return active;
     },
 
+    /**
+     * from のタブを、挿入先「insert-before 位置」to へ動かす（D&D 並べ替え）。
+     * to は元配列基準の「この index の手前に入れる」値（0..length）。
+     * アクティブは同じタブを指し続ける。
+     */
+    move: (from, to) => {
+      if (from < 0 || from >= tabs.length) return;
+      const activeTab = tabs[active];
+      const [moved] = tabs.splice(from, 1);
+      let dest = to > from ? to - 1 : to; // 取り除いた分を詰める
+      dest = Math.max(0, Math.min(dest, tabs.length));
+      tabs.splice(dest, 0, moved);
+      active = tabs.indexOf(activeTab);
+    },
+
     setActiveDir: (dir) => {
       if (dir) tabs[active].dir = dir;
     },

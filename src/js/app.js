@@ -223,13 +223,34 @@ function renderTabs(p) {
     label.className = 'pane-tab-label';
     label.textContent = tabLabel(t.dir);
     tab.appendChild(label);
-    tab.addEventListener('mousedown', (e) => {
+    // クリック=選択 / 横ドラッグ=並べ替え を閾値で判別（pointer ベース）。
+    tab.addEventListener('pointerdown', (e) => {
       if (e.button === 1) {
         e.preventDefault();
         closeTab(p, i); // 中クリックで閉じる
-      } else if (e.button === 0) {
-        selectTab(p, i);
+        return;
       }
+      if (e.button !== 0) return;
+      const startX = e.clientX;
+      let dragging = false;
+      const onMove = (ev) => {
+        if (!dragging && Math.abs(ev.clientX - startX) >= 5) {
+          dragging = true;
+          tab.classList.add('dragging');
+        }
+      };
+      const onUp = (ev) => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        tab.classList.remove('dragging');
+        if (!dragging) {
+          selectTab(p, i);
+          return;
+        }
+        reorderTab(p, i, tabDropIndex(strip, ev.clientX));
+      };
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
     });
     if (multi) {
       const x = document.createElement('button');
@@ -237,6 +258,7 @@ function renderTabs(p) {
       x.className = 'pane-tab-close';
       x.textContent = '×';
       x.title = '閉じる (Ctrl+W)';
+      x.addEventListener('pointerdown', (e) => e.stopPropagation()); // タブのドラッグを開始させない
       x.addEventListener('click', (e) => {
         e.stopPropagation();
         closeTab(p, i);
@@ -252,6 +274,25 @@ function renderTabs(p) {
   add.title = '新しいタブ (Ctrl+T)';
   add.addEventListener('click', () => newTab(p));
   strip.appendChild(add);
+}
+
+/** ポインタ X から「どのタブの手前に入れるか」の index を返す（0..タブ数）。 */
+function tabDropIndex(strip, x) {
+  const els = [...strip.querySelectorAll('.pane-tab')];
+  for (let k = 0; k < els.length; k++) {
+    const r = els[k].getBoundingClientRect();
+    if (x < r.left + r.width / 2) return k;
+  }
+  return els.length; // 末尾
+}
+
+/** タブを from → to(insert-before) へ並べ替え、再描画・保存する。 */
+function reorderTab(p, from, to) {
+  const tl = paneTabs[p];
+  if (!tl) return;
+  tl.move(from, to);
+  renderTabs(p);
+  sessionSaver.schedule(); // 並び順を永続化
 }
 
 /** アクティブペインで戻る/進む。dir を履歴から取り出して読み込む。 */

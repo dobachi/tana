@@ -52,6 +52,40 @@ describe('createTabList', () => {
     expect(t.count()).toBe(1);
   });
 
+  it('move: 先頭を末尾手前へ（insert-before セマンティクス）', () => {
+    const t = createTabList('/a');
+    t.add('/b');
+    t.add('/c'); // [/a,/b,/c]
+    t.move(0, 2); // /a を index2(/c) の手前へ → [/b,/a,/c]
+    expect(t.list().map((x) => x.dir)).toEqual(['/b', '/a', '/c']);
+  });
+
+  it('move: 先頭を末尾へ', () => {
+    const t = createTabList('/a');
+    t.add('/b');
+    t.add('/c');
+    t.move(0, 3); // 末尾へ → [/b,/c,/a]
+    expect(t.list().map((x) => x.dir)).toEqual(['/b', '/c', '/a']);
+  });
+
+  it('move: アクティブは同じタブを指し続ける', () => {
+    const t = createTabList('/a');
+    t.add('/b');
+    t.add('/c');
+    t.activate(1); // /b がアクティブ
+    t.move(0, 3); // /a を末尾へ → [/b,/c,/a]、アクティブは /b(index0)
+    expect(t.activeIndex()).toBe(0);
+    expect(t.active().dir).toBe('/b');
+  });
+
+  it('move: 同じ位置は変化なし', () => {
+    const t = createTabList('/a');
+    t.add('/b'); // [/a,/b]
+    t.move(0, 0);
+    t.move(0, 1); // index0 の手前=元のまま
+    expect(t.list().map((x) => x.dir)).toEqual(['/a', '/b']);
+  });
+
   it('setActiveDir / setActiveState はアクティブに反映', () => {
     const t = createTabList('/a');
     t.add('/b');

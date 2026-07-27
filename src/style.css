@@ -521,6 +521,10 @@ body[data-mode='operation'] .pane.active {
   background: var(--active-pane);
   border-color: var(--border);
 }
+.pane-tab.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
 .pane-tab-label {
   overflow: hidden;
   text-overflow: ellipsis;
