@@ -120,17 +120,16 @@ fn cloud_places() -> Vec<Place> {
     cloud_places_from(&home_s, names)
 }
 
-/// あるディレクトリ直下のサブディレクトリを、ボリューム（ドライブ扱い）として
-/// 列挙する（macOS の /Volumes・Linux の /mnt, /media 用）。
-#[cfg(unix)]
-fn read_volume_dir(base: &str) -> Vec<Place> {
+/// あるディレクトリ直下のサブディレクトリを指定 kind の Place として列挙する
+/// （macOS の /Volumes・Linux の /mnt, /media・Windows の \\wsl$ 用）。名前順。
+fn read_subdirs(base: &str, kind: &str) -> Vec<Place> {
     let mut out = Vec::new();
     if let Ok(read) = std::fs::read_dir(base) {
         for entry in read.flatten() {
             let path = entry.path();
             if path.is_dir() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                out.push(Place::new(name, to_slash(&path), "drive"));
+                out.push(Place::new(name, to_slash(&path), kind));
             }
         }
     }
@@ -146,16 +145,34 @@ fn drive_candidates() -> Vec<Place> {
 
 #[cfg(target_os = "macos")]
 fn drive_candidates() -> Vec<Place> {
-    read_volume_dir("/Volumes")
+    read_subdirs("/Volumes", "drive")
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
 fn drive_candidates() -> Vec<Place> {
     // WSL からは /mnt/<letter> に Windows ドライブが、
     // 一般の Linux では /media にリムーバブルが現れる。
-    let mut v = read_volume_dir("/mnt");
-    v.extend(read_volume_dir("/media"));
+    let mut v = read_subdirs("/mnt", "drive");
+    v.extend(read_subdirs("/media", "drive"));
     v
+}
+
+/// WSL ディストロ（Windows のみ）。`\\wsl$\<distro>` / `\\wsl.localhost\<distro>`
+/// を列挙する。パスは to_slash で `//wsl$/<distro>` の UNC 形式になる。
+#[cfg(windows)]
+fn wsl_places() -> Vec<Place> {
+    for base in ["\\\\wsl$", "\\\\wsl.localhost"] {
+        let v = read_subdirs(base, "wsl");
+        if !v.is_empty() {
+            return v;
+        }
+    }
+    Vec::new()
+}
+
+#[cfg(not(windows))]
+fn wsl_places() -> Vec<Place> {
+    Vec::new()
 }
 
 /// 「場所」一覧を返す Tauri コマンド。ドライブ/ボリュームを先に、続けて
@@ -164,6 +181,7 @@ fn drive_candidates() -> Vec<Place> {
 pub fn list_places() -> Vec<Place> {
     let mut candidates = drive_candidates();
     candidates.extend(cloud_places());
+    candidates.extend(wsl_places());
     candidates.extend(standard_candidates());
     build_places(candidates, |p| Path::new(p).exists())
 }
@@ -210,6 +228,19 @@ mod tests {
     fn build_places_empty_when_nothing_exists() {
         let got = build_places(windows_drive_candidates(), |_| false);
         assert!(got.is_empty());
+    }
+
+    #[test]
+    fn read_subdirs_lists_only_dirs_with_given_kind_sorted() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("Ubuntu")).unwrap();
+        std::fs::create_dir(tmp.path().join("Debian")).unwrap();
+        std::fs::write(tmp.path().join("afile"), b"x").unwrap();
+        let base = tmp.path().to_string_lossy().to_string();
+        let got = read_subdirs(&base, "wsl");
+        let names: Vec<_> = got.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, vec!["Debian", "Ubuntu"]); // 名前順・ファイルは除外
+        assert!(got.iter().all(|p| p.kind == "wsl"));
     }
 
     #[test]

@@ -8,11 +8,15 @@ function isAbsolute(p) {
   return /^(\/|\\|[A-Za-z]:[/\\])/.test(p);
 }
 
-/** 区切りを "/" に統一し、末尾の余分な区切りを落とす（根は残す） */
+/** 区切りを "/" に統一し、末尾の余分な区切りを落とす（根は残す）。
+ *  UNC（`//host/share…`、WSL の `\\wsl$\<distro>` 等）は先頭の `//` を保持する。 */
 export function normalizeSeparators(path) {
   const unix = String(path).replace(/\\/g, '/');
-  const collapsed = unix.replace(/\/{2,}/g, '/');
-  if (collapsed.length > 1 && collapsed.endsWith('/') && !/^[A-Za-z]:\/$/.test(collapsed)) {
+  const unc = /^\/\//.test(unix);
+  const body = unc ? unix.slice(2) : unix;
+  const collapsed = (unc ? '//' : '') + body.replace(/\/{2,}/g, '/');
+  const rootLen = unc ? 2 : 1;
+  if (collapsed.length > rootLen && collapsed.endsWith('/') && !/^[A-Za-z]:\/$/.test(collapsed)) {
     return collapsed.slice(0, -1);
   }
   return collapsed;
@@ -24,8 +28,9 @@ export function normalizeSeparators(path) {
  */
 export function normalizePath(path) {
   const unix = normalizeSeparators(path);
+  const unc = /^\/\//.test(unix);
   const drive = unix.match(/^[A-Za-z]:\//);
-  const root = drive ? drive[0] : unix.startsWith('/') ? '/' : '';
+  const root = unc ? '//' : drive ? drive[0] : unix.startsWith('/') ? '/' : '';
   const out = [];
   for (const seg of unix.slice(root.length).split('/')) {
     if (seg === '' || seg === '.') continue;
@@ -83,7 +88,8 @@ export function resolveInputPath(input, ctx = {}) {
 export function parentPath(path) {
   const p = normalizeSeparators(String(path || ''));
   if (!p) return null;
-  if (p === '/' || /^[A-Za-z]:\/$/.test(p)) return null; // ルートに親なし
+  // ルート（POSIX "/" / ドライブ "C:/" / UNC ホスト "//host"）に親なし
+  if (p === '/' || /^[A-Za-z]:\/$/.test(p) || /^\/\/[^/]+$/.test(p)) return null;
   const cut = p.replace(/\/+$/, '');
   const i = cut.lastIndexOf('/');
   if (i < 0) return null;
@@ -154,6 +160,21 @@ export function describeOpenError(target, error) {
 export function pathSegments(dir) {
   if (!dir || typeof dir !== 'string') return [];
   const path = normalizeSeparators(dir);
+
+  // UNC（//host/share/...）。先頭要素はホスト `//host`（表示は \\host）。
+  if (/^\/\//.test(path)) {
+    const parts = path.slice(2).split('/').filter(Boolean);
+    const host = parts.shift() || '';
+    const root = `//${host}`;
+    const segs = [{ name: `\\\\${host}`, path: root }];
+    let acc = root;
+    for (const s of parts) {
+      acc = `${acc}/${s}`;
+      segs.push({ name: s, path: acc });
+    }
+    return segs;
+  }
+
   const drive = path.match(/^[A-Za-z]:\//);
 
   if (drive) {

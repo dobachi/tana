@@ -133,6 +133,30 @@ describe('pathSegments', () => {
   });
 });
 
+describe('UNC パス（WSL の \\\\wsl$ 等）', () => {
+  it('normalizeSeparators は先頭 // を保持する', () => {
+    expect(normalizeSeparators('\\\\wsl$\\Ubuntu\\home')).toBe('//wsl$/Ubuntu/home');
+    expect(normalizeSeparators('//wsl$//Ubuntu/')).toBe('//wsl$/Ubuntu');
+    expect(normalizeSeparators('//wsl$')).toBe('//wsl$');
+  });
+  it('normalizePath は UNC ルートを保ちつつ .. を解決', () => {
+    expect(normalizePath('//wsl$/Ubuntu/../home')).toBe('//wsl$/home');
+    expect(normalizePath('\\\\wsl$\\Ubuntu\\.\\x')).toBe('//wsl$/Ubuntu/x');
+  });
+  it('pathSegments は \\\\host を先頭に段階を作る', () => {
+    expect(pathSegments('//wsl$/Ubuntu/home')).toEqual([
+      { name: '\\\\wsl$', path: '//wsl$' },
+      { name: 'Ubuntu', path: '//wsl$/Ubuntu' },
+      { name: 'home', path: '//wsl$/Ubuntu/home' },
+    ]);
+  });
+  it('parentPath は UNC を辿り、ホストで止まる', () => {
+    expect(parentPath('//wsl$/Ubuntu/home')).toBe('//wsl$/Ubuntu');
+    expect(parentPath('//wsl$/Ubuntu')).toBe('//wsl$');
+    expect(parentPath('//wsl$')).toBeNull();
+  });
+});
+
 describe('parentPath', () => {
   it('通常の親を返す', () => {
     expect(parentPath('/a/b/c')).toBe('/a/b');

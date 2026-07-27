@@ -55,8 +55,8 @@ make docker-check  # CI相当チェック
 
 | 項目 | 状態（2026-07-27 実測） |
 |------|------|
-| Vitest (JS) | ✅ 505 passed / 42 files |
-| cargo test (Rust) | ✅ 33 passed（places 6 + search 6 の純粋ロジック含む） |
+| Vitest (JS) | ✅ 509 passed / 42 files |
+| cargo test (Rust) | ✅ 34 passed（places 7 + search 6 の純粋ロジック含む） |
 | ESLint | ✅ クリーン |
 | Prettier | ✅ クリーン |
 | build:frontend | ✅ 成功（成果物に新ロジックが含まれることを確認） |
@@ -116,7 +116,7 @@ make docker-check  # CI相当チェック
 - Tauri コマンド: `list_dir` / `home_dir` / `parent_dir` / `unique_name` / `copy_path` / `move_path` / `delete_to_trash` / `delete_permanent` / `rename_path` / `make_dir` / `read_preview` / `app_version` / `places::list_places`
 - テスト対象の純粋関数: `is_hidden_entry` / `read_dir_entries` / `target_path` / `unique_target_name` / `copy_recursive` / `remove_any`
 - **`search.rs`** (FR-18): `contains_match`/`snippet`（純粋・テスト済み）+ `search_dir_impl`（再帰走査: 名前一致＋テキスト内容一致、バイナリ/大サイズ/隠し除外、件数上限）。コマンド `search_dir`
-- **`places.rs`**: `build_places`（存在フィルタ+パス重複除去、注入で純粋テスト）/ `windows_drive_candidates`（A:〜Z: 生成）/ `standard_candidates`（dirs でホーム/デスクトップ/ドキュメント/ダウンロード）/ `is_cloud_folder`・`cloud_places_from`（クラウド同期フォルダ検出、純粋）/ OS 別 `drive_candidates`（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）
+- **`places.rs`**: `build_places`（存在フィルタ+パス重複除去、注入で純粋テスト）/ `windows_drive_candidates`（A:〜Z: 生成）/ `standard_candidates`（dirs）/ `is_cloud_folder`・`cloud_places_from`（クラウド同期検出、純粋）/ `read_subdirs`（ボリューム/WSL 列挙、汎用）/ OS 別 `drive_candidates` / `wsl_places`（Win: `\\wsl$` → UNC）
 - 依存は最小（tauri / tauri-cli / plugin-dialog / opener / updater / process / serde / dirs）
 
 ---
@@ -134,7 +134,7 @@ make docker-check  # CI相当チェック
 | FR-04 | 安全/操作モード切替 | M | ✅ | Ctrl+Shift+Space トグル + 視覚表示 |
 | FR-05 | お気に入り（ネスト） | M | ✅ | ツリー・Ctrl+D 追加・localStorage |
 | FR-06 | お気に入り検索 | M | ✅ | インクリメンタル検索 |
-| FR-07 | 場所(Places)検出 | S | 🟡 | **M2 進行中**。ドライブ/ボリューム（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）＋標準フォルダ（ホーム/デスクトップ/ドキュメント/ダウンロード）＋**クラウド同期フォルダ（OneDrive 個人/職場・Box・Dropbox・Google Drive をホーム直下から検出）**をサイドバー「場所」に表示し、クリック/キーボードで移動可（`places.rs` + `placesview.js`）。**残**: WSL ディストロ(`\\wsl$`)検出、Places の手動追加/永続化 |
+| FR-07 | 場所(Places)検出 | S | ✅ | サイドバー「場所」に自動検出を表示・クリック/キーボード移動（`places.rs`+`placesview.js`）。ドライブ/ボリューム（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）＋クラウド同期（OneDrive 個人/職場・Box・Dropbox・Google Drive）＋**WSL ディストロ（Win: `\\wsl$`/`\\wsl.localhost` → UNC `//wsl$/<distro>`、pathnav を UNC 対応化）**＋標準フォルダ。Places の手動追加はお気に入り(FR-05)で代替（見送り） |
 | FR-08 | タブ | S | ✅ | ペイン単位のタブ（Q3 確定）。Ctrl+T 新規/Ctrl+W 閉じる/Ctrl+Tab・Ctrl+Shift+Tab 切替＋タブ帯 UI（クリック/中クリック/×/＋）。各タブが dir＋カーソル/選択を保持し切替で復元（`core/tabs.js` + filepane getViewState/applyViewState）。起動時のタブ構成復元（session.js）＋**タブの D&D 並べ替え**（pointer ベース、クリックと閾値で判別）に対応 |
 | FR-09 | 多形式プレビュー | S | ✅ | 画像/テキスト/Markdown/メタ + 配置(右/下)/Ctrl+P。Markdownは markdown-it を遅延チャンク化(html:false)+CSP。**動画(mp4/webm)は将来対応**(backlog)。詳細設計: [PREVIEW.md](PREVIEW.md) |
 | FR-10 | 全機能キーボード到達 | M | ✅ | 網羅性点検を実施（2026-07-27）。コンテキストメニューを `Shift+F10`/`≣` で開いたとき先頭項目へフォーカスする（マウスと同じ即操作性）。同メニュー専用の「ファイルマネージャで表示・パス/名前コピー」の開き方をヘルプに明記。「同ペイン内フォルダへのドロップ」相当は Ctrl+C/Ctrl+X→Ctrl+V のファイルクリップボード（任意の現在地へ貼付）でキーボードからも到達可能にした。全機能キーボード到達を達成 |
@@ -188,7 +188,7 @@ make docker-check  # CI相当チェック
 1. ~~**FR-10 キーボード到達性の点検**~~ ✅ 完了（2026-07-27）。全操作を棚卸しし、(a) キーボードで開いたコンテキストメニューの先頭フォーカス、(b) メニュー専用操作のヘルプ明記、(c) ファイルクリップボード Ctrl+C/Ctrl+X→Ctrl+V（任意の現在地へ貼付）の追加で抜けを埋めた。「同ペイン内フォルダへのドロップ」相当もキーボードから到達可能になった。
 2. ~~**D&D のネイティブ実機確認**~~ ✅ 完了（2026-07-27）。`make dev` 起動で `Shift`+ドロップ＝移動・フォルダ行への吸い込み・複数選択ドラッグを目視確認。
 3. ~~**M1 完了の宣言**~~ ✅ **M1 完了（2026-07-27）**。優先度 M の FR/NFR は達成。
-4. **M2 進行中（実装済み）**: FR-07 Places（ドライブ/標準フォルダ/クラウド同期検出）、FR-16 画像表示制御（フィット⇄実寸・Ctrl+ホイール連続ズーム・中央維持）、プレビュー縦幅リサイズ、FR-17 履歴（Alt+←/→）、**FR-08 タブ完了**（切替・状態保持・セッション復元・D&D 並べ替え）、二打鍵プレフィックス（t/y/o）、**FR-18 現在ディレクトリ内検索（Ctrl+F, grep）**。**次**: (a) タブ構成をお気に入り保存(backlog `#idea`)、(b) FR-16 パン/＋−キー、(c) FR-07 WSL 検出・Places 永続化、(d) FR-18 真のキャンセル/正規表現、(e) `make release` 非対話化。Q4（お気に入りの永続化を localStorage→設定JSON）は残課題。
+4. **M2 進行中（実装済み）**: **FR-07 Places 完了**（ドライブ/クラウド同期/**WSL**/標準フォルダ）、**FR-16 完了**（フィット⇄実寸・連続ズーム・中央維持・パン）、プレビュー縦幅リサイズ、FR-17 履歴、**FR-08 タブ完了**、二打鍵プレフィックス（t/y/o）、**FR-18 検索（Ctrl+F・/, grep）**。**次**: (a) タブ構成をお気に入り保存(backlog `#idea`)、(b) FR-16 ＋−キー、(c) FR-18 真のキャンセル/正規表現、(d) `make release` 非対話化。Q4（お気に入りの永続化を localStorage→設定JSON）は残課題。
 5. モジュールを増やすたびに `__tests__` と Rust `#[cfg(test)]` を追加し、`make check` を green に保つ。コードを増やすにつれ DESIGN.md §2.2 の目標構成へ寄せる。
 
 ### バックログ（設計検討済み・未着手）
