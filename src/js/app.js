@@ -420,6 +420,15 @@ const sessionSaver = createSessionSaver({
       right: filePanes[PANE.RIGHT] ? filePanes[PANE.RIGHT].getCurrentDir() : null,
     },
     active: panes.getActive(),
+    // タブ構成 (FR-08/FR-14): 各ペインのタブ dir 一覧とアクティブ index
+    tabs: {
+      left: paneTabs[PANE.LEFT] ? paneTabs[PANE.LEFT].list().map((t) => t.dir) : null,
+      right: paneTabs[PANE.RIGHT] ? paneTabs[PANE.RIGHT].list().map((t) => t.dir) : null,
+    },
+    activeTab: {
+      left: paneTabs[PANE.LEFT] ? paneTabs[PANE.LEFT].activeIndex() : 0,
+      right: paneTabs[PANE.RIGHT] ? paneTabs[PANE.RIGHT].activeIndex() : 0,
+    },
   }),
   store: storeSession,
 });
@@ -1326,10 +1335,11 @@ async function init() {
       await fp.load(home);
     }
   };
+  let session = null;
   if (cli) {
     await Promise.all([loadOr(filePanes.left, cli), loadOr(filePanes.right, cli)]);
   } else {
-    const session = loadSession();
+    session = loadSession();
     await Promise.all([
       loadOr(filePanes.left, session && session.dirs.left),
       loadOr(filePanes.right, session && session.dirs.right),
@@ -1338,13 +1348,28 @@ async function init() {
   }
   updateStatus();
 
-  // タブ (FR-08): 起動ディレクトリを最初のタブにして帯を描画する。
+  // タブ (FR-08/FR-14): セッションにタブ構成があれば復元、無ければ起動 dir で単一タブ。
   for (const p of [PANE.LEFT, PANE.RIGHT]) {
-    if (filePanes[p]) {
-      paneTabs[p] = createTabList(filePanes[p].getCurrentDir());
-      renderTabs(p);
+    const fp = filePanes[p];
+    if (!fp) continue;
+    const savedTabs = session && session.tabs ? session.tabs[p] : null;
+    if (Array.isArray(savedTabs) && savedTabs.length > 1) {
+      // 複数タブを復元。アクティブタブの dir は起動時にロード済みとは限らないので
+      // 必要なら読み直す。存在しない dir は loadOr がホームへ倒す。
+      paneTabs[p] = createTabList(savedTabs[0]);
+      for (let i = 1; i < savedTabs.length; i++) paneTabs[p].add(savedTabs[i]);
+      const idx = Math.min((session.activeTab && session.activeTab[p]) || 0, savedTabs.length - 1);
+      paneTabs[p].activate(idx);
+      const activeDir = paneTabs[p].active().dir;
+      if (activeDir !== fp.getCurrentDir()) await loadOr(fp, activeDir);
+      // ロード後の実 dir をアクティブタブへ反映（フォールバックされた場合の齟齬回避）
+      paneTabs[p].setActiveDir(fp.getCurrentDir());
+    } else {
+      paneTabs[p] = createTabList(fp.getCurrentDir());
     }
+    renderTabs(p);
   }
+  updateStatus();
 
   // 起動時の更新検知。待たない・失敗しても黙る（起動を妨げないため）。
   checkForUpdates();

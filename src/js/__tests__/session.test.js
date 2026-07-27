@@ -18,13 +18,63 @@ describe('loadSession / storeSession', () => {
   it('round-trips dirs and active pane', () => {
     const s = mem();
     storeSession({ dirs: { left: '/a', right: '/b' }, active: 'right' }, s);
-    expect(loadSession(s)).toEqual({ dirs: { left: '/a', right: '/b' }, active: 'right' });
+    expect(loadSession(s)).toEqual({
+      dirs: { left: '/a', right: '/b' },
+      active: 'right',
+      tabs: { left: null, right: null },
+      activeTab: { left: 0, right: 0 },
+    });
   });
 
   it('normalizes missing/invalid fields', () => {
     const s = mem();
     storeSession({ dirs: { left: '/a' }, active: 'bogus' }, s);
-    expect(loadSession(s)).toEqual({ dirs: { left: '/a', right: null }, active: 'left' });
+    expect(loadSession(s)).toEqual({
+      dirs: { left: '/a', right: null },
+      active: 'left',
+      tabs: { left: null, right: null },
+      activeTab: { left: 0, right: 0 },
+    });
+  });
+
+  it('round-trips tab configuration (FR-08/FR-14)', () => {
+    const s = mem();
+    storeSession(
+      {
+        dirs: { left: '/a2', right: '/b' },
+        active: 'left',
+        tabs: { left: ['/a1', '/a2', '/a3'], right: ['/b'] },
+        activeTab: { left: 1, right: 0 },
+      },
+      s,
+    );
+    const got = loadSession(s);
+    expect(got.tabs).toEqual({ left: ['/a1', '/a2', '/a3'], right: ['/b'] });
+    expect(got.activeTab).toEqual({ left: 1, right: 0 });
+  });
+
+  it('filters non-string tab entries and empties to null; clamps index', () => {
+    const s = mem();
+    storeSession(
+      {
+        dirs: {},
+        active: 'left',
+        tabs: { left: ['/a', 3, null, '/c'], right: [] },
+        activeTab: { left: -5, right: 2.5 },
+      },
+      s,
+    );
+    const got = loadSession(s);
+    expect(got.tabs).toEqual({ left: ['/a', '/c'], right: null });
+    expect(got.activeTab).toEqual({ left: 0, right: 0 });
+  });
+
+  it('backward compatible with sessions saved before tabs existed', () => {
+    // 旧フォーマット（tabs / activeTab なし）を直接置いて読む
+    const s = mem({ 'tana.session': JSON.stringify({ dirs: { left: '/old' }, active: 'left' }) });
+    const got = loadSession(s);
+    expect(got.tabs).toEqual({ left: null, right: null });
+    expect(got.activeTab).toEqual({ left: 0, right: 0 });
   });
 
   it('recovers from corrupt data', () => {
