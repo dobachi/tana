@@ -488,6 +488,71 @@ body[data-mode='operation'] .pane.active {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* タブ帯 (FR-08) */
+.pane-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 2px 4px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-pane);
+}
+.pane-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 16em;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  color: var(--fg-dim);
+  font-size: 0.85em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pane-tab:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.pane-tab.active {
+  color: var(--fg);
+  background: var(--active-pane);
+  border-color: var(--border);
+}
+.pane-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pane-tab-close {
+  font: inherit;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.pane-tab-close:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.pane-tab-add {
+  font: inherit;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+.pane-tab-add:hover {
+  color: var(--fg);
+  border-color: var(--border);
+}
 .pane-list {
   list-style: none;
   margin: 0;

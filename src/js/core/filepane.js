@@ -456,5 +456,25 @@ export function createFilePane(rootEl, opts = {}) {
       return { x: box.left + 24, y: box.bottom };
     },
     getCount: () => entries.length,
+    /** タブ切替などで保存する表示状態（カーソル位置・選択）。パスで持つ。 */
+    getViewState: () => ({
+      cursorPath: entries[cursor] ? entries[cursor].path : null,
+      selection: [...selected],
+    }),
+    /** getViewState で保存した状態を、現在の一覧に対して復元する。 */
+    applyViewState: (state) => {
+      if (!state) return;
+      if (Array.isArray(state.selection)) {
+        const exist = new Set(entries.map((e) => e.path));
+        selected = new Set(state.selection.filter((p) => exist.has(p)));
+      }
+      if (state.cursorPath) {
+        const idx = entries.findIndex((e) => e.path === state.cursorPath);
+        if (idx >= 0) cursor = idx;
+      }
+      cursor = clampCursor(cursor, entries.length);
+      render();
+      notify();
+    },
   };
 }

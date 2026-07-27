@@ -55,7 +55,7 @@ make docker-check  # CI相当チェック
 
 | 項目 | 状態（2026-07-27 実測） |
 |------|------|
-| Vitest (JS) | ✅ 473 passed / 39 files |
+| Vitest (JS) | ✅ 480 passed / 40 files |
 | cargo test (Rust) | ✅ 27 passed（places 検出の純粋ロジック: ドライブ 4 + クラウド 2） |
 | ESLint | ✅ クリーン |
 | Prettier | ✅ クリーン |
@@ -101,11 +101,12 @@ make docker-check  # CI相当チェック
 | `core/previewzoom.js` | **画像プレビューの表示モード (FR-16)**。fit（既定・ペインに収める）⇄ zoom（実寸基準の倍率）の純粋な状態＋Ctrl+ホイール連続ズーム。適用（class 切替・width）は app.js/render.js |
 | `core/previewresize.js` | **プレビュー縦幅リサイズの純粋ロジック**。区切りドラッグ時の高さ計算(clamp)と localStorage 入出力。DOM/ドラッグ配線は app.js `initPreviewResize` |
 | `core/navhistory.js` | **ナビゲーション履歴 (FR-17)**。ペインごとの戻る/進む（ブラウザ型スタック+index）の純粋な状態。配線は app.js（onChange で積む・Alt+←/→・マウス戻る/進む） |
+| `core/tabs.js` | **タブの純粋な状態 (FR-08)**。ペインごとの add/close/activate/next/prev、各タブは dir + 表示状態。読み込み/保存の結線は app.js（`renderTabs`/`switchToActiveTab` と filepane の `getViewState`/`applyViewState`） |
 | `core/dnd.js` | **D&D の判定（純粋）**。掴んだ対象・効果(copy/move)・不正ドロップの拒否。詳細: [DRAG-AND-DROP.md](DRAG-AND-DROP.md) |
 | `core/dragdrop.js` | **D&D の追跡（DOM）**。ポインタイベントで自作。`resolveDropTarget` は将来の OS ドロップでも再利用する。安全モードは拒否ゴースト＋トーストで示す |
 | `core/editmenu.js` | **メニューバー「編集」の項目（純粋）**。対象・宛先の有無で無効化を判定。app.js が状態と action を注入 |
 
-テストは `src/js/__tests__/<name>.test.js` に対応（39ファイル）。
+テストは `src/js/__tests__/<name>.test.js` に対応（40ファイル）。
 
 ### バックエンド `src-tauri/src/`
 `lib.rs` に集約（ファイル操作系）。`places.rs`（FR-07 の場所検出）を分離済み。`main.rs` は薄いエントリ。
@@ -131,7 +132,7 @@ make docker-check  # CI相当チェック
 | FR-05 | お気に入り（ネスト） | M | ✅ | ツリー・Ctrl+D 追加・localStorage |
 | FR-06 | お気に入り検索 | M | ✅ | インクリメンタル検索 |
 | FR-07 | 場所(Places)検出 | S | 🟡 | **M2 進行中**。ドライブ/ボリューム（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）＋標準フォルダ（ホーム/デスクトップ/ドキュメント/ダウンロード）＋**クラウド同期フォルダ（OneDrive 個人/職場・Box・Dropbox・Google Drive をホーム直下から検出）**をサイドバー「場所」に表示し、クリック/キーボードで移動可（`places.rs` + `placesview.js`）。**残**: WSL ディストロ(`\\wsl$`)検出、Places の手動追加/永続化 |
-| FR-08 | タブ | S | ⬜ | **M2**。ペイン単位が有力(Q3) |
+| FR-08 | タブ | S | 🟡 | **M2 進行中**。ペイン単位のタブ（Q3 確定）。Ctrl+T 新規/Ctrl+W 閉じる/Ctrl+Tab・Ctrl+Shift+Tab 切替＋タブ帯 UI（クリック/中クリック/×/＋）。各タブが dir＋カーソル/選択を保持し切替で復元（`core/tabs.js` + filepane getViewState/applyViewState）。**残**: 起動時のタブ構成の復元(FR-14 のタブ分)、タブの D&D 並べ替え |
 | FR-09 | 多形式プレビュー | S | ✅ | 画像/テキスト/Markdown/メタ + 配置(右/下)/Ctrl+P。Markdownは markdown-it を遅延チャンク化(html:false)+CSP。**動画(mp4/webm)は将来対応**(backlog)。詳細設計: [PREVIEW.md](PREVIEW.md) |
 | FR-10 | 全機能キーボード到達 | M | ✅ | 網羅性点検を実施（2026-07-27）。コンテキストメニューを `Shift+F10`/`≣` で開いたとき先頭項目へフォーカスする（マウスと同じ即操作性）。同メニュー専用の「ファイルマネージャで表示・パス/名前コピー」の開き方をヘルプに明記。「同ペイン内フォルダへのドロップ」相当は Ctrl+C/Ctrl+X→Ctrl+V のファイルクリップボード（任意の現在地へ貼付）でキーボードからも到達可能にした。全機能キーボード到達を達成 |
 | FR-11 | マウス操作（D&D/右クリック/複数選択） | M | ✅ | 右クリックメニュー・ブレッドクラム移動・複数選択・D&D。お気に入りへのドロップは段階2。D&D 実装時に「右クリックで複数選択が畳まれる」既存バグも修正 |
@@ -183,7 +184,7 @@ make docker-check  # CI相当チェック
 1. ~~**FR-10 キーボード到達性の点検**~~ ✅ 完了（2026-07-27）。全操作を棚卸しし、(a) キーボードで開いたコンテキストメニューの先頭フォーカス、(b) メニュー専用操作のヘルプ明記、(c) ファイルクリップボード Ctrl+C/Ctrl+X→Ctrl+V（任意の現在地へ貼付）の追加で抜けを埋めた。「同ペイン内フォルダへのドロップ」相当もキーボードから到達可能になった。
 2. ~~**D&D のネイティブ実機確認**~~ ✅ 完了（2026-07-27）。`make dev` 起動で `Shift`+ドロップ＝移動・フォルダ行への吸い込み・複数選択ドラッグを目視確認。
 3. ~~**M1 完了の宣言**~~ ✅ **M1 完了（2026-07-27）**。優先度 M の FR/NFR は達成。
-4. **M2 進行中**: **FR-07 Places** の第1スライス完了（ドライブ/標準フォルダの検出・表示・移動。`places.rs` 分離 + `placesview.js` 新設、Ctrl+B 巡回に統合）。**FR-16 プレビュー表示制御**の第1スライス完了（画像フィット⇄実寸のクリック切替、`previewzoom.js`）。クラウド同期フォルダ検出（OneDrive/Box/Dropbox/Google Drive）も追加済み。FR-16 連続ズーム（Ctrl+ホイール、フォント拡縮との競合を `onWheel` で調停）も実装済み。プレビュー縦幅のマウスリサイズ（区切りドラッグ＋永続化, `previewresize.js`）も実装済み。ナビゲーション履歴(戻る/進む, FR-17 として要件化)も実装済み。**次**: (a) FR-16 パン(ドラッグ)、(b) WSL ディストロ(`\\wsl$`)検出、(c) Places の手動追加/永続化、(d) **FR-08 タブ**。Q4（お気に入りの永続化を localStorage から設定ディレクトリJSONへ移すか）はタブのセッション復元と絡むのでそこで決める。
+4. **M2 進行中**: **FR-07 Places** の第1スライス完了（ドライブ/標準フォルダの検出・表示・移動。`places.rs` 分離 + `placesview.js` 新設、Ctrl+B 巡回に統合）。**FR-16 プレビュー表示制御**の第1スライス完了（画像フィット⇄実寸のクリック切替、`previewzoom.js`）。クラウド同期フォルダ検出（OneDrive/Box/Dropbox/Google Drive）も追加済み。FR-16 連続ズーム（Ctrl+ホイール、フォント拡縮との競合を `onWheel` で調停）も実装済み。プレビュー縦幅のマウスリサイズ（区切りドラッグ＋永続化, `previewresize.js`）も実装済み。ナビゲーション履歴(FR-17)・**FR-08 タブ第1スライス（ペイン単位・状態保持）**も実装済み。**次**: (a) FR-08 タブ構成のセッション復元(FR-14) と D&D 並べ替え、(b) タブ構成をお気に入り保存(backlog `#idea`)、(c) FR-16 パン、(d) WSL 検出・Places 永続化。Q4（お気に入りの永続化を localStorage から設定ディレクトリJSONへ移すか）はタブのセッション復元と絡むのでそこで決める。
 5. モジュールを増やすたびに `__tests__` と Rust `#[cfg(test)]` を追加し、`make check` を green に保つ。コードを増やすにつれ DESIGN.md §2.2 の目標構成へ寄せる。
 
 ### バックログ（設計検討済み・未着手）

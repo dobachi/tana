@@ -45,6 +45,7 @@ import { buildEditMenuItems } from './core/editmenu.js';
 import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
 import { createNavHistory } from './core/navhistory.js';
+import { createTabList } from './core/tabs.js';
 import { createFavorites, loadStoredFavorites, storeFavorites } from './core/favorites.js';
 import { createFavoritesView } from './core/favoritesview.js';
 import { createPlacesView } from './core/placesview.js';
@@ -109,6 +110,148 @@ function recordNav(pane, dir) {
     return;
   }
   navHistory[pane].visit(dir);
+}
+
+// タブ (FR-08): ペインごとのタブ。各タブは dir + 表示状態(カーソル/選択)を持つ。
+// タブ本体の状態は core/tabs.js（純粋）、読み込み/保存は filepane と結線する。
+const paneTabs = { left: null, right: null };
+
+function tabLabel(dir) {
+  if (!dir) return '—';
+  const base = dir.split(/[/\\]/).filter(Boolean).pop();
+  return base || dir; // ドライブ直下やルートは dir をそのまま出す
+}
+
+/** アクティブタブへ現在の dir と表示状態を退避する。 */
+function saveActiveTabState(p) {
+  const fp = filePanes[p];
+  const tl = paneTabs[p];
+  if (!fp || !tl) return;
+  tl.setActiveDir(fp.getCurrentDir());
+  tl.setActiveState(fp.getViewState());
+}
+
+/** アクティブタブの dir を読み込み、保存済みの表示状態を復元する。 */
+async function switchToActiveTab(p) {
+  const fp = filePanes[p];
+  const tl = paneTabs[p];
+  if (!fp || !tl) return;
+  const tab = tl.active();
+  navSuppress[p] = true; // タブ切替の load は履歴に積まない
+  try {
+    await fp.load(tab.dir);
+  } catch {
+    navSuppress[p] = false;
+    toast(describeOpenError(tab.dir));
+  }
+  fp.applyViewState(tab.state);
+  renderTabs(p);
+  if (p === panes.getActive()) updateStatus();
+}
+
+/** 新しいタブ（現在地を複製）。 */
+function newTab(p) {
+  const fp = filePanes[p];
+  const tl = paneTabs[p];
+  if (!fp || !tl) return;
+  panes.setActive(p);
+  saveActiveTabState(p);
+  tl.add(fp.getCurrentDir()); // 状態はまっさら（先頭から）
+  switchToActiveTab(p);
+}
+
+/** タブを閉じる（省略時はアクティブ）。最後の1枚は残す。 */
+function closeTab(p, index) {
+  const tl = paneTabs[p];
+  if (!tl) return;
+  const idx = index == null ? tl.activeIndex() : index;
+  const wasActive = idx === tl.activeIndex();
+  if (!tl.close(idx)) {
+    toast('最後のタブは閉じられません');
+    return;
+  }
+  if (wasActive) switchToActiveTab(p);
+  else renderTabs(p);
+}
+
+/** index のタブへ切り替える。 */
+function selectTab(p, index) {
+  const tl = paneTabs[p];
+  if (!tl) return;
+  panes.setActive(p);
+  if (index === tl.activeIndex()) {
+    focusActivePane();
+    return;
+  }
+  saveActiveTabState(p);
+  tl.activate(index);
+  switchToActiveTab(p);
+}
+
+/** 次(+1)/前(-1)のタブへ。 */
+function switchTab(p, dir) {
+  const tl = paneTabs[p];
+  if (!tl || tl.count() <= 1) return;
+  saveActiveTabState(p);
+  if (dir < 0) tl.prev();
+  else tl.next();
+  switchToActiveTab(p);
+}
+
+/** ディレクトリ移動をアクティブタブに反映（dir が変わったときだけ再描画）。 */
+function syncActiveTab(p, dir) {
+  const tl = paneTabs[p];
+  if (!tl || tl.active().dir === dir) return;
+  tl.setActiveDir(dir);
+  renderTabs(p);
+}
+
+/** タブ帯を描画する。クリックで選択、× / 中クリックで閉じる、+ で新規。 */
+function renderTabs(p) {
+  const strip = document.getElementById(p === PANE.LEFT ? 'tabs-left' : 'tabs-right');
+  const tl = paneTabs[p];
+  if (!strip || !tl) return;
+  strip.replaceChildren();
+  const activeIdx = tl.activeIndex();
+  const multi = tl.count() > 1;
+  tl.list().forEach((t, i) => {
+    const tab = document.createElement('div');
+    tab.className = 'pane-tab' + (i === activeIdx ? ' active' : '');
+    tab.title = t.dir;
+    tab.setAttribute('role', 'tab');
+    const label = document.createElement('span');
+    label.className = 'pane-tab-label';
+    label.textContent = tabLabel(t.dir);
+    tab.appendChild(label);
+    tab.addEventListener('mousedown', (e) => {
+      if (e.button === 1) {
+        e.preventDefault();
+        closeTab(p, i); // 中クリックで閉じる
+      } else if (e.button === 0) {
+        selectTab(p, i);
+      }
+    });
+    if (multi) {
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'pane-tab-close';
+      x.textContent = '×';
+      x.title = '閉じる (Ctrl+W)';
+      x.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeTab(p, i);
+      });
+      tab.appendChild(x);
+    }
+    strip.appendChild(tab);
+  });
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'pane-tab-add';
+  add.textContent = '+';
+  add.title = '新しいタブ (Ctrl+T)';
+  add.addEventListener('click', () => newTab(p));
+  strip.appendChild(add);
 }
 
 /** アクティブペインで戻る/進む。dir を履歴から取り出して読み込む。 */
@@ -832,6 +975,36 @@ function onKeydown(e) {
     toggleMenuBar();
     return;
   }
+  // タブ (FR-08): Ctrl+Tab 次 / Ctrl+Shift+Tab 前 / Ctrl+T 新規 / Ctrl+W 閉じる
+  if (e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Tab') {
+    e.preventDefault();
+    switchTab(panes.getActive(), e.shiftKey ? -1 : 1);
+    return;
+  }
+  if (
+    e.ctrlKey &&
+    !e.altKey &&
+    !e.metaKey &&
+    !e.shiftKey &&
+    !isEditableTarget(e.target) &&
+    (e.code === 'KeyT' || e.key.toLowerCase() === 't')
+  ) {
+    e.preventDefault();
+    newTab(panes.getActive());
+    return;
+  }
+  if (
+    e.ctrlKey &&
+    !e.altKey &&
+    !e.metaKey &&
+    !e.shiftKey &&
+    !isEditableTarget(e.target) &&
+    (e.code === 'KeyW' || e.key.toLowerCase() === 'w')
+  ) {
+    e.preventDefault();
+    closeTab(panes.getActive());
+    return;
+  }
   // コンテキストメニュー: Shift+F10 / メニューキー（キーボードからも到達可能に）
   if ((e.shiftKey && e.key === 'F10') || e.key === 'ContextMenu') {
     e.preventDefault();
@@ -1102,6 +1275,7 @@ async function init() {
       onOpenFile: (entry) => openWith('open', entry.path),
       onChange: (info) => {
         recordNav(p, info.dir); // 履歴へ (FR-17)。dir 変化時のみ積む
+        syncActiveTab(p, info.dir); // アクティブタブの dir 追従 (FR-08)
         sessionSaver.schedule(); // ディレクトリ移動をセッションに保存（デバウンス）
         if (p === panes.getActive()) {
           updateStatus(info);
@@ -1163,6 +1337,14 @@ async function init() {
     if (session && session.active === PANE.RIGHT) panes.setActive(PANE.RIGHT);
   }
   updateStatus();
+
+  // タブ (FR-08): 起動ディレクトリを最初のタブにして帯を描画する。
+  for (const p of [PANE.LEFT, PANE.RIGHT]) {
+    if (filePanes[p]) {
+      paneTabs[p] = createTabList(filePanes[p].getCurrentDir());
+      renderTabs(p);
+    }
+  }
 
   // 起動時の更新検知。待たない・失敗しても黙る（起動を妨げないため）。
   checkForUpdates();
