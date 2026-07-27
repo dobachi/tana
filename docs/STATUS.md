@@ -56,7 +56,7 @@ make docker-check  # CI相当チェック
 | 項目 | 状態（2026-07-27 実測） |
 |------|------|
 | Vitest (JS) | ✅ 455 passed / 37 files |
-| cargo test (Rust) | ✅ 25 passed（places 検出の純粋ロジック 4 件を追加） |
+| cargo test (Rust) | ✅ 27 passed（places 検出の純粋ロジック: ドライブ 4 + クラウド 2） |
 | ESLint | ✅ クリーン |
 | Prettier | ✅ クリーン |
 | build:frontend | ✅ 成功（成果物に新ロジックが含まれることを確認） |
@@ -110,7 +110,7 @@ make docker-check  # CI相当チェック
 
 - Tauri コマンド: `list_dir` / `home_dir` / `parent_dir` / `unique_name` / `copy_path` / `move_path` / `delete_to_trash` / `delete_permanent` / `rename_path` / `make_dir` / `read_preview` / `app_version` / `places::list_places`
 - テスト対象の純粋関数: `is_hidden_entry` / `read_dir_entries` / `target_path` / `unique_target_name` / `copy_recursive` / `remove_any`
-- **`places.rs`**: `build_places`（存在フィルタ+パス重複除去、注入で純粋テスト）/ `windows_drive_candidates`（A:〜Z: 生成）/ `standard_candidates`（dirs でホーム/デスクトップ/ドキュメント/ダウンロード）/ OS 別 `drive_candidates`（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）
+- **`places.rs`**: `build_places`（存在フィルタ+パス重複除去、注入で純粋テスト）/ `windows_drive_candidates`（A:〜Z: 生成）/ `standard_candidates`（dirs でホーム/デスクトップ/ドキュメント/ダウンロード）/ `is_cloud_folder`・`cloud_places_from`（クラウド同期フォルダ検出、純粋）/ OS 別 `drive_candidates`（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）
 - 依存は最小（tauri / tauri-cli / plugin-dialog / opener / updater / process / serde / dirs）
 
 ---
@@ -128,7 +128,7 @@ make docker-check  # CI相当チェック
 | FR-04 | 安全/操作モード切替 | M | ✅ | Ctrl+Shift+Space トグル + 視覚表示 |
 | FR-05 | お気に入り（ネスト） | M | ✅ | ツリー・Ctrl+D 追加・localStorage |
 | FR-06 | お気に入り検索 | M | ✅ | インクリメンタル検索 |
-| FR-07 | 場所(Places)検出 | S | 🟡 | **M2 着手**。ドライブ/ボリューム（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）＋標準フォルダ（ホーム/デスクトップ/ドキュメント/ダウンロード）をサイドバー「場所」に表示し、クリック/キーボードで移動可（`places.rs` + `placesview.js`）。**残**: OneDrive/Box 等クラウド同期フォルダ・WSL ディストロ(`\\wsl$`)の検出、Places の手動追加/永続化 |
+| FR-07 | 場所(Places)検出 | S | 🟡 | **M2 進行中**。ドライブ/ボリューム（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）＋標準フォルダ（ホーム/デスクトップ/ドキュメント/ダウンロード）＋**クラウド同期フォルダ（OneDrive 個人/職場・Box・Dropbox・Google Drive をホーム直下から検出）**をサイドバー「場所」に表示し、クリック/キーボードで移動可（`places.rs` + `placesview.js`）。**残**: WSL ディストロ(`\\wsl$`)検出、Places の手動追加/永続化 |
 | FR-08 | タブ | S | ⬜ | **M2**。ペイン単位が有力(Q3) |
 | FR-09 | 多形式プレビュー | S | ✅ | 画像/テキスト/Markdown/メタ + 配置(右/下)/Ctrl+P。Markdownは markdown-it を遅延チャンク化(html:false)+CSP。**動画(mp4/webm)は将来対応**(backlog)。詳細設計: [PREVIEW.md](PREVIEW.md) |
 | FR-10 | 全機能キーボード到達 | M | ✅ | 網羅性点検を実施（2026-07-27）。コンテキストメニューを `Shift+F10`/`≣` で開いたとき先頭項目へフォーカスする（マウスと同じ即操作性）。同メニュー専用の「ファイルマネージャで表示・パス/名前コピー」の開き方をヘルプに明記。「同ペイン内フォルダへのドロップ」相当は Ctrl+C/Ctrl+X→Ctrl+V のファイルクリップボード（任意の現在地へ貼付）でキーボードからも到達可能にした。全機能キーボード到達を達成 |
@@ -180,7 +180,7 @@ make docker-check  # CI相当チェック
 1. ~~**FR-10 キーボード到達性の点検**~~ ✅ 完了（2026-07-27）。全操作を棚卸しし、(a) キーボードで開いたコンテキストメニューの先頭フォーカス、(b) メニュー専用操作のヘルプ明記、(c) ファイルクリップボード Ctrl+C/Ctrl+X→Ctrl+V（任意の現在地へ貼付）の追加で抜けを埋めた。「同ペイン内フォルダへのドロップ」相当もキーボードから到達可能になった。
 2. ~~**D&D のネイティブ実機確認**~~ ✅ 完了（2026-07-27）。`make dev` 起動で `Shift`+ドロップ＝移動・フォルダ行への吸い込み・複数選択ドラッグを目視確認。
 3. ~~**M1 完了の宣言**~~ ✅ **M1 完了（2026-07-27）**。優先度 M の FR/NFR は達成。
-4. **M2 進行中**: **FR-07 Places** の第1スライス完了（ドライブ/標準フォルダの検出・表示・移動。`places.rs` 分離 + `placesview.js` 新設、Ctrl+B 巡回に統合）。**FR-16 プレビュー表示制御**の第1スライス完了（画像フィット⇄実寸のクリック切替、`previewzoom.js`）。**次**: (a) FR-16 連続ズーム（ホイール/フォント拡縮の競合調停）・パン、(b) クラウド同期(OneDrive/Box)・WSL ディストロ検出、(c) Places の手動追加/永続化、(d) **FR-08 タブ**。Q4（お気に入りの永続化を localStorage から設定ディレクトリJSONへ移すか）はタブのセッション復元と絡むのでそこで決める。
+4. **M2 進行中**: **FR-07 Places** の第1スライス完了（ドライブ/標準フォルダの検出・表示・移動。`places.rs` 分離 + `placesview.js` 新設、Ctrl+B 巡回に統合）。**FR-16 プレビュー表示制御**の第1スライス完了（画像フィット⇄実寸のクリック切替、`previewzoom.js`）。クラウド同期フォルダ検出（OneDrive/Box/Dropbox/Google Drive）も追加済み。**次**: (a) FR-16 連続ズーム（ホイール/フォント拡縮の競合調停）・パン、(b) WSL ディストロ(`\\wsl$`)検出、(c) Places の手動追加/永続化、(d) **FR-08 タブ**。Q4（お気に入りの永続化を localStorage から設定ディレクトリJSONへ移すか）はタブのセッション復元と絡むのでそこで決める。
 5. モジュールを増やすたびに `__tests__` と Rust `#[cfg(test)]` を追加し、`make check` を green に保つ。コードを増やすにつれ DESIGN.md §2.2 の目標構成へ寄せる。
 
 ### バックログ（設計検討済み・未着手）

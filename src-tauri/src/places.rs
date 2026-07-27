@@ -15,7 +15,7 @@ use std::path::Path;
 pub struct Place {
     pub name: String,
     pub path: String,
-    /// "drive" | "home" | "folder"
+    /// "drive" | "cloud" | "home" | "folder"
     pub kind: String,
 }
 
@@ -73,6 +73,53 @@ pub fn standard_candidates() -> Vec<Place> {
     v
 }
 
+/// クラウド同期フォルダらしい名前か（大小無視）。OneDrive（個人/職場の
+/// 「OneDrive - 会社名」を含む）・Box・Dropbox・Google Drive など、OS 上は
+/// ホーム直下のフォルダとして現れるものを対象にする（クラウドは特別 API では
+/// なくパスで扱う方針）。
+fn is_cloud_folder(name: &str) -> bool {
+    let n = name.trim().to_ascii_lowercase();
+    n == "onedrive"
+        || n.starts_with("onedrive -")
+        || n.starts_with("onedrive-")
+        || n == "box"
+        || n == "dropbox"
+        || n == "google drive"
+        || n == "googledrive"
+        || n == "creative cloud files"
+}
+
+/// ホーム直下のディレクトリ名から、クラウド同期フォルダを Place 化する（純粋）。
+/// 名前順に整列。存在確認は build_places 側。
+fn cloud_places_from(home: &str, mut names: Vec<String>) -> Vec<Place> {
+    names.retain(|n| is_cloud_folder(n));
+    names.sort();
+    names
+        .into_iter()
+        .map(|n| {
+            let path = format!("{home}/{n}");
+            Place::new(n, path, "cloud")
+        })
+        .collect()
+}
+
+/// ホーム直下を走査してクラウド同期フォルダを検出する。
+fn cloud_places() -> Vec<Place> {
+    let Some(home) = dirs::home_dir() else {
+        return Vec::new();
+    };
+    let home_s = to_slash(&home);
+    let mut names = Vec::new();
+    if let Ok(read) = std::fs::read_dir(&home) {
+        for e in read.flatten() {
+            if e.path().is_dir() {
+                names.push(e.file_name().to_string_lossy().to_string());
+            }
+        }
+    }
+    cloud_places_from(&home_s, names)
+}
+
 /// あるディレクトリ直下のサブディレクトリを、ボリューム（ドライブ扱い）として
 /// 列挙する（macOS の /Volumes・Linux の /mnt, /media 用）。
 #[cfg(unix)]
@@ -116,6 +163,7 @@ fn drive_candidates() -> Vec<Place> {
 #[tauri::command]
 pub fn list_places() -> Vec<Place> {
     let mut candidates = drive_candidates();
+    candidates.extend(cloud_places());
     candidates.extend(standard_candidates());
     build_places(candidates, |p| Path::new(p).exists())
 }
@@ -162,5 +210,41 @@ mod tests {
     fn build_places_empty_when_nothing_exists() {
         let got = build_places(windows_drive_candidates(), |_| false);
         assert!(got.is_empty());
+    }
+
+    #[test]
+    fn is_cloud_folder_matches_known_services_case_insensitively() {
+        assert!(is_cloud_folder("OneDrive"));
+        assert!(is_cloud_folder("onedrive"));
+        assert!(is_cloud_folder("OneDrive - Contoso")); // 職場/学校
+        assert!(is_cloud_folder("Box"));
+        assert!(is_cloud_folder("Dropbox"));
+        assert!(is_cloud_folder("Google Drive"));
+        assert!(!is_cloud_folder("Documents"));
+        assert!(!is_cloud_folder("OneDrives")); // 前方一致だけで拾わない
+    }
+
+    #[test]
+    fn cloud_places_from_filters_sorts_and_builds_paths() {
+        let home = "C:/Users/x";
+        let names = vec![
+            "Documents".to_string(),
+            "OneDrive - Contoso".to_string(),
+            "Box".to_string(),
+            "OneDrive".to_string(),
+        ];
+        let got = cloud_places_from(home, names);
+        assert_eq!(
+            got,
+            vec![
+                p("Box", "C:/Users/x/Box", "cloud"),
+                p("OneDrive", "C:/Users/x/OneDrive", "cloud"),
+                p(
+                    "OneDrive - Contoso",
+                    "C:/Users/x/OneDrive - Contoso",
+                    "cloud"
+                ),
+            ]
+        );
     }
 }
