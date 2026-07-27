@@ -44,6 +44,7 @@ import { createDragSession } from './core/dragdrop.js';
 import { buildEditMenuItems } from './core/editmenu.js';
 import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
+import { createNavHistory } from './core/navhistory.js';
 import { createFavorites, loadStoredFavorites, storeFavorites } from './core/favorites.js';
 import { createFavoritesView } from './core/favoritesview.js';
 import { createPlacesView } from './core/placesview.js';
@@ -92,6 +93,41 @@ const fileClipboard = createFileClipboard();
 
 // 各ペインの DOM 要素とファイルペイン・コントローラ
 const filePanes = { left: null, right: null };
+
+// ナビゲーション履歴 (FR-17): ペインごとの戻る/進む。dir 変化を onChange で
+// 検知して積む。back/forward 起因の移動は再積みしないよう navSuppress で抑止。
+const navHistory = { left: createNavHistory(), right: createNavHistory() };
+const navLastDir = { left: null, right: null };
+const navSuppress = { left: false, right: false };
+
+/** dir 変化を履歴へ反映する（カーソル移動では呼ばれても dir 同一なので無視）。 */
+function recordNav(pane, dir) {
+  if (!dir || dir === navLastDir[pane]) return;
+  navLastDir[pane] = dir;
+  if (navSuppress[pane]) {
+    navSuppress[pane] = false; // back/forward による移動は積まない
+    return;
+  }
+  navHistory[pane].visit(dir);
+}
+
+/** アクティブペインで戻る/進む。dir を履歴から取り出して読み込む。 */
+function navGo(dir /* -1=戻る / +1=進む */) {
+  const pane = panes.getActive();
+  const fp = filePanes[pane];
+  if (!fp) return;
+  const target = dir < 0 ? navHistory[pane].back() : navHistory[pane].forward();
+  if (!target) {
+    toast(dir < 0 ? 'これ以上戻れません' : 'これ以上進めません');
+    return;
+  }
+  navSuppress[pane] = true;
+  fp.load(target).catch(() => {
+    // 消えた場所へは戻れない。履歴の齟齬を避けるため現在地を積み直す。
+    navSuppress[pane] = false;
+    toast(describeOpenError(target));
+  });
+}
 
 // ドラッグ＆ドロップ (FR-02/FR-11)。既定はコピー、Shift 押下中は移動。
 // 実際のファイル操作・衝突解決・安全モードのゲートは fileOps 側が持つ。
@@ -761,6 +797,13 @@ function onKeydown(e) {
     }
     return;
   }
+  // ナビゲーション履歴: Alt+← 戻る / Alt+→ 進む (FR-17)。h(親)/l(開く) とは
+  // 別概念（時系列の移動）。ブラウザ/Explorer と同じ操作感。
+  if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    e.preventDefault();
+    navGo(e.key === 'ArrowLeft' ? -1 : 1);
+    return;
+  }
   // Alt+文字 で対応するメニューを直接開く（Alt 単押しは altTap 側で処理）。
   // Tana はエディタを持たないので Alt+文字は安全に奪える。
   if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.length === 1) {
@@ -992,6 +1035,16 @@ async function init() {
   window.addEventListener('keydown', (e) => altTap.keydown(e), true);
   window.addEventListener('keyup', (e) => altTap.keyup(e), true);
   window.addEventListener('blur', () => altTap.reset());
+  // マウスの戻る/進むボタン (X1=3 / X2=4) でも履歴移動 (FR-17)
+  window.addEventListener('mouseup', (e) => {
+    if (e.button === 3) {
+      e.preventDefault();
+      navGo(-1);
+    } else if (e.button === 4) {
+      e.preventDefault();
+      navGo(1);
+    }
+  });
 
   // お気に入りサイドバー
   favView = createFavoritesView({
@@ -1038,6 +1091,7 @@ async function init() {
       onDragStart: (info) => dragSession.begin(info),
       onOpenFile: (entry) => openWith('open', entry.path),
       onChange: (info) => {
+        recordNav(p, info.dir); // 履歴へ (FR-17)。dir 変化時のみ積む
         sessionSaver.schedule(); // ディレクトリ移動をセッションに保存（デバウンス）
         if (p === panes.getActive()) {
           updateStatus(info);

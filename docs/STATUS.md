@@ -55,7 +55,7 @@ make docker-check  # CI相当チェック
 
 | 項目 | 状態（2026-07-27 実測） |
 |------|------|
-| Vitest (JS) | ✅ 467 passed / 38 files |
+| Vitest (JS) | ✅ 473 passed / 39 files |
 | cargo test (Rust) | ✅ 27 passed（places 検出の純粋ロジック: ドライブ 4 + クラウド 2） |
 | ESLint | ✅ クリーン |
 | Prettier | ✅ クリーン |
@@ -100,11 +100,12 @@ make docker-check  # CI相当チェック
 | `core/preview.js` / `previewkind.js` / `previewplacement.js` | プレビュー (FR-09)。種別判定・配置は純粋関数に分離。詳細: [PREVIEW.md](PREVIEW.md) |
 | `core/previewzoom.js` | **画像プレビューの表示モード (FR-16)**。fit（既定・ペインに収める）⇄ zoom（実寸基準の倍率）の純粋な状態＋Ctrl+ホイール連続ズーム。適用（class 切替・width）は app.js/render.js |
 | `core/previewresize.js` | **プレビュー縦幅リサイズの純粋ロジック**。区切りドラッグ時の高さ計算(clamp)と localStorage 入出力。DOM/ドラッグ配線は app.js `initPreviewResize` |
+| `core/navhistory.js` | **ナビゲーション履歴 (FR-17)**。ペインごとの戻る/進む（ブラウザ型スタック+index）の純粋な状態。配線は app.js（onChange で積む・Alt+←/→・マウス戻る/進む） |
 | `core/dnd.js` | **D&D の判定（純粋）**。掴んだ対象・効果(copy/move)・不正ドロップの拒否。詳細: [DRAG-AND-DROP.md](DRAG-AND-DROP.md) |
 | `core/dragdrop.js` | **D&D の追跡（DOM）**。ポインタイベントで自作。`resolveDropTarget` は将来の OS ドロップでも再利用する。安全モードは拒否ゴースト＋トーストで示す |
 | `core/editmenu.js` | **メニューバー「編集」の項目（純粋）**。対象・宛先の有無で無効化を判定。app.js が状態と action を注入 |
 
-テストは `src/js/__tests__/<name>.test.js` に対応（37ファイル）。
+テストは `src/js/__tests__/<name>.test.js` に対応（39ファイル）。
 
 ### バックエンド `src-tauri/src/`
 `lib.rs` に集約（ファイル操作系）。`places.rs`（FR-07 の場所検出）を分離済み。`main.rs` は薄いエントリ。
@@ -139,6 +140,7 @@ make docker-check  # CI相当チェック
 | FR-14 | セッション復元 | M/S | 🟡 | ディレクトリ・アクティブペインを localStorage で復元(core/session.js)。タブ込みは FR-08 と同時に M2 |
 | FR-15 | 隠しファイル表示トグル | M | ✅ | Ctrl+H、両ペイン共通 |
 | FR-16 | プレビューの表示制御(フィット/ズーム/パン) | S | 🟡 | 画像で先行。既定フィット(contain)⇄実寸(100%)をクリックで切替＋**Ctrl+ホイールで連続ズーム**（画像上ではフォント拡縮より優先するよう `onWheel` で調停）。横スクロール問題を解消（core/previewzoom.js）。**残**: パン(ドラッグ移動)、＋/−キーでのズーム |
+| FR-17 | ナビゲーション履歴(戻る/進む) | S | ✅ | ペインごとの履歴。`Alt+←`/`Alt+→`＋マウスの戻る/進むボタン。親移動(`h`)とは別概念（時系列）。`core/navhistory.js`（純粋）+ app.js 配線 |
 
 ### 非機能 (NFR) 抜粋
 | 項目 | 状態 | 備考 |
@@ -181,7 +183,7 @@ make docker-check  # CI相当チェック
 1. ~~**FR-10 キーボード到達性の点検**~~ ✅ 完了（2026-07-27）。全操作を棚卸しし、(a) キーボードで開いたコンテキストメニューの先頭フォーカス、(b) メニュー専用操作のヘルプ明記、(c) ファイルクリップボード Ctrl+C/Ctrl+X→Ctrl+V（任意の現在地へ貼付）の追加で抜けを埋めた。「同ペイン内フォルダへのドロップ」相当もキーボードから到達可能になった。
 2. ~~**D&D のネイティブ実機確認**~~ ✅ 完了（2026-07-27）。`make dev` 起動で `Shift`+ドロップ＝移動・フォルダ行への吸い込み・複数選択ドラッグを目視確認。
 3. ~~**M1 完了の宣言**~~ ✅ **M1 完了（2026-07-27）**。優先度 M の FR/NFR は達成。
-4. **M2 進行中**: **FR-07 Places** の第1スライス完了（ドライブ/標準フォルダの検出・表示・移動。`places.rs` 分離 + `placesview.js` 新設、Ctrl+B 巡回に統合）。**FR-16 プレビュー表示制御**の第1スライス完了（画像フィット⇄実寸のクリック切替、`previewzoom.js`）。クラウド同期フォルダ検出（OneDrive/Box/Dropbox/Google Drive）も追加済み。FR-16 連続ズーム（Ctrl+ホイール、フォント拡縮との競合を `onWheel` で調停）も実装済み。プレビュー縦幅のマウスリサイズ（区切りドラッグ＋永続化, `previewresize.js`）も実装済み。**次**: (a) FR-16 パン(ドラッグ)、(b) WSL ディストロ(`\\wsl$`)検出、(c) Places の手動追加/永続化、(d) **FR-08 タブ**。※ナビゲーション履歴(戻る/進む)は未起票だったので backlog `#nav` に追加、FR 化を検討。Q4（お気に入りの永続化を localStorage から設定ディレクトリJSONへ移すか）はタブのセッション復元と絡むのでそこで決める。
+4. **M2 進行中**: **FR-07 Places** の第1スライス完了（ドライブ/標準フォルダの検出・表示・移動。`places.rs` 分離 + `placesview.js` 新設、Ctrl+B 巡回に統合）。**FR-16 プレビュー表示制御**の第1スライス完了（画像フィット⇄実寸のクリック切替、`previewzoom.js`）。クラウド同期フォルダ検出（OneDrive/Box/Dropbox/Google Drive）も追加済み。FR-16 連続ズーム（Ctrl+ホイール、フォント拡縮との競合を `onWheel` で調停）も実装済み。プレビュー縦幅のマウスリサイズ（区切りドラッグ＋永続化, `previewresize.js`）も実装済み。ナビゲーション履歴(戻る/進む, FR-17 として要件化)も実装済み。**次**: (a) FR-16 パン(ドラッグ)、(b) WSL ディストロ(`\\wsl$`)検出、(c) Places の手動追加/永続化、(d) **FR-08 タブ**。Q4（お気に入りの永続化を localStorage から設定ディレクトリJSONへ移すか）はタブのセッション復元と絡むのでそこで決める。
 5. モジュールを増やすたびに `__tests__` と Rust `#[cfg(test)]` を追加し、`make check` を green に保つ。コードを増やすにつれ DESIGN.md §2.2 の目標構成へ寄せる。
 
 ### バックログ（設計検討済み・未着手）
