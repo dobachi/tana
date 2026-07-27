@@ -4,9 +4,9 @@
 > リポジトリの現在地・コードマップ・決定事項・次の一手をまとめています。
 > 機能の追加・変更時は **このファイルも更新** してください（特に「実装ステータス」「次の一手」）。
 
-- **スナップショット日**: 2026-07-27
-- **基準コミット**: v0.4.11 リリース済み。以降 FR-18 現在ディレクトリ内検索(grep) を追加
-- **現在のフェーズ**: **M2 進行中**（M1 完了済み）。FR-08 タブ・FR-16 画像表示制御・FR-17 履歴・FR-18 検索を実装。残: FR-07 続き(WSL/永続化)・FR-16 パン 等
+- **スナップショット日**: 2026-07-28
+- **基準コミット**: v0.4.13 リリース済み。以降 ワークスペース（タブ構成の保存/復元）を追加
+- **現在のフェーズ**: **M2 ほぼ完了**（M1 完了済み）。FR-07/08/09/16/17/18 完了。二打鍵プレフィックス・ワークスペースも実装。残: FR-16 +/−キー・FR-18 キャンセル/正規表現・動画プレビュー(将来)
 
 関連: [README](../README.md) / [要求分析](REQUIREMENTS.md) / [設計](DESIGN.md) / [ローカルビルド](BUILD.md) / [プレビュー](PREVIEW.md) / [ドラッグ＆ドロップ](DRAG-AND-DROP.md) / [詳細表示＆ソート](DETAIL-VIEW-SORT.md) / [Docker動作確認](DOCKER.md) / [コントリビューション](../CONTRIBUTING.md)
 
@@ -55,7 +55,7 @@ make docker-check  # CI相当チェック
 
 | 項目 | 状態（2026-07-27 実測） |
 |------|------|
-| Vitest (JS) | ✅ 509 passed / 42 files |
+| Vitest (JS) | ✅ 523 passed / 44 files |
 | cargo test (Rust) | ✅ 34 passed（places 7 + search 6 の純粋ロジック含む） |
 | ESLint | ✅ クリーン |
 | Prettier | ✅ クリーン |
@@ -104,11 +104,13 @@ make docker-check  # CI相当チェック
 | `core/tabs.js` | **タブの純粋な状態 (FR-08)**。ペインごとの add/close/activate/next/prev/move、各タブは dir + 表示状態。読み込み/保存の結線は app.js（`renderTabs`/`switchToActiveTab` と filepane の `getViewState`/`applyViewState`） |
 | `core/keyprefix.js` | **二打鍵プレフィックスの純粋マッピング**。`(prefix, key)→アクションID`（s=並替/t=タブ移動/y=コピー/o=開く）とヒント文言。実行は app.js `runPrefixAction`。方針は memory `feedback_tana_prefix_shortcuts` |
 | `core/searchview.js` | **現在ディレクトリ内検索のオーバーレイUI (FR-18)**。`Ctrl+F`。入力→debounce→backend `search_dir`→結果一覧（名前/本文）、Enter でジャンプ。マッチングは Rust `search.rs`（純粋部テスト済み） |
+| `core/workspaces.js` | **ワークスペース（タブ構成の保存/復元）の純粋な状態**。両ペインのタブ dir 一覧＋アクティブに名前を付けて保存/上書き/削除、localStorage 永続化。UI は workspacesview.js |
+| `core/workspacesview.js` | **ワークスペースのオーバーレイUI**。ファイルメニューから開く。現在構成を名前保存＋保存済み一覧の開く/削除（j/k/Enter/Del/Esc） |
 | `core/dnd.js` | **D&D の判定（純粋）**。掴んだ対象・効果(copy/move)・不正ドロップの拒否。詳細: [DRAG-AND-DROP.md](DRAG-AND-DROP.md) |
 | `core/dragdrop.js` | **D&D の追跡（DOM）**。ポインタイベントで自作。`resolveDropTarget` は将来の OS ドロップでも再利用する。安全モードは拒否ゴースト＋トーストで示す |
 | `core/editmenu.js` | **メニューバー「編集」の項目（純粋）**。対象・宛先の有無で無効化を判定。app.js が状態と action を注入 |
 
-テストは `src/js/__tests__/<name>.test.js` に対応（42ファイル）。
+テストは `src/js/__tests__/<name>.test.js` に対応（44ファイル）。
 
 ### バックエンド `src-tauri/src/`
 `lib.rs` に集約（ファイル操作系）。`places.rs`（FR-07 の場所検出）を分離済み。`main.rs` は薄いエントリ。

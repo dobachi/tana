@@ -852,6 +852,100 @@ body[data-mode='operation'] .modal {
   font-family: var(--mono);
   font-size: 0.86em;
 }
+
+/* ワークスペース（タブ構成の保存/復元） */
+.ws-box {
+  width: 520px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  max-height: 76vh;
+}
+.ws-title {
+  margin: 0 0 10px;
+  font-size: 1.05em;
+}
+.ws-head {
+  display: flex;
+  gap: 8px;
+}
+.ws-input {
+  flex: 1;
+  font: inherit;
+  padding: 6px 10px;
+  color: var(--fg);
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.ws-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.ws-save {
+  font: inherit;
+  padding: 4px 12px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ws-save:hover {
+  border-color: var(--accent);
+}
+.ws-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+}
+.ws-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  cursor: pointer;
+}
+.ws-row:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.ws-row:focus {
+  outline: none;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.ws-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-meta {
+  color: var(--fg-dim);
+  font-size: 0.8em;
+  flex-shrink: 0;
+}
+.ws-remove {
+  visibility: hidden;
+  font: inherit;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.ws-row:hover .ws-remove,
+.ws-row:focus .ws-remove {
+  visibility: visible;
+}
+.ws-remove:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
 .modal-msg {
   margin: 0 0 12px;
   white-space: pre-line;

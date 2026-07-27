@@ -29,6 +29,8 @@ import { createToast } from './core/toast.js';
 import { checkForUpdates } from './core/updater.js';
 import { resolveInputPath, describeOpenError, parentPath } from './core/pathnav.js';
 import { createSearch } from './core/searchview.js';
+import { createWorkspaces, loadStoredWorkspaces, storeWorkspaces } from './core/workspaces.js';
+import { createWorkspacesView } from './core/workspacesview.js';
 import {
   initMenuBar,
   toggleMenuBar,
@@ -394,6 +396,66 @@ const search = createSearch({
   },
   onOpen: (hit) => openSearchHit(hit),
 });
+
+// ワークスペース（タブ構成の保存/復元）。永続化は localStorage。
+const workspaces = createWorkspaces(loadStoredWorkspaces());
+workspaces.subscribe(() => storeWorkspaces(workspaces.toJSON()));
+const workspacesView = createWorkspacesView({
+  workspaces,
+  getContext: () => {
+    const fp = activeFilePane();
+    return {
+      snapshot: captureWorkspaceSnapshot(),
+      suggestedName: fp ? tabLabel(fp.getCurrentDir()) : '',
+    };
+  },
+  onOpen: (ws) => applyWorkspace(ws),
+});
+
+/** 現在の両ペインのタブ構成をスナップショットにする。 */
+function captureWorkspaceSnapshot() {
+  const dirs = (p) => (paneTabs[p] ? paneTabs[p].list().map((t) => t.dir) : []);
+  const active = (p) => (paneTabs[p] ? paneTabs[p].activeIndex() : 0);
+  return {
+    left: dirs(PANE.LEFT),
+    right: dirs(PANE.RIGHT),
+    activeLeft: active(PANE.LEFT),
+    activeRight: active(PANE.RIGHT),
+    active: panes.getActive(),
+  };
+}
+
+/** 保存済みワークスペースを両ペインに適用する（タブを作り直して読み込む）。 */
+async function applyWorkspace(ws) {
+  if (!ws) return;
+  const home = (await homeDir()) || '.';
+  for (const [p, list, idx] of [
+    [PANE.LEFT, ws.left, ws.activeLeft],
+    [PANE.RIGHT, ws.right, ws.activeRight],
+  ]) {
+    const fp = filePanes[p];
+    if (!fp || !Array.isArray(list) || !list.length) continue;
+    paneTabs[p] = createTabList(list[0]);
+    for (let i = 1; i < list.length; i++) paneTabs[p].add(list[i]);
+    paneTabs[p].activate(Math.min(idx || 0, list.length - 1));
+    navSuppress[p] = true;
+    try {
+      await fp.load(paneTabs[p].active().dir);
+    } catch {
+      navSuppress[p] = false;
+      try {
+        await fp.load(home);
+      } catch {
+        /* home も失敗ならそのまま */
+      }
+    }
+    paneTabs[p].setActiveDir(fp.getCurrentDir());
+    renderTabs(p);
+  }
+  panes.setActive(ws.active === PANE.RIGHT ? PANE.RIGHT : PANE.LEFT);
+  updateStatus();
+  sessionSaver.schedule();
+}
 
 /** 検索ヒットを開く。ディレクトリは中へ、ファイルは親へ移動してカーソルを合わせる。 */
 function openSearchHit(hit) {
@@ -792,6 +854,7 @@ function buildMenuDefinition() {
       accessKey: 'F',
       items: () => [
         { label: 'お気に入りに現在地を追加', shortcut: 'Ctrl+D', action: addCurrentToFavorites },
+        { label: 'ワークスペース…（タブ構成の保存/復元）', action: () => workspacesView.open() },
         { separator: true },
         { label: '終了', action: () => window.close() },
       ],
@@ -1126,6 +1189,8 @@ function onKeydown(e) {
     }
     return;
   }
+  // ワークスペース オーバーレイ表示中は本体のキー操作をしない（overlay 側で処理）
+  if (workspacesView.isOpen()) return;
   // 検索を開く: Ctrl+F または / （vim 風。入力欄では無効）
   if (
     (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === 'KeyF' || e.key.toLowerCase() === 'f')) ||
