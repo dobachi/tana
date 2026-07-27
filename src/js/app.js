@@ -1095,8 +1095,11 @@ function onKeydown(e) {
     }
     return;
   }
-  // 検索を開く: Ctrl+F
-  if (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === 'KeyF' || e.key.toLowerCase() === 'f')) {
+  // 検索を開く: Ctrl+F または / （vim 風。入力欄では無効）
+  if (
+    (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === 'KeyF' || e.key.toLowerCase() === 'f')) ||
+    (!e.ctrlKey && !e.altKey && !e.metaKey && e.key === '/' && !isEditableTarget(e.target))
+  ) {
     e.preventDefault();
     search.open();
     return;
