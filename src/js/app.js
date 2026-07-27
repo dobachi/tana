@@ -20,7 +20,7 @@ import {
   loadStoredPlacement,
   storePlacement,
 } from './core/previewplacement.js';
-import { createPreviewZoom } from './core/previewzoom.js';
+import { createPreviewZoom, wheelZoomDir } from './core/previewzoom.js';
 import { createSortState, loadStoredSort, storeSort } from './core/sortstate.js';
 import { SORT_KEYS, SORT_LABELS } from './core/sort.js';
 import { loadSession, storeSession, createSessionSaver } from './core/session.js';
@@ -132,11 +132,22 @@ function wireImageZoom(container) {
   });
 }
 
-/** 表示モードを holder の class に反映する（CSS が見た目を担当）。 */
+/** 表示モードを holder の class と img の幅に反映する（CSS が見た目を担当）。 */
 function applyImageMode(holder) {
-  const fit = previewZoom.isFit();
+  const { mode, scale } = previewZoom.get();
+  const fit = mode === 'fit';
   holder.classList.toggle('fit', fit);
-  holder.classList.toggle('actual', !fit);
+  holder.classList.toggle('zoom', !fit);
+  const img = holder.querySelector('img');
+  if (!img) return;
+  if (fit) {
+    img.style.width = '';
+    img.style.height = '';
+  } else if (img.naturalWidth) {
+    // 実寸(scale=1)基準で拡大縮小。はみ出しは preview-content がスクロール。
+    img.style.width = `${Math.round(img.naturalWidth * scale)}px`;
+    img.style.height = 'auto';
+  }
 }
 
 // Alt 単押しでメニューバーを開く（Fude と同じ操作感）。他キーを挟まず Alt を
@@ -484,11 +495,25 @@ function applyFontScale(action) {
   toast(`文字サイズ: ${pct}%`);
 }
 
-/** Ctrl+ホイールで文字サイズを増減する (NFR-U5) */
+/**
+ * Ctrl+ホイールのルーティング。
+ * プレビュー画像の上では画像ズーム (FR-16) を優先し、それ以外は文字サイズ
+ * 増減 (NFR-U5) に使う。どちらも webview 既定のズームは preventDefault で抑える。
+ */
 function onWheel(e) {
+  const holder = e.target && e.target.closest ? e.target.closest('.preview-image') : null;
+  if (holder && e.ctrlKey) {
+    const dir = wheelZoomDir(e);
+    if (dir) {
+      e.preventDefault();
+      previewZoom.zoom(dir);
+      applyImageMode(holder);
+    }
+    return;
+  }
   const action = wheelFontScaleAction(e);
   if (!action) return;
-  e.preventDefault(); // webview 既定のズームを抑える
+  e.preventDefault();
   applyFontScale(action);
 }
 

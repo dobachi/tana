@@ -981,16 +981,16 @@ body[data-mode='operation'] .mode-indicator {
   height: auto;
   object-fit: contain;
 }
-/* 実寸: 原寸で表示し、はみ出しは preview-content 側でスクロール */
-.preview-image.actual {
+/* ズーム: 実寸(100%)基準で width を指定。はみ出しは preview-content がスクロール。
+   Ctrl+ホイールで連続ズーム、クリックでフィット⇄実寸 (FR-16) */
+.preview-image.zoom {
   cursor: zoom-out;
   justify-content: flex-start;
   align-items: flex-start;
 }
-.preview-image.actual img {
+.preview-image.zoom img {
   max-width: none;
   max-height: none;
-  width: auto;
   height: auto;
 }
 .preview-placeholder-note {
