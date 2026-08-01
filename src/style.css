@@ -232,6 +232,45 @@ body[data-mode='operation'] .settings-panel {
   color: var(--fg-dim);
   font-size: 0.85em;
 }
+/* 外部アプリ（別のアプリで開く） */
+.extapp-row,
+.extapp-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.extapp-slot {
+  flex: 0 0 1.4em;
+  text-align: center;
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+.extapp-name {
+  flex: 1 1 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.extapp-command {
+  flex: 1 1 40%;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.extapp-add input[type='text'] {
+  flex: 1 1 50%;
+  min-width: 0;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  box-sizing: border-box;
+}
+
 .settings-footer {
   display: flex;
   align-items: center;

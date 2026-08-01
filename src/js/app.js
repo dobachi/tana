@@ -51,6 +51,16 @@ import { createNavHistory } from './core/navhistory.js';
 import { createTabList } from './core/tabs.js';
 import { isPrefixLeader, resolvePrefixAction, prefixHint } from './core/keyprefix.js';
 import { createFavorites, loadStoredFavorites, storeFavorites } from './core/favorites.js';
+import {
+  createExtApps,
+  loadStoredExtApps,
+  storeExtApps,
+  pickByIndex,
+  describeAppError,
+  normalizeApp,
+  validateApp,
+  QUICK_SLOTS,
+} from './core/extapps.js';
 import { createFavoritesView } from './core/favoritesview.js';
 import { createPlacesView } from './core/placesview.js';
 import { createHelp } from './core/help.js';
@@ -85,6 +95,8 @@ const resolveConflict = createConflictDialog();
 const promptName = createInputDialog();
 const favorites = createFavorites(loadStoredFavorites());
 favorites.subscribe(() => storeFavorites(favorites.toJSON()));
+const extApps = createExtApps(loadStoredExtApps());
+extApps.subscribe(() => storeExtApps(extApps.list()));
 const fileOps = createFileOps({
   canMutate: () => safemode.canMutate(),
   backend: { copyPath, movePath, deleteToTrash, deletePermanent, uniqueName, renamePath, makeDir },
@@ -352,7 +364,14 @@ function runPrefixAction(action) {
     case 'open:reveal':
       if (entry) openWith('reveal', entry.path);
       break;
+    case 'open:with:ask':
+      if (entry) openWithPrompt(entry.path);
+      break;
     default:
+      // o → 1..9: 登録した外部アプリのスロット
+      if (action.startsWith('open:with:') && entry) {
+        openWithSlot(entry.path, action.slice('open:with:'.length));
+      }
       break;
   }
 }
@@ -729,8 +748,14 @@ async function copyText(text) {
   }
 }
 
-/** OS の既定アプリで開く / ファイルマネージャで表示（デスクトップのみ） */
-async function openWith(kind, path) {
+/**
+ * OS の既定アプリで開く / ファイルマネージャで表示（デスクトップのみ）。
+ * @param {'open'|'reveal'} kind
+ * @param {string} path
+ * @param {string} [app] 指定するとこのアプリで開く（FR-13「別のアプリで開く」）。
+ *   プログラムを1つ渡すだけで引数は付けられない（extapps.js のコメント参照）。
+ */
+async function openWith(kind, path, app) {
   if (!path) return;
   if (!isDesktop()) {
     toast('デスクトップ版でのみ利用できます');
@@ -739,10 +764,60 @@ async function openWith(kind, path) {
   try {
     const opener = await import('@tauri-apps/plugin-opener');
     if (kind === 'reveal') await opener.revealItemInDir(path);
-    else await opener.openPath(path);
+    else await opener.openPath(path, app || undefined);
   } catch (e) {
-    toast('開けませんでした: ' + (e && e.message ? e.message : e));
+    // 既定アプリの失敗は従来の文言、アプリ指定時は「どのアプリで失敗したか」を出す。
+    toast(app ? describeAppError(app, e) : '開けませんでした: ' + (e && e.message ? e.message : e));
   }
+}
+
+/** 「その他…」: コマンドを都度入力して開く。登録はしない（設定画面で管理する）。 */
+async function openWithPrompt(path) {
+  if (!path) return;
+  const cmd = await promptName('どのアプリで開きますか？（コマンド名 / アプリ名）', '');
+  if (cmd == null) return;
+  const app = normalizeApp({ command: cmd });
+  if (!app) {
+    const v = validateApp({ command: cmd });
+    toast(v.reason || 'コマンドを入力してください');
+    return;
+  }
+  await openWith('open', path, app.command);
+}
+
+/**
+ * 「別のアプリで開く」の選択メニュー。menu.js はサブメニューを持たないので、
+ * 同じ位置に一段掘り下げたメニューを開き直す（キーボード操作は showMenu のまま）。
+ * @param {number} x @param {number} y @param {string} path
+ */
+function showOpenWithMenu(x, y, path, opts = {}) {
+  const apps = extApps.list();
+  const items = apps.map((a, i) => ({
+    label: a.name,
+    // 1..9 は二打鍵 o → 数字 と同じスロット。10件目以降はメニューからのみ。
+    shortcut: i < QUICK_SLOTS ? `o → ${i + 1}` : '',
+    action: () => openWith('open', path, a.command),
+  }));
+  if (!items.length) {
+    items.push({ label: '（登録された外部アプリはありません）', disabled: true });
+  }
+  items.push(
+    { separator: true },
+    { label: 'その他…（コマンドを入力）', shortcut: 'o → a', action: () => openWithPrompt(path) },
+    { label: 'アプリを管理…', action: () => openSettingsPanel() },
+  );
+  showMenu(x, y, items, { focusFirst: opts.focusFirst });
+}
+
+/** 二打鍵 o → 1..9。未登録スロットは何が起きたか分かるように理由を出す。 */
+function openWithSlot(path, slot) {
+  if (!path) return;
+  const app = pickByIndex(extApps.list(), slot);
+  if (!app) {
+    toast(`${slot} 番に外部アプリが登録されていません（設定 → 外部アプリ）`);
+    return;
+  }
+  openWith('open', path, app.command);
 }
 
 /**
@@ -775,6 +850,12 @@ function showEntryMenu(pane, info) {
         label: '外部アプリで開く',
         shortcut: 'Enter',
         action: () => openWith('open', entry.path),
+      });
+      items.push({
+        label: '別のアプリで開く…',
+        // 同じ位置に一段掘り下げたメニューを出す（menu.js にサブメニューは無い）。
+        // キーボードから開いたときは先頭項目へフォーカスして矢印で選べるようにする。
+        action: () => showOpenWithMenu(x, y, entry.path, { focusFirst: !!info.fromKeyboard }),
       });
     }
     items.push(
@@ -832,18 +913,24 @@ function showEntryMenu(pane, info) {
   showMenu(x, y, items, { focusFirst: !!info.fromKeyboard });
 }
 
+/** 設定画面を開く（すでに開いていれば何もしない） */
+function openSettingsPanel() {
+  openSettings({
+    theme,
+    fontScale,
+    getShowHidden: () => showHidden,
+    setShowHidden,
+    extApps,
+  });
+}
+
 /** 設定画面を開閉する（Ctrl+, とメニューから） */
 function toggleSettings() {
   if (isSettingsOpen()) {
     closeSettings();
     return;
   }
-  openSettings({
-    theme,
-    fontScale,
-    getShowHidden: () => showHidden,
-    setShowHidden,
-  });
+  openSettingsPanel();
 }
 
 /**

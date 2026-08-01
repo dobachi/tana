@@ -17,7 +17,22 @@ const MAP = {
   s: { n: 'sort:name', s: 'sort:size', m: 'sort:modified', e: 'sort:ext', r: 'sort:reverse' },
   t: { h: 'tab:left', l: 'tab:right' },
   y: { p: 'copy:path', n: 'copy:name', d: 'copy:dir' },
-  o: { o: 'open:app', r: 'open:reveal' },
+  // o は「開く」。1..9 は設定に登録した外部アプリのスロット (extapps.js)、
+  // a は都度入力。三打鍵は既存の二打鍵モデルに無いので、登録アプリへは数字で直行する。
+  o: {
+    o: 'open:app',
+    r: 'open:reveal',
+    a: 'open:with:ask',
+    1: 'open:with:1',
+    2: 'open:with:2',
+    3: 'open:with:3',
+    4: 'open:with:4',
+    5: 'open:with:5',
+    6: 'open:with:6',
+    7: 'open:with:7',
+    8: 'open:with:8',
+    9: 'open:with:9',
+  },
 };
 
 /** 各プレフィックス発動時に出すヒント文言。 */
@@ -25,7 +40,7 @@ export const PREFIX_HINTS = {
   s: '並び替え: n=名前 / s=サイズ / m=更新日時 / e=拡張子 / r=反転',
   t: 'タブ: h=左へ / l=右へ',
   y: 'コピー: p=パス / n=名前 / d=現在地のパス',
-  o: '開く: o=外部アプリ / r=ファイルマネージャで表示',
+  o: '開く: o=既定アプリ / r=ファイルマネージャ / 1-9=登録した外部アプリ / a=別のアプリ…',
 };
 
 /** key がプレフィックスのリーダーか。 */

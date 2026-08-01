@@ -37,6 +37,13 @@ describe('resolvePrefixAction', () => {
     expect(resolvePrefixAction('o', 'o')).toBe('open:app');
     expect(resolvePrefixAction('o', 'r')).toBe('open:reveal');
   });
+  it('o → 1..9 は外部アプリのスロット、a は都度入力 (FR-13)', () => {
+    for (let n = 1; n <= 9; n++) {
+      expect(resolvePrefixAction('o', String(n))).toBe(`open:with:${n}`);
+    }
+    expect(resolvePrefixAction('o', 'a')).toBe('open:with:ask');
+    expect(resolvePrefixAction('o', '0')).toBeNull();
+  });
   it('大文字キーも解決する', () => {
     expect(resolvePrefixAction('t', 'H')).toBe('tab:left');
   });
