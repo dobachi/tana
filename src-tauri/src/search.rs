@@ -11,6 +11,7 @@ use crate::is_binary_head;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use tauri::ipc::Channel;
 use tauri::State;
 
 /// 検索のキャンセル用に「世代(エポック)」を持つ共有状態。新しい検索やクローズで
@@ -142,18 +143,20 @@ fn is_hidden_name(name: &str) -> bool {
     name.starts_with('.')
 }
 
-/// root 配下を再帰的に検索する。名前一致と内容一致を集める。
-pub fn search_dir_impl(
+/// root 配下を再帰的に検索し、ヒットを見つけ次第 `sink` に流す（ストリーミング）。
+/// 返り値は流したヒット数。件数上限・訪問上限・cancelled で早期終了する。
+pub fn search_dir_stream(
     root: &Path,
     query: &str,
     opts: &SearchOpts,
     cancelled: &dyn Fn() -> bool,
-) -> Vec<SearchHit> {
-    let mut hits = Vec::new();
+    sink: &mut dyn FnMut(SearchHit),
+) -> usize {
     let matcher = match build_matcher(query, opts.case_insensitive, opts.regex) {
         Some(m) => m,
-        None => return hits, // 空クエリ or 不正な正規表現
+        None => return 0, // 空クエリ or 不正な正規表現
     };
+    let mut count = 0usize;
     let mut visited = 0usize;
     let mut stack = vec![root.to_path_buf()];
 
@@ -163,8 +166,8 @@ pub fn search_dir_impl(
             Err(_) => continue, // 権限なし等は黙って飛ばす
         };
         for entry in read.flatten() {
-            if hits.len() >= opts.max_results || visited >= opts.max_visited || cancelled() {
-                return hits;
+            if count >= opts.max_results || visited >= opts.max_visited || cancelled() {
+                return count;
             }
             visited += 1;
             let path = entry.path();
@@ -178,7 +181,7 @@ pub fn search_dir_impl(
 
             // ファイル名一致
             if matcher.is_match(&name) {
-                hits.push(SearchHit {
+                sink(SearchHit {
                     path: path_s.clone(),
                     name: name.clone(),
                     is_dir,
@@ -186,6 +189,7 @@ pub fn search_dir_impl(
                     line_no: None,
                     line: None,
                 });
+                count += 1;
             }
 
             if is_dir {
@@ -216,12 +220,12 @@ pub fn search_dir_impl(
             let text = String::from_utf8_lossy(&bytes);
             let mut per_file = 0usize;
             for (i, raw) in text.lines().enumerate() {
-                if per_file >= opts.max_hits_per_file || hits.len() >= opts.max_results {
+                if per_file >= opts.max_hits_per_file || count >= opts.max_results {
                     break;
                 }
                 if matcher.is_match(raw) {
                     per_file += 1;
-                    hits.push(SearchHit {
+                    sink(SearchHit {
                         path: path_s.clone(),
                         name: name.clone(),
                         is_dir: false,
@@ -229,24 +233,41 @@ pub fn search_dir_impl(
                         line_no: Some((i + 1) as u32),
                         line: Some(snippet(raw, 200)),
                     });
+                    count += 1;
                 }
             }
         }
     }
+    count
+}
+
+/// ヒットを Vec にまとめて返すバッチ版（テスト用。本番はストリーミングを使う）。
+#[cfg(test)]
+pub fn search_dir_impl(
+    root: &Path,
+    query: &str,
+    opts: &SearchOpts,
+    cancelled: &dyn Fn() -> bool,
+) -> Vec<SearchHit> {
+    let mut hits = Vec::new();
+    search_dir_stream(root, query, opts, cancelled, &mut |h| hits.push(h));
     hits
 }
 
-/// 「現在ディレクトリ配下を検索」する Tauri コマンド。
+/// 「現在ディレクトリ配下を検索」する Tauri コマンド。ヒットは `on_hit` チャネルへ
+/// 見つけ次第ストリーミングし、コマンドの戻り（完了）で総ヒット数を返す。
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn search_dir(
     state: State<'_, SearchState>,
+    on_hit: Channel<SearchHit>,
     dir: String,
     query: String,
     case_insensitive: bool,
     include_hidden: bool,
     regex: bool,
     search_content: bool,
-) -> Vec<SearchHit> {
+) -> usize {
     // 自分の世代を確定。以降より新しい検索/キャンセルが来たら中断する。
     let my = state.epoch.fetch_add(1, Ordering::SeqCst) + 1;
     let epoch = &state.epoch;
@@ -257,9 +278,15 @@ pub fn search_dir(
         search_content,
         ..Default::default()
     };
-    search_dir_impl(Path::new(&dir), &query, &opts, &|| {
-        epoch.load(Ordering::SeqCst) != my
-    })
+    search_dir_stream(
+        Path::new(&dir),
+        &query,
+        &opts,
+        &|| epoch.load(Ordering::SeqCst) != my,
+        &mut |h| {
+            let _ = on_hit.send(h); // フロントが閉じていれば送信エラーだが cancelled で止まる
+        },
+    )
 }
 
 /// 実行中の検索を中断する（世代を進めるだけ）。オーバーレイを閉じたとき等に呼ぶ。
@@ -421,6 +448,25 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("a.txt"), b"x").unwrap();
         assert!(search_dir_impl(tmp.path(), "", &SearchOpts::default(), &|| false).is_empty());
+    }
+
+    #[test]
+    fn stream_sends_each_hit_and_returns_count() {
+        let tmp = tempfile::tempdir().unwrap();
+        for i in 0..3 {
+            fs::write(tmp.path().join(format!("needle_{i}.txt")), b"x").unwrap();
+        }
+        let mut streamed = Vec::new();
+        let n = search_dir_stream(
+            tmp.path(),
+            "needle",
+            &SearchOpts::default(),
+            &|| false,
+            &mut |h| streamed.push(h),
+        );
+        assert_eq!(n, 3);
+        assert_eq!(streamed.len(), 3);
+        assert!(streamed.iter().all(|h| h.kind == "name"));
     }
 
     #[test]

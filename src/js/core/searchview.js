@@ -46,42 +46,43 @@ export function createSearch(deps) {
     return path;
   }
 
-  function render(root, hits) {
+  function clearList() {
     listEl.replaceChildren();
     rows = [];
-    if (!hits.length) {
-      const li = doc.createElement('li');
-      li.className = 'placeholder';
-      li.textContent = '一致なし';
-      listEl.appendChild(li);
-      return;
-    }
-    for (const hit of hits) {
-      const li = doc.createElement('li');
-      li.className = 'search-hit';
-      const row = doc.createElement('div');
-      row.className = 'search-row';
-      row.tabIndex = -1;
+  }
 
-      const kind = doc.createElement('span');
-      kind.className = 'search-kind';
-      kind.textContent = hit.kind === 'content' ? '本文' : '名前';
-      row.appendChild(kind);
+  function showPlaceholder(text) {
+    clearList();
+    const li = doc.createElement('li');
+    li.className = 'placeholder';
+    li.textContent = text;
+    listEl.appendChild(li);
+  }
 
-      const main = doc.createElement('span');
-      main.className = 'search-main';
-      const loc = hit.line_no
-        ? `${relPath(root, hit.path)}:${hit.line_no}`
-        : relPath(root, hit.path);
-      main.textContent = hit.kind === 'content' ? `${loc}  ${hit.line || ''}` : loc;
-      row.appendChild(main);
+  /** 1件のヒット行を作って一覧に追加する（ストリーミング用）。 */
+  function appendHit(root, hit) {
+    const li = doc.createElement('li');
+    li.className = 'search-hit';
+    const row = doc.createElement('div');
+    row.className = 'search-row';
+    row.tabIndex = -1;
 
-      row.title = hit.path;
-      row.addEventListener('click', () => choose(hit));
-      li.appendChild(row);
-      rows.push({ el: row, hit });
-      listEl.appendChild(li);
-    }
+    const kind = doc.createElement('span');
+    kind.className = 'search-kind';
+    kind.textContent = hit.kind === 'content' ? '本文' : '名前';
+    row.appendChild(kind);
+
+    const main = doc.createElement('span');
+    main.className = 'search-main';
+    const loc = hit.line_no ? `${relPath(root, hit.path)}:${hit.line_no}` : relPath(root, hit.path);
+    main.textContent = hit.kind === 'content' ? `${loc}  ${hit.line || ''}` : loc;
+    row.appendChild(main);
+
+    row.title = hit.path;
+    row.addEventListener('click', () => choose(hit));
+    li.appendChild(row);
+    rows.push({ el: row, hit });
+    listEl.appendChild(li);
   }
 
   function choose(hit) {
@@ -99,26 +100,38 @@ export function createSearch(deps) {
     const dir = getDir && getDir();
     const query = inputEl.value.trim();
     if (!dir || !query) {
-      if (listEl) render(dir, []);
+      if (listEl) clearList();
       statusEl.textContent = dir ? '' : '検索するディレクトリがありません';
       return;
     }
     const my = ++gen;
+    clearList();
+    let count = 0;
     statusEl.textContent = '検索中…';
-    let hits;
     try {
-      hits = await searchDir(dir, query, {
-        includeHidden: !!(hiddenChk && hiddenChk.checked),
-        caseInsensitive: !(caseChk && caseChk.checked),
-        regex: !!(regexChk && regexChk.checked),
-        searchContent: !!(contentChk && contentChk.checked),
-      });
+      // ヒットは見つかり次第 onHit で流れてくる（ストリーミング）。
+      await searchDir(
+        dir,
+        query,
+        {
+          includeHidden: !!(hiddenChk && hiddenChk.checked),
+          caseInsensitive: !(caseChk && caseChk.checked),
+          regex: !!(regexChk && regexChk.checked),
+          searchContent: !!(contentChk && contentChk.checked),
+        },
+        (hit) => {
+          if (my !== gen || !overlay) return; // 追い越された/閉じられた
+          appendHit(dir, hit);
+          count += 1;
+          statusEl.textContent = `${count} 件${count >= 500 ? '（上限）' : ''} 検索中…`;
+        },
+      );
     } catch {
-      hits = [];
+      /* 失敗時はそのまま（部分結果は残す） */
     }
-    if (my !== gen || !overlay) return; // 追い越された/閉じられた
-    render(dir, hits);
-    statusEl.textContent = `${hits.length} 件${hits.length >= 500 ? '（上限）' : ''}`;
+    if (my !== gen || !overlay) return;
+    if (count === 0) showPlaceholder('一致なし');
+    statusEl.textContent = `${count} 件${count >= 500 ? '（上限）' : ''}`;
   }
 
   function scheduleRun() {

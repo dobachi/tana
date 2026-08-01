@@ -35,18 +35,25 @@ describe('createSearch', () => {
     expect(document.querySelector('.search-input')).not.toBeNull();
   });
 
-  it('入力（デバウンス後）で searchDir を呼び結果を描画する', async () => {
-    const searchDir = vi.fn(async () => HITS);
+  // ストリーミング版: searchDir(dir, query, opts, onHit) が各ヒットを onHit に流す
+  const streamOf = (hits) =>
+    vi.fn(async (dir, query, opts, onHit) => {
+      hits.forEach((h) => onHit && onHit(h));
+      return hits.length;
+    });
+
+  it('入力（デバウンス後）で searchDir を呼びヒットを逐次描画する', async () => {
+    const searchDir = streamOf(HITS);
     const view = createSearch({ searchDir, getDir: () => '/root', onOpen: vi.fn() });
     view.open();
     typeQuery('foo');
     await vi.advanceTimersByTimeAsync(300);
-    expect(searchDir).toHaveBeenCalledWith('/root', 'foo', {
-      includeHidden: false,
-      caseInsensitive: true,
-      regex: false,
-      searchContent: false,
-    });
+    expect(searchDir).toHaveBeenCalledWith(
+      '/root',
+      'foo',
+      { includeHidden: false, caseInsensitive: true, regex: false, searchContent: false },
+      expect.any(Function),
+    );
     const rows = document.querySelectorAll('.search-row');
     expect(rows).toHaveLength(2);
     // content ヒットは path:line と本文
@@ -55,7 +62,7 @@ describe('createSearch', () => {
   });
 
   it('空クエリでは検索しない', async () => {
-    const searchDir = vi.fn(async () => HITS);
+    const searchDir = streamOf(HITS);
     const view = createSearch({ searchDir, getDir: () => '/root', onOpen: vi.fn() });
     view.open();
     typeQuery('   ');
@@ -65,7 +72,7 @@ describe('createSearch', () => {
 
   it('結果クリックで onOpen を呼び閉じる', async () => {
     const onOpen = vi.fn();
-    const view = createSearch({ searchDir: async () => HITS, getDir: () => '/root', onOpen });
+    const view = createSearch({ searchDir: streamOf(HITS), getDir: () => '/root', onOpen });
     view.open();
     typeQuery('foo');
     await vi.advanceTimersByTimeAsync(300);
@@ -75,11 +82,7 @@ describe('createSearch', () => {
   });
 
   it('一致なしはプレースホルダ', async () => {
-    const view = createSearch({
-      searchDir: async () => [],
-      getDir: () => '/root',
-      onOpen: vi.fn(),
-    });
+    const view = createSearch({ searchDir: streamOf([]), getDir: () => '/root', onOpen: vi.fn() });
     view.open();
     typeQuery('zzz');
     await vi.advanceTimersByTimeAsync(300);

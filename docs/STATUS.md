@@ -56,7 +56,7 @@ make docker-check  # CI相当チェック
 | 項目 | 状態（2026-07-27 実測） |
 |------|------|
 | Vitest (JS) | ✅ 528 passed / 44 files |
-| cargo test (Rust) | ✅ 40 passed（places 7 + search 12 の純粋ロジック含む） |
+| cargo test (Rust) | ✅ 41 passed（places 7 + search 13 の純粋ロジック含む） |
 | ESLint | ✅ クリーン |
 | Prettier | ✅ クリーン |
 | build:frontend | ✅ 成功（成果物に新ロジックが含まれることを確認） |
@@ -103,7 +103,7 @@ make docker-check  # CI相当チェック
 | `core/navhistory.js` | **ナビゲーション履歴 (FR-17)**。ペインごとの戻る/進む（ブラウザ型スタック+index）の純粋な状態。配線は app.js（onChange で積む・Alt+←/→・マウス戻る/進む） |
 | `core/tabs.js` | **タブの純粋な状態 (FR-08)**。ペインごとの add/close/activate/next/prev/move、各タブは dir + 表示状態。読み込み/保存の結線は app.js（`renderTabs`/`switchToActiveTab` と filepane の `getViewState`/`applyViewState`） |
 | `core/keyprefix.js` | **二打鍵プレフィックスの純粋マッピング**。`(prefix, key)→アクションID`（s=並替/t=タブ移動/y=コピー/o=開く）とヒント文言。実行は app.js `runPrefixAction`。方針は memory `feedback_tana_prefix_shortcuts` |
-| `core/searchview.js` | **現在ディレクトリ内検索のオーバーレイUI (FR-18)**。`Ctrl+F`。入力→debounce→backend `search_dir`→結果一覧（名前/本文）、Enter でジャンプ。マッチングは Rust `search.rs`（純粋部テスト済み） |
+| `core/searchview.js` | **現在ディレクトリ内検索のオーバーレイUI (FR-18)**。`Ctrl+F`/`/`。入力→debounce→backend `search_dir`（Channel でヒットをストリーミング受信し逐次描画）、Enter でジャンプ。トグル(本文/正規/大小/隠し)。マッチングは Rust `search.rs`（純粋部テスト済み） |
 | `core/workspaces.js` | **ワークスペース（タブ構成の保存/復元）の純粋な状態**。両ペインのタブ dir 一覧＋アクティブに名前を付けて保存/上書き/削除、localStorage 永続化。UI は workspacesview.js |
 | `core/workspacesview.js` | **ワークスペースのオーバーレイUI**。ファイルメニューから開く。現在構成を名前保存＋保存済み一覧の開く/削除（j/k/Enter/Del/Esc） |
 | `core/dnd.js` | **D&D の判定（純粋）**。掴んだ対象・効果(copy/move)・不正ドロップの拒否。詳細: [DRAG-AND-DROP.md](DRAG-AND-DROP.md) |
@@ -145,7 +145,7 @@ make docker-check  # CI相当チェック
 | FR-13 | コンテキストメニュー + 外部アプリ連携 | M | ✅ | 右クリック / Shift+F10。外部アプリ・ファイルマネージャ表示は opener。ファイルのダブルクリック / Enter で既定アプリを開く |
 | FR-14 | セッション復元 | M/S | ✅ | ディレクトリ・アクティブペイン＋**各ペインのタブ構成（タブ dir 一覧・アクティブ index）**を localStorage で復元(core/session.js)。旧セッションとも後方互換 |
 | FR-15 | 隠しファイル表示トグル | M | ✅ | Ctrl+H、両ペイン共通 |
-| FR-18 | 現在ディレクトリ内検索(grep) | S | 🟡 | `Ctrl+F`・`/` で現在地配下を再帰検索。ファイル名＋テキスト内容一致を一覧、Enter でジャンプ（ファイルは親へ移動しカーソル）。トグル: **本文(`本文`, 既定OFF=名前のみで高速)・正規表現(`.*`)・大小区別(`Aa`)・隠し(`隠し`)**（正規表現は軽量 regex-lite）。**node_modules/target/.git 等の重いディレクトリは走査から除外**。バイナリ/大サイズ除外、件数上限500。世代(epoch)ベースの**キャンセル**（新検索/クローズで実行中を中断, `cancel_search`）。`search.rs`+`searchview.js`。**残**: 結果のストリーミング（体感改善） |
+| FR-18 | 現在ディレクトリ内検索(grep) | S | 🟡 | `Ctrl+F`・`/` で現在地配下を再帰検索。ファイル名＋テキスト内容一致を一覧、Enter でジャンプ（ファイルは親へ移動しカーソル）。トグル: **本文(`本文`, 既定OFF=名前のみで高速)・正規表現(`.*`)・大小区別(`Aa`)・隠し(`隠し`)**（正規表現は軽量 regex-lite）。**node_modules/target/.git 等の重いディレクトリは走査から除外**。バイナリ/大サイズ除外、件数上限500。世代(epoch)ベースの**キャンセル**（新検索/クローズで実行中を中断, `cancel_search`）。**結果は Tauri Channel でストリーミング**（見つかり次第 逐次表示）。`search.rs`+`searchview.js`。**残**: 並列走査・最小文字数等の微調整（任意） |
 | FR-16 | プレビューの表示制御(フィット/ズーム/パン) | S | ✅ | 画像で先行。既定フィット(contain)⇄実寸(100%)をクリックで切替＋Ctrl+ホイールで連続ズーム（画像上ではフォント拡縮より優先）＋**ズーム中はドラッグでパン**（クリックと閾値で判別、`img.draggable=false`）。横スクロール問題も解消（core/previewzoom.js）。＋/−キーでのズームは将来 |
 | FR-17 | ナビゲーション履歴(戻る/進む) | S | ✅ | ペインごとの履歴。`Alt+←`/`Alt+→`＋マウスの戻る/進むボタン。親移動(`h`)とは別概念（時系列）。`core/navhistory.js`（純粋）+ app.js 配線 |
 

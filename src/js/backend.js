@@ -51,8 +51,16 @@ export async function searchDir(
   dir,
   query,
   { caseInsensitive = true, includeHidden = false, regex = false, searchContent = false } = {},
+  onHit,
 ) {
-  const hits = await invoke('search_dir', {
+  const fn = getInvoke();
+  if (!fn) return 0; // Tauri 不在（テスト/ブラウザ）
+  const { Channel } = await import('@tauri-apps/api/core');
+  const channel = new Channel();
+  if (onHit) channel.onmessage = (hit) => onHit(hit);
+  // ヒットは channel にストリーミングされ、戻り値は総ヒット数（完了時）。
+  return fn('search_dir', {
+    onHit: channel,
     dir,
     query,
     caseInsensitive,
@@ -60,7 +68,6 @@ export async function searchDir(
     regex,
     searchContent,
   });
-  return hits || [];
 }
 
 /** 実行中の検索を中断する (cancel_search コマンド, FR-18)。 */
