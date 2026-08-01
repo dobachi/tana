@@ -94,4 +94,17 @@ describe('createSearch', () => {
       .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(view.isOpen()).toBe(false);
   });
+
+  it('閉じるときに cancelSearch を呼ぶ（実行中検索の中断）', () => {
+    const cancelSearch = vi.fn();
+    const view = createSearch({
+      searchDir: vi.fn(),
+      cancelSearch,
+      getDir: () => '/root',
+      onOpen: vi.fn(),
+    });
+    view.open();
+    view.close();
+    expect(cancelSearch).toHaveBeenCalled();
+  });
 });

@@ -63,6 +63,11 @@ export async function searchDir(
   return hits || [];
 }
 
+/** 実行中の検索を中断する (cancel_search コマンド, FR-18)。 */
+export async function cancelSearch() {
+  return invoke('cancel_search');
+}
+
 /** プレビュー用データを取得する (read_preview コマンド, FR-09)。Tauri 不在時は null */
 export async function readPreview(path, maxBytes) {
   return invoke('read_preview', { path, maxBytes });

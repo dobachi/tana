@@ -402,6 +402,7 @@ fn read_preview(path: String, max_bytes: usize) -> Result<PreviewData, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(search::SearchState::default())
         .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -421,7 +422,8 @@ pub fn run() {
             read_preview,
             app_version,
             places::list_places,
-            search::search_dir
+            search::search_dir,
+            search::cancel_search
         ])
         .run(tauri::generate_context!())
         .expect("error while running tana application");

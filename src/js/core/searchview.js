@@ -15,6 +15,7 @@
 export function createSearch(deps) {
   const {
     searchDir,
+    cancelSearch,
     getDir,
     onOpen,
     doc = typeof document !== 'undefined' ? document : null,
@@ -228,6 +229,7 @@ export function createSearch(deps) {
       timer = null;
     }
     gen += 1;
+    if (cancelSearch) cancelSearch(); // 実行中の検索を中断（無駄な走査を止める）
     overlay.remove();
     overlay = null;
     inputEl = statusEl = listEl = hiddenChk = caseChk = regexChk = contentChk = null;

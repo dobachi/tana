@@ -60,6 +60,7 @@ import {
   getCliPath,
   listPlaces,
   searchDir,
+  cancelSearch,
   copyPath,
   movePath,
   deleteToTrash,
@@ -390,6 +391,7 @@ let placesView = null;
 // 現在ディレクトリ内検索 (FR-18)。オーバーレイUIは searchview.js。
 const search = createSearch({
   searchDir,
+  cancelSearch,
   getDir: () => {
     const fp = activeFilePane();
     return fp ? fp.getCurrentDir() : null;

@@ -3,12 +3,22 @@
 //! ファイル名の一致と、テキストファイルの内容一致（grep 相当）を再帰的に探す。
 //! バイナリ・大きすぎるファイル・（既定で）隠しファイルは内容走査から除外する。
 //! マッチ判定・スニペット整形は純粋関数に切り出してテスト可能にし、実際の
-//! ディレクトリ走査(FS)は search_dir_impl が担う。結果は件数上限で頭打ちにして
-//! 応答性を確保する（真のキャンセルは将来対応）。
+//! ディレクトリ走査(FS)は search_dir_impl が担う。結果は件数上限で頭打ちにし、
+//! さらに世代(SearchState.epoch)ベースのキャンセルで、新しい検索やクローズが
+//! 来たら実行中の走査を早期終了して応答性を確保する。
 
 use crate::is_binary_head;
 use serde::Serialize;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use tauri::State;
+
+/// 検索のキャンセル用に「世代(エポック)」を持つ共有状態。新しい検索やクローズで
+/// エポックを進め、実行中の検索は自分のエポックが最新でなくなったら早期終了する。
+#[derive(Default)]
+pub struct SearchState {
+    pub epoch: AtomicU64,
+}
 
 /// 検索ヒット1件（ファイル名一致 or 内容一致）。
 #[derive(Debug, Serialize, PartialEq, Clone)]
@@ -133,7 +143,12 @@ fn is_hidden_name(name: &str) -> bool {
 }
 
 /// root 配下を再帰的に検索する。名前一致と内容一致を集める。
-pub fn search_dir_impl(root: &Path, query: &str, opts: &SearchOpts) -> Vec<SearchHit> {
+pub fn search_dir_impl(
+    root: &Path,
+    query: &str,
+    opts: &SearchOpts,
+    cancelled: &dyn Fn() -> bool,
+) -> Vec<SearchHit> {
     let mut hits = Vec::new();
     let matcher = match build_matcher(query, opts.case_insensitive, opts.regex) {
         Some(m) => m,
@@ -148,7 +163,7 @@ pub fn search_dir_impl(root: &Path, query: &str, opts: &SearchOpts) -> Vec<Searc
             Err(_) => continue, // 権限なし等は黙って飛ばす
         };
         for entry in read.flatten() {
-            if hits.len() >= opts.max_results || visited >= opts.max_visited {
+            if hits.len() >= opts.max_results || visited >= opts.max_visited || cancelled() {
                 return hits;
             }
             visited += 1;
@@ -224,6 +239,7 @@ pub fn search_dir_impl(root: &Path, query: &str, opts: &SearchOpts) -> Vec<Searc
 /// 「現在ディレクトリ配下を検索」する Tauri コマンド。
 #[tauri::command]
 pub fn search_dir(
+    state: State<'_, SearchState>,
     dir: String,
     query: String,
     case_insensitive: bool,
@@ -231,6 +247,9 @@ pub fn search_dir(
     regex: bool,
     search_content: bool,
 ) -> Vec<SearchHit> {
+    // 自分の世代を確定。以降より新しい検索/キャンセルが来たら中断する。
+    let my = state.epoch.fetch_add(1, Ordering::SeqCst) + 1;
+    let epoch = &state.epoch;
     let opts = SearchOpts {
         case_insensitive,
         regex,
@@ -238,7 +257,15 @@ pub fn search_dir(
         search_content,
         ..Default::default()
     };
-    search_dir_impl(Path::new(&dir), &query, &opts)
+    search_dir_impl(Path::new(&dir), &query, &opts, &|| {
+        epoch.load(Ordering::SeqCst) != my
+    })
+}
+
+/// 実行中の検索を中断する（世代を進めるだけ）。オーバーレイを閉じたとき等に呼ぶ。
+#[tauri::command]
+pub fn cancel_search(state: State<'_, SearchState>) {
+    state.epoch.fetch_add(1, Ordering::SeqCst);
 }
 
 #[cfg(test)]
@@ -284,7 +311,7 @@ mod tests {
             regex: true,
             ..Default::default()
         };
-        let hits = search_dir_impl(tmp.path(), r"error \d+", &opts);
+        let hits = search_dir_impl(tmp.path(), r"error \d+", &opts, &|| false);
         let lines: Vec<_> = hits
             .iter()
             .filter(|h| h.kind == "content")
@@ -301,7 +328,7 @@ mod tests {
             regex: true,
             ..Default::default()
         };
-        assert!(search_dir_impl(tmp.path(), "a(", &opts).is_empty());
+        assert!(search_dir_impl(tmp.path(), "a(", &opts, &|| false).is_empty());
     }
 
     #[test]
@@ -324,7 +351,7 @@ mod tests {
         .unwrap();
         fs::write(root.join("sub/bin.dat"), [0u8, 1, 2, 3, 0, 255]).unwrap();
 
-        let hits = search_dir_impl(root, "needle", &SearchOpts::default());
+        let hits = search_dir_impl(root, "needle", &SearchOpts::default(), &|| false);
         // 名前一致（needle_file.txt）と内容一致（data.txt の 2 行目）
         let names: Vec<_> = hits
             .iter()
@@ -351,9 +378,9 @@ mod tests {
             ..Default::default()
         };
         // 本文一致は拾わない（ファイル名に needle が無いので 0 件）
-        assert!(search_dir_impl(tmp.path(), "needle", &opts).is_empty());
+        assert!(search_dir_impl(tmp.path(), "needle", &opts, &|| false).is_empty());
         // ファイル名一致は拾う
-        assert!(!search_dir_impl(tmp.path(), "plain", &opts).is_empty());
+        assert!(!search_dir_impl(tmp.path(), "plain", &opts, &|| false).is_empty());
     }
 
     #[test]
@@ -363,10 +390,12 @@ mod tests {
         fs::create_dir(&nm).unwrap();
         fs::write(nm.join("dep.txt"), b"needle in dep\n").unwrap();
         // node_modules の中身は内容検索されない
-        let hits = search_dir_impl(tmp.path(), "needle", &SearchOpts::default());
+        let hits = search_dir_impl(tmp.path(), "needle", &SearchOpts::default(), &|| false);
         assert!(!hits.iter().any(|h| h.name == "dep.txt"));
         // ただし node_modules 自体は名前一致では見つかる
-        let by_name = search_dir_impl(tmp.path(), "node_modules", &SearchOpts::default());
+        let by_name = search_dir_impl(tmp.path(), "node_modules", &SearchOpts::default(), &|| {
+            false
+        });
         assert!(by_name.iter().any(|h| h.name == "node_modules"));
     }
 
@@ -376,14 +405,14 @@ mod tests {
         let root = tmp.path();
         fs::write(root.join(".secret.txt"), b"needle\n").unwrap();
 
-        let d = search_dir_impl(root, "needle", &SearchOpts::default());
+        let d = search_dir_impl(root, "needle", &SearchOpts::default(), &|| false);
         assert!(d.is_empty()); // 既定では隠しを除外
 
         let opts = SearchOpts {
             include_hidden: true,
             ..Default::default()
         };
-        let h = search_dir_impl(root, "needle", &opts);
+        let h = search_dir_impl(root, "needle", &opts, &|| false);
         assert!(!h.is_empty());
     }
 
@@ -391,7 +420,18 @@ mod tests {
     fn empty_query_returns_nothing() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join("a.txt"), b"x").unwrap();
-        assert!(search_dir_impl(tmp.path(), "", &SearchOpts::default()).is_empty());
+        assert!(search_dir_impl(tmp.path(), "", &SearchOpts::default(), &|| false).is_empty());
+    }
+
+    #[test]
+    fn cancelled_returns_early() {
+        let tmp = tempfile::tempdir().unwrap();
+        for i in 0..10 {
+            fs::write(tmp.path().join(format!("needle_{i}.txt")), b"x").unwrap();
+        }
+        // 常にキャンセル判定 → 1件も集めずに抜ける
+        let got = search_dir_impl(tmp.path(), "needle", &SearchOpts::default(), &|| true);
+        assert!(got.is_empty());
     }
 
     #[test]
@@ -404,6 +444,9 @@ mod tests {
             max_results: 3,
             ..Default::default()
         };
-        assert_eq!(search_dir_impl(tmp.path(), "needle", &opts).len(), 3);
+        assert_eq!(
+            search_dir_impl(tmp.path(), "needle", &opts, &|| false).len(),
+            3
+        );
     }
 }
