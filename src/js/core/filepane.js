@@ -309,6 +309,21 @@ export function createFilePane(rootEl, opts = {}) {
     notify();
   }
 
+  /**
+   * 現在ディレクトリをディスクから再読込する（外部変更の自動反映用, FR-19）。
+   * カーソル位置（パス一致）と選択（存在するもの）は保持する。load と違い
+   * ディレクトリは変えないので選択は消さない（recompute で存在チェック）。
+   */
+  async function reload() {
+    if (!currentDir) return;
+    const keep = entries[cursor] ? entries[cursor].path : null;
+    allEntries = await listDir(currentDir);
+    recompute(keep);
+    cursor = clampCursor(cursor, entries.length);
+    render();
+    notify();
+  }
+
   /** 隠しファイルの表示/非表示を設定（FR-15） */
   function setShowHidden(next) {
     const v = next === true;
@@ -454,6 +469,7 @@ export function createFilePane(rootEl, opts = {}) {
   return {
     el: rootEl,
     load,
+    reload,
     beginPathEdit,
     moveCursor,
     moveCursorTo,

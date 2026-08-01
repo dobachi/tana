@@ -81,6 +81,31 @@ fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
     read_dir_entries(Path::new(&path))
 }
 
+/// エントリ群から、順序に依存しない安価な署名(u64)を作る（純粋）。
+/// 名前・サイズ・更新時刻・種別を畳み込むので、追加/削除/リネーム/更新で値が変わる。
+/// フロントが定期的に取得し、前回と違えば再読込する（自動更新, FR-19）。
+fn fold_signature(entries: &[DirEntry]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut acc: u64 = 0;
+    for e in entries {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        e.name.hash(&mut h);
+        e.size.hash(&mut h);
+        e.modified.hash(&mut h);
+        e.is_dir.hash(&mut h);
+        acc = acc.wrapping_add(h.finish()); // 加算で順序非依存
+    }
+    acc
+}
+
+/// 現在ディレクトリの署名を返す Tauri コマンド。読めない場合は 0。
+#[tauri::command]
+fn dir_signature(path: String) -> u64 {
+    read_dir_entries(Path::new(&path))
+        .map(|e| fold_signature(&e))
+        .unwrap_or(0)
+}
+
 /// ホームディレクトリのパスを返す Tauri コマンド。
 #[tauri::command]
 fn home_dir() -> Option<String> {
@@ -421,6 +446,7 @@ pub fn run() {
             make_dir,
             read_preview,
             app_version,
+            dir_signature,
             places::list_places,
             search::search_dir,
             search::cancel_search
@@ -462,6 +488,41 @@ mod tests {
     fn parent_dir_returns_parent() {
         assert_eq!(parent_dir("/a/b/c".into()), Some("/a/b".to_string()));
         assert_eq!(parent_dir("/".into()), None);
+    }
+
+    #[test]
+    fn fold_signature_detects_changes_order_independently() {
+        let mk = |name: &str, size: u64, modified: Option<u64>| DirEntry {
+            name: name.into(),
+            path: format!("/x/{name}"),
+            is_dir: false,
+            size,
+            is_hidden: false,
+            modified,
+        };
+        let a = vec![mk("a", 10, Some(100)), mk("b", 20, Some(200))];
+        let a_rev = vec![mk("b", 20, Some(200)), mk("a", 10, Some(100))];
+        // 順序が違っても同じ署名
+        assert_eq!(fold_signature(&a), fold_signature(&a_rev));
+        // サイズ変更・更新時刻変更・追加/削除・リネームで署名が変わる
+        assert_ne!(
+            fold_signature(&a),
+            fold_signature(&[mk("a", 11, Some(100)), mk("b", 20, Some(200))])
+        );
+        assert_ne!(
+            fold_signature(&a),
+            fold_signature(&[mk("a", 10, Some(101)), mk("b", 20, Some(200))])
+        );
+        assert_ne!(
+            fold_signature(&a),
+            fold_signature(&[mk("a", 10, Some(100))])
+        );
+        assert_ne!(
+            fold_signature(&a),
+            fold_signature(&[mk("c", 10, Some(100)), mk("b", 20, Some(200))])
+        );
+        // 空は 0
+        assert_eq!(fold_signature(&[]), 0);
     }
 
     #[test]

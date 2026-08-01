@@ -61,6 +61,7 @@ import {
   listPlaces,
   searchDir,
   cancelSearch,
+  dirSignature,
   copyPath,
   movePath,
   deleteToTrash,
@@ -1035,6 +1036,54 @@ async function refreshPanes() {
   updateStatus();
 }
 
+// 外部変更の自動反映 (FR-19)。inotify 系はWSL/mnt・ネットワークドライブで届か
+// ないことがあるため、ディレクトリ署名を定期比較して変化時のみ再読込する。
+const AUTO_REFRESH_MS = 1500;
+const polledDir = { left: null, right: null }; // 前回ポーリング時の dir
+const polledSig = { left: null, right: null }; // 前回の署名
+
+async function pollPaneOnce(p) {
+  const fp = filePanes[p];
+  const dir = fp && fp.getCurrentDir();
+  if (!dir) return;
+  let sig;
+  try {
+    sig = await dirSignature(dir);
+  } catch {
+    return; // 取得失敗（消えた等）は次回に任せる
+  }
+  if (fp.getCurrentDir() !== dir) return; // ポーリング中に移動した
+  if (polledDir[p] !== dir) {
+    // ディレクトリが変わった直後は基準化のみ（誤再読込を避ける）
+    polledDir[p] = dir;
+    polledSig[p] = sig;
+    return;
+  }
+  if (sig !== polledSig[p]) {
+    polledSig[p] = sig;
+    await fp.reload(); // カーソル/選択は保持される
+    if (p === panes.getActive()) updateStatus();
+  }
+}
+
+function startAutoRefresh() {
+  setInterval(() => {
+    if (typeof document !== 'undefined' && document.hidden) return; // 非表示中は休む
+    pollPaneOnce(PANE.LEFT);
+    pollPaneOnce(PANE.RIGHT);
+  }, AUTO_REFRESH_MS);
+}
+
+/** アクティブペインを手動で再読込する（Ctrl+R）。 */
+function reloadActivePane() {
+  const fp = activeFilePane();
+  if (!fp || !fp.getCurrentDir()) return;
+  polledDir[panes.getActive()] = null; // 次のポーリングで基準化し直す
+  fp.reload().then(() => {
+    if (fp === activeFilePane()) updateStatus();
+  });
+}
+
 // アクティブペインの選択項目を、非アクティブペインのディレクトリへ
 // コピー/移動/削除の対象は「選択があればそれ、無ければカーソル位置の1件」。
 // リネームだけは対象が1つに定まる必要があるのでカーソル位置を使う。
@@ -1336,6 +1385,12 @@ function onKeydown(e) {
     previewPlacement.toggle();
     return;
   }
+  // 手動更新: Ctrl+R（webview の再読込を奪う。自動更新の即時版, FR-19）
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === 'KeyR' || e.key.toLowerCase() === 'r')) {
+    e.preventDefault();
+    reloadActivePane();
+    return;
+  }
   // 文字サイズ: Ctrl++ / Ctrl+- / Ctrl+0 (NFR-U5)
   const fsAction = fontScaleAction(e);
   if (fsAction) {
@@ -1615,6 +1670,9 @@ async function init() {
     renderTabs(p);
   }
   updateStatus();
+
+  // 外部変更の自動反映を開始 (FR-19)
+  startAutoRefresh();
 
   // 起動時の更新検知。待たない・失敗しても黙る（起動を妨げないため）。
   checkForUpdates();

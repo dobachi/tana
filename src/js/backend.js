@@ -37,6 +37,12 @@ export async function parentDir(path) {
   return invoke('parent_dir', { path });
 }
 
+/** ディレクトリの安価な署名を取得する (dir_signature コマンド, FR-19 自動更新)。 */
+export async function dirSignature(path) {
+  const sig = await invoke('dir_signature', { path });
+  return typeof sig === 'number' ? sig : 0;
+}
+
 /** 「場所(Places)」一覧を取得する (list_places コマンド, FR-07)。Tauri 不在時は [] */
 export async function listPlaces() {
   const places = await invoke('list_places');
