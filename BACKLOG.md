@@ -13,3 +13,4 @@
 - [x] 2026-07-28 検索(FR-18)高速化の続き: (1)名前のみ既定+本文トグルと (2)node_modules/target/.git等の除外は実装済。残り: (3)真のキャンセル=新入力やクローズでin-flightを中断(AtomicBool+Tauri state), (4)結果のストリーミング=app.emitで逐次表示, (5)並列走査(std::thread/rayon), (6)最小文字数(>=2)・デバウンス調整。#search #perf (done: 2026-08-01)
 - [x] 2026-07-28 検索結果をEnterで開くと別ディレクトリに飛ぶ/該当ファイルが選択されない。根本原因: list_dir は path をネイティブ区切り(Windowsは\)で返すのに search の hit.path は forward-slash 化(replace)しており、applyViewState の cursorPath 照合が Windows で不一致→ジャンプ後に該当ファイルが選択されない。サブフォルダのヒットは親dirへ移動するため『別ディレクトリに飛んだ』ように見える。修正案: openSearchHit/applyViewState でパスを正規化(forward-slash)して比較、または list_dir を forward-slash 統一。#bug #search (done: 2026-07-28)
 - [ ] 2026-08-01 FR-19 自動更新の将来拡張: 環境が対応する場合は notify(inotify/FSEvents/ReadDirectoryChangesW)によるライブ監視でポーリングより低遅延に。WSL/mnt・ネットワークではポーリングにフォールバック。ポーリング間隔の設定化も検討 #future #perf
+- [ ] 2026-08-08 シンボリックリンクのファイルを正常に開けない可能性があるので調査する（未確認・要再現）。姉妹プロジェクト fude でも同種の症状: フォーカスは当たるがファイルが表示されない #bug
