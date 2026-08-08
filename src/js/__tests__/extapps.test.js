@@ -3,6 +3,7 @@ import {
   createExtApps,
   validateApp,
   normalizeApp,
+  normalizeTarget,
   serialize,
   hydrate,
   pickByIndex,
@@ -54,14 +55,20 @@ describe('validateApp', () => {
 
 describe('normalizeApp', () => {
   it('前後の空白を落とし、表示名が無ければコマンドを使う', () => {
-    expect(normalizeApp({ command: '  code  ' })).toEqual({ name: 'code', command: 'code' });
+    expect(normalizeApp({ command: '  code  ' })).toEqual({
+      name: 'code',
+      command: 'code',
+      target: 'auto',
+    });
     expect(normalizeApp({ name: ' VS Code ', command: 'code' })).toEqual({
       name: 'VS Code',
       command: 'code',
+      target: 'auto',
     });
     expect(normalizeApp({ name: '   ', command: 'gimp' })).toEqual({
       name: 'gimp',
       command: 'gimp',
+      target: 'auto',
     });
   });
 
@@ -69,20 +76,49 @@ describe('normalizeApp', () => {
     expect(normalizeApp({ command: '' })).toBeNull();
     expect(normalizeApp({ command: 'a"b' })).toBeNull();
   });
+
+  it('起動先を保持し、未知の値・未指定は auto に倒す (WSL)', () => {
+    expect(normalizeApp({ command: 'notepad.exe', target: 'windows' }).target).toBe('windows');
+    expect(normalizeApp({ command: 'gimp', target: 'linux' }).target).toBe('linux');
+    expect(normalizeApp({ command: 'gimp', target: 'mac' }).target).toBe('auto');
+    expect(normalizeApp({ command: 'gimp' }).target).toBe('auto');
+  });
+});
+
+describe('normalizeTarget', () => {
+  it('既知の値はそのまま、それ以外は auto', () => {
+    expect(normalizeTarget('windows')).toBe('windows');
+    expect(normalizeTarget('linux')).toBe('linux');
+    expect(normalizeTarget('auto')).toBe('auto');
+    expect(normalizeTarget(undefined)).toBe('auto');
+    expect(normalizeTarget(null)).toBe('auto');
+    expect(normalizeTarget(42)).toBe('auto');
+  });
 });
 
 describe('serialize / hydrate', () => {
   it('id を落として往復できる', () => {
-    const list = [{ id: 'app-1', name: 'VS Code', command: 'code' }];
-    expect(serialize(list)).toEqual([{ name: 'VS Code', command: 'code' }]);
-    expect(hydrate(serialize(list))).toEqual([{ name: 'VS Code', command: 'code' }]);
+    const list = [{ id: 'app-1', name: 'VS Code', command: 'code', target: 'linux' }];
+    expect(serialize(list)).toEqual([{ name: 'VS Code', command: 'code', target: 'linux' }]);
+    expect(hydrate(serialize(list))).toEqual([
+      { name: 'VS Code', command: 'code', target: 'linux' },
+    ]);
+  });
+
+  it('target 無しの旧い保存値も読める（後方互換）', () => {
+    expect(hydrate([{ name: 'VS Code', command: 'code' }])).toEqual([
+      { name: 'VS Code', command: 'code', target: 'auto' },
+    ]);
+    expect(serialize([{ name: 'a', command: 'a' }])).toEqual([
+      { name: 'a', command: 'a', target: 'auto' },
+    ]);
   });
 
   it('壊れた保存値は捨てる', () => {
     expect(hydrate(null)).toEqual([]);
     expect(hydrate('nope')).toEqual([]);
     expect(hydrate([{ command: '' }, { command: 'a"b' }, null, { command: 'gimp' }])).toEqual([
-      { name: 'gimp', command: 'gimp' },
+      { name: 'gimp', command: 'gimp', target: 'auto' },
     ]);
   });
 });
@@ -159,15 +195,34 @@ describe('createExtApps', () => {
       { name: 'VS Code', command: 'code' },
       { command: '' }, // 壊れた値は落ちる
     ]);
-    expect(store.serialize()).toEqual([{ name: 'VS Code', command: 'code' }]);
+    expect(store.serialize()).toEqual([{ name: 'VS Code', command: 'code', target: 'auto' }]);
+  });
+
+  it('setTarget で起動先を変えられ、購読者へ通知する (WSL)', () => {
+    const store = createExtApps([{ name: 'メモ帳', command: 'notepad.exe' }]);
+    const seen = vi.fn();
+    store.subscribe(seen);
+    const id = store.list()[0].id;
+
+    expect(store.setTarget(id, 'windows')).toBe(true);
+    expect(store.list()[0].target).toBe('windows');
+    expect(seen).toHaveBeenCalledTimes(1);
+
+    expect(store.setTarget(id, 'windows')).toBe(false); // 同値は通知しない
+    expect(store.setTarget('nope', 'linux')).toBe(false);
+    expect(seen).toHaveBeenCalledTimes(1);
+
+    // 未知の値は auto に倒す
+    expect(store.setTarget(id, 'mac')).toBe(true);
+    expect(store.list()[0].target).toBe('auto');
   });
 });
 
 describe('localStorage 永続化', () => {
   it('保存して読み戻せる', () => {
     localStorage.clear();
-    storeExtApps([{ id: 'app-1', name: 'VS Code', command: 'code' }]);
-    expect(loadStoredExtApps()).toEqual([{ name: 'VS Code', command: 'code' }]);
+    storeExtApps([{ id: 'app-1', name: 'VS Code', command: 'code', target: 'windows' }]);
+    expect(loadStoredExtApps()).toEqual([{ name: 'VS Code', command: 'code', target: 'windows' }]);
   });
 
   it('壊れた保存値は空配列', () => {

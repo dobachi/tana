@@ -81,6 +81,31 @@ export async function cancelSearch() {
   return invoke('cancel_search');
 }
 
+// ===== WSL 連携 (FR-13 の WSL 拡張) =====
+
+/**
+ * WSL 上で Windows アプリを起動できるかを問い合わせる (wsl_info コマンド)。
+ * Tauri 不在（テスト/ブラウザ）や非 WSL では available:false。
+ */
+export async function wslInfo() {
+  return invoke('wsl_info');
+}
+
+/** Linux パスに対応する Windows パスを返す (windows_path コマンド)。 */
+export async function windowsPath(path) {
+  return invoke('windows_path', { path });
+}
+
+/** Windows 側で開く (open_in_windows コマンド)。app 省略で Windows の既定アプリ。 */
+export async function openInWindows(path, app = null) {
+  return invoke('open_in_windows', { path, app });
+}
+
+/** エクスプローラーで選択表示する (reveal_in_windows コマンド)。 */
+export async function revealInWindows(path) {
+  return invoke('reveal_in_windows', { path });
+}
+
 /** プレビュー用データを取得する (read_preview コマンド, FR-09)。Tauri 不在時は null */
 export async function readPreview(path, maxBytes) {
   return invoke('read_preview', { path, maxBytes });

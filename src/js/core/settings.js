@@ -7,8 +7,17 @@
 import { THEMES, THEME_LABELS } from './theme.js';
 import { MIN_SCALE, MAX_SCALE, STEP, toPercent } from './fontscale.js';
 import { QUICK_SLOTS } from './extapps.js';
+import { APP_TARGETS, TARGET, TARGET_LABELS } from './wsl.js';
 
 let panelEl = null;
+
+/** 起動先の選択（WSL のときだけ使う）。id は空文字なら付けない。 */
+function targetSelectHtml(id, selected) {
+  const opts = APP_TARGETS.map(
+    (t) => `<option value="${t}"${t === selected ? ' selected' : ''}>${TARGET_LABELS[t]}</option>`,
+  ).join('');
+  return `<select class="extapp-target"${id ? ` id="${id}"` : ''} title="起動先">${opts}</select>`;
+}
 
 /** 設定画面が開いているか */
 export function isSettingsOpen() {
@@ -30,12 +39,18 @@ export function closeSettings() {
  *   getShowHidden: () => boolean,
  *   setShowHidden: (v: boolean) => void,
  *   extApps?: {list: () => Array, add: (a: object) => object, remove: (id: string) => boolean,
- *              move: (id: string, dir: number) => boolean},
+ *              move: (id: string, dir: number) => boolean,
+ *              setTarget?: (id: string, target: string) => boolean},
+ *   wsl?: {available: boolean, distro?: string},
+ *   getDefaultOpen?: () => string,
+ *   setDefaultOpen?: (v: string) => void,
  * }} deps
  */
 export function openSettings(deps) {
   if (panelEl) return panelEl;
   const { theme, fontScale, getShowHidden, setShowHidden, extApps } = deps;
+  // WSL 連携が使えないときは、関係する UI をまるごと出さない（選べない選択肢を見せない）。
+  const wsl = deps.wsl && deps.wsl.available ? deps.wsl : null;
 
   panelEl = document.createElement('div');
   panelEl.className = 'settings-overlay';
@@ -71,19 +86,40 @@ export function openSettings(deps) {
           </label>
           <small class="setting-hint">Ctrl + H でも切り替えられます。</small>
         </div>
+        ${
+          wsl
+            ? `<div class="setting-group" id="setting-wsl-group">
+          <label for="setting-wsl-default">既定のアプリで開く先（WSL: ${wsl.distro || 'WSL'}）</label>
+          <select id="setting-wsl-default">
+            <option value="${TARGET.WINDOWS}">Windows 側（エクスプローラーの関連付け）</option>
+            <option value="${TARGET.LINUX}">Linux 側（xdg-open）</option>
+          </select>
+          <small class="setting-hint">
+            Enter / ダブルクリックの行き先です。もう一方も右クリックメニュー、
+            または <code>o → w</code>（Windows で開く）/ <code>o → e</code>（エクスプローラーで表示）
+            から使えます。
+          </small>
+        </div>`
+            : ''
+        }
         <div class="setting-group" id="setting-extapps-group">
           <label>外部アプリ（別のアプリで開く）</label>
           <div id="setting-extapps-list"></div>
           <div class="extapp-add">
             <input type="text" id="setting-extapp-name" placeholder="表示名（省略可）" />
             <input type="text" id="setting-extapp-command" placeholder="コマンド / アプリ名" />
+            ${wsl ? targetSelectHtml('setting-extapp-target', TARGET.AUTO) : ''}
             <button type="button" class="modal-btn" id="setting-extapp-add">追加</button>
           </div>
           <small class="setting-hint" id="setting-extapp-msg">
             上から ${QUICK_SLOTS} 件が <code>o → 1</code>…<code>o → ${QUICK_SLOTS}</code> に割り当たります。
             右クリック →「別のアプリで開く…」からも選べます。
             コマンドは Windows/Linux は実行ファイル名かフルパス、macOS はアプリ名（例: Visual Studio Code）。
-            引数は渡せません。
+            引数は渡せません。${
+              wsl
+                ? '起動先「自動」は <code>.exe</code> や <code>C:\\…</code> を Windows 側として扱います。'
+                : ''
+            }
           </small>
         </div>
       </div>
@@ -125,7 +161,16 @@ export function openSettings(deps) {
     setShowHidden(e.target.checked);
   });
 
-  setupExtApps(panelEl, extApps);
+  // WSL: 既定オープンの行き先（この group は wsl のときだけ存在する）
+  const wslDefaultEl = panelEl.querySelector('#setting-wsl-default');
+  if (wslDefaultEl) {
+    if (deps.getDefaultOpen) wslDefaultEl.value = deps.getDefaultOpen();
+    wslDefaultEl.addEventListener('change', (e) => {
+      if (deps.setDefaultOpen) deps.setDefaultOpen(e.target.value);
+    });
+  }
+
+  setupExtApps(panelEl, extApps, wsl);
 
   panelEl.querySelector('.settings-close').focus();
   return panelEl;
@@ -135,7 +180,7 @@ export function openSettings(deps) {
  * 「外部アプリ」セクションの描画とイベント（FR-13）。
  * extApps を渡さない呼び出し（テスト等）ではセクションごと隠す。
  */
-function setupExtApps(root, extApps) {
+function setupExtApps(root, extApps, wsl) {
   const group = root.querySelector('#setting-extapps-group');
   if (!group) return;
   if (!extApps) {
@@ -182,6 +227,24 @@ function setupExtApps(root, extApps) {
       cmd.className = 'extapp-command';
       cmd.textContent = app.command;
 
+      // 起動先（WSL のときだけ）。「自動」のままでも .exe なら Windows 側へ流れる。
+      let target = null;
+      if (wsl) {
+        target = document.createElement('select');
+        target.className = 'extapp-target';
+        target.title = '起動先';
+        for (const t of APP_TARGETS) {
+          const opt = document.createElement('option');
+          opt.value = t;
+          opt.textContent = TARGET_LABELS[t];
+          if (t === (app.target || TARGET.AUTO)) opt.selected = true;
+          target.appendChild(opt);
+        }
+        target.addEventListener('change', (e) => {
+          if (extApps.setTarget) extApps.setTarget(app.id, e.target.value);
+        });
+      }
+
       const up = document.createElement('button');
       up.type = 'button';
       up.className = 'modal-btn';
@@ -214,13 +277,21 @@ function setupExtApps(root, extApps) {
         render();
       });
 
-      row.append(slot, name, cmd, up, down, del);
+      row.append(slot, name, cmd);
+      if (target) row.appendChild(target);
+      row.append(up, down, del);
       listEl.appendChild(row);
     });
   }
 
+  const targetEl = root.querySelector('#setting-extapp-target');
+
   function add() {
-    const res = extApps.add({ name: nameEl.value, command: cmdEl.value });
+    const res = extApps.add({
+      name: nameEl.value,
+      command: cmdEl.value,
+      target: targetEl ? targetEl.value : undefined,
+    });
     if (!res.ok) {
       notify(res.reason);
       cmdEl.focus();
@@ -228,6 +299,7 @@ function setupExtApps(root, extApps) {
     }
     nameEl.value = '';
     cmdEl.value = '';
+    if (targetEl) targetEl.value = TARGET.AUTO;
     notify('');
     render();
     nameEl.focus();

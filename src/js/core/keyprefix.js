@@ -23,6 +23,9 @@ const MAP = {
     o: 'open:app',
     r: 'open:reveal',
     a: 'open:with:ask',
+    // WSL 専用。非 WSL では「使えない」と理由を出す（黙って無反応にしない）。
+    w: 'open:windows',
+    e: 'open:explorer',
     1: 'open:with:1',
     2: 'open:with:2',
     3: 'open:with:3',
@@ -43,6 +46,9 @@ export const PREFIX_HINTS = {
   o: '開く: o=既定アプリ / r=ファイルマネージャ / 1-9=登録した外部アプリ / a=別のアプリ…',
 };
 
+/** WSL のときだけヒントに足す案内（非 WSL では出しても使えないので出さない）。 */
+const WSL_HINT_SUFFIX = { o: ' / w=Windows の既定アプリ / e=エクスプローラー' };
+
 /** key がプレフィックスのリーダーか。 */
 export function isPrefixLeader(key) {
   return (
@@ -58,7 +64,13 @@ export function resolvePrefixAction(prefix, key) {
   return m[key.toLowerCase()] || null;
 }
 
-/** プレフィックスのヒント文言。 */
-export function prefixHint(prefix) {
-  return PREFIX_HINTS[prefix] || '';
+/**
+ * プレフィックスのヒント文言。
+ * @param {string} prefix
+ * @param {{wsl?: boolean}} [opts] wsl:true で WSL 専用キーの案内を足す
+ */
+export function prefixHint(prefix, opts = {}) {
+  const base = PREFIX_HINTS[prefix] || '';
+  if (!base || !opts.wsl) return base;
+  return base + (WSL_HINT_SUFFIX[prefix] || '');
 }

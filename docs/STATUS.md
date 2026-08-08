@@ -4,11 +4,11 @@
 > リポジトリの現在地・コードマップ・決定事項・次の一手をまとめています。
 > 機能の追加・変更時は **このファイルも更新** してください（特に「実装ステータス」「次の一手」）。
 
-- **スナップショット日**: 2026-08-01
-- **基準コミット**: v0.4.15 リリース済み。以降 検索の高速化（名前のみ既定/除外/正規表現/キャンセル）とジャンプ修正を追加
+- **スナップショット日**: 2026-08-02
+- **基準コミット**: v0.4.19 リリース済み。以降 検索の高速化（名前のみ既定/除外/正規表現/キャンセル）・ジャンプ修正・**WSL から Windows 側アプリで開く（FR-13 拡張）** を追加
 - **現在のフェーズ**: **M2 ほぼ完了**（M1 完了済み）。FR-07/08/09/14/16/17/18 完了。二打鍵プレフィックス・ワークスペース・検索強化も実装。残: FR-16 +/−キー・FR-18 結果ストリーミング・動画プレビュー(将来)
 
-関連: [README](../README.md) / [要求分析](REQUIREMENTS.md) / [設計](DESIGN.md) / [ローカルビルド](BUILD.md) / [プレビュー](PREVIEW.md) / [ドラッグ＆ドロップ](DRAG-AND-DROP.md) / [詳細表示＆ソート](DETAIL-VIEW-SORT.md) / [Docker動作確認](DOCKER.md) / [コントリビューション](../CONTRIBUTING.md)
+関連: [README](../README.md) / [要求分析](REQUIREMENTS.md) / [設計](DESIGN.md) / [ローカルビルド](BUILD.md) / [プレビュー](PREVIEW.md) / [ドラッグ＆ドロップ](DRAG-AND-DROP.md) / [詳細表示＆ソート](DETAIL-VIEW-SORT.md) / [WSL連携](WSL.md) / [Docker動作確認](DOCKER.md) / [コントリビューション](../CONTRIBUTING.md)
 
 ---
 
@@ -53,10 +53,10 @@ make docker-check  # CI相当チェック
 
 ## 2. 品質ゲートの状態
 
-| 項目 | 状態（2026-07-27 実測） |
+| 項目 | 状態（2026-08-02 実測） |
 |------|------|
-| Vitest (JS) | ✅ 528 passed / 44 files |
-| cargo test (Rust) | ✅ 42 passed（places 7 + search 13 + 署名等の純粋ロジック含む） |
+| Vitest (JS) | ✅ 595 passed / 47 files |
+| cargo test (Rust) | ✅ 60 passed（places 7 + search 13 + wsl 18 + 署名等の純粋ロジック含む） |
 | ESLint | ✅ クリーン |
 | Prettier | ✅ クリーン |
 | build:frontend | ✅ 成功（成果物に新ロジックが含まれることを確認） |
@@ -109,15 +109,18 @@ make docker-check  # CI相当チェック
 | `core/dnd.js` | **D&D の判定（純粋）**。掴んだ対象・効果(copy/move)・不正ドロップの拒否。詳細: [DRAG-AND-DROP.md](DRAG-AND-DROP.md) |
 | `core/dragdrop.js` | **D&D の追跡（DOM）**。ポインタイベントで自作。`resolveDropTarget` は将来の OS ドロップでも再利用する。安全モードは拒否ゴースト＋トーストで示す |
 | `core/editmenu.js` | **メニューバー「編集」の項目（純粋）**。対象・宛先の有無で無効化を判定。app.js が状態と action を注入 |
+| `core/wsl.js` | **WSL から Windows 側で開く判断（純粋, FR-13 拡張）**。既定オープン先（設定・WSL では既定 Windows）／外部アプリの起動先 auto 判定（`.exe`・`C:\…`）／メニューのラベル／localStorage。起動そのものは Rust `wsl.rs`。詳細: [WSL.md](WSL.md) |
 
-テストは `src/js/__tests__/<name>.test.js` に対応（44ファイル）。
+テストは `src/js/__tests__/<name>.test.js` に対応（47ファイル）。
 
 ### バックエンド `src-tauri/src/`
 `lib.rs` に集約（ファイル操作系）。`places.rs`（FR-07 の場所検出）を分離済み。`main.rs` は薄いエントリ。
 
-- Tauri コマンド: `list_dir` / `home_dir` / `parent_dir` / `unique_name` / `copy_path` / `move_path` / `delete_to_trash` / `delete_permanent` / `rename_path` / `make_dir` / `read_preview` / `app_version` / `dir_signature` / `places::list_places` / `search::search_dir` / `search::cancel_search`
+- Tauri コマンド: `list_dir` / `home_dir` / `parent_dir` / `unique_name` / `copy_path` / `move_path` / `delete_to_trash` / `delete_permanent` / `rename_path` / `make_dir` / `read_preview` / `app_version` / `dir_signature` / `places::list_places` / `search::search_dir` / `search::cancel_search` / `wsl::wsl_info` / `wsl::windows_path` / `wsl::open_in_windows` / `wsl::reveal_in_windows`
+  - 登録漏れは `src/js/__tests__/commands.test.js` が検出する（backend.js の invoke 名 ⇄ `generate_handler!`）
 - テスト対象の純粋関数: `is_hidden_entry` / `read_dir_entries` / `target_path` / `unique_target_name` / `copy_recursive` / `remove_any`
 - **`search.rs`** (FR-18): `contains_match`/`snippet`/`build_matcher`（純粋・テスト済み）+ `search_dir_impl`（再帰走査: 名前一致＋本文一致(任意)、node_modules 等の除外、バイナリ/大サイズ/隠し除外、件数上限、`cancelled()` で中断）。`SearchState.epoch` によるキャンセル。コマンド `search_dir` / `cancel_search`
+- **`wsl.rs`** (FR-13 の WSL 拡張): `to_windows_path`（`/mnt/c/x`→`C:\x` / それ以外→`\\wsl.localhost\<distro>\x`）/ `windows_to_linux_path`（登録アプリの `C:\…` を exec 可能な形へ）/ `looks_like_wsl`・`interop_enabled_from`・`automount_root_from_mounts`（判定はすべて引数注入の純粋関数）。起動は interop で `explorer.exe` を spawn（終了コードは見ない・待たない）
 - **`places.rs`**: `build_places`（存在フィルタ+パス重複除去、注入で純粋テスト）/ `windows_drive_candidates`（A:〜Z: 生成）/ `standard_candidates`（dirs）/ `is_cloud_folder`・`cloud_places_from`（クラウド同期検出、純粋）/ `read_subdirs`（ボリューム/WSL 列挙、汎用）/ OS 別 `drive_candidates` / `wsl_places`（Win: `\\wsl$` → UNC）
 - 依存は最小（tauri / tauri-cli / plugin-dialog / opener / updater / process / serde / dirs / trash / **regex-lite**（FR-18 正規表現、軽量））
 
@@ -142,7 +145,7 @@ make docker-check  # CI相当チェック
 | FR-10 | 全機能キーボード到達 | M | ✅ | 網羅性点検を実施（2026-07-27）。コンテキストメニューを `Shift+F10`/`≣` で開いたとき先頭項目へフォーカスする（マウスと同じ即操作性）。同メニュー専用の「ファイルマネージャで表示・パス/名前コピー」の開き方をヘルプに明記。「同ペイン内フォルダへのドロップ」相当は Ctrl+C/Ctrl+X→Ctrl+V のファイルクリップボード（任意の現在地へ貼付）でキーボードからも到達可能にした。全機能キーボード到達を達成 |
 | FR-11 | マウス操作（D&D/右クリック/複数選択） | M | ✅ | 右クリックメニュー・ブレッドクラム移動・複数選択・D&D。お気に入りへのドロップは段階2。D&D 実装時に「右クリックで複数選択が畳まれる」既存バグも修正 |
 | FR-12 | パス入力/パンくず | S | ✅ | Ctrl+L で入力、ヘッダはブレッドクラム |
-| FR-13 | コンテキストメニュー + 外部アプリ連携 | M | ✅ | 右クリック / Shift+F10。既定アプリ・ファイルマネージャ表示は opener。ファイルのダブルクリック / Enter で既定アプリを開く。**任意アプリ**は「別のアプリで開く…」/ `o → 1..9` / `o → a`、登録は設定画面(core/extapps.js) |
+| FR-13 | コンテキストメニュー + 外部アプリ連携 | M | ✅ | 右クリック / Shift+F10。既定アプリ・ファイルマネージャ表示は opener。ファイルのダブルクリック / Enter で既定アプリを開く。**任意アプリ**は「別のアプリで開く…」/ `o → 1..9` / `o → a`、登録は設定画面(core/extapps.js)。**WSL 拡張**: WSL 上では Windows 側のアプリ/エクスプローラーでも開ける（既定オープン先を設定で選択・既定は Windows 側、`o → w`/`o → e`、外部アプリごとに起動先 auto/linux/windows、Windows パスのコピー）。`wsl.rs` + `core/wsl.js`、詳細: [WSL.md](WSL.md) |
 | FR-14 | セッション復元 | M/S | ✅ | ディレクトリ・アクティブペイン＋**各ペインのタブ構成（タブ dir 一覧・アクティブ index）**を localStorage で復元(core/session.js)。旧セッションとも後方互換 |
 | FR-15 | 隠しファイル表示トグル | M | ✅ | Ctrl+H、両ペイン共通 |
 | FR-18 | 現在ディレクトリ内検索(grep) | S | 🟡 | `Ctrl+F`・`/` で現在地配下を再帰検索。ファイル名＋テキスト内容一致を一覧、Enter でジャンプ（ファイルは親へ移動しカーソル）。トグル: **本文(`本文`, 既定OFF=名前のみで高速)・正規表現(`.*`)・大小区別(`Aa`)・隠し(`隠し`)**（正規表現は軽量 regex-lite）。**node_modules/target/.git 等の重いディレクトリは走査から除外**。バイナリ/大サイズ除外、件数上限500。世代(epoch)ベースの**キャンセル**（新検索/クローズで実行中を中断, `cancel_search`）。**結果は Tauri Channel でストリーミング**（見つかり次第 逐次表示）。`search.rs`+`searchview.js`。**残**: 並列走査・最小文字数等の微調整（任意） |
@@ -193,7 +196,8 @@ make docker-check  # CI相当チェック
 2. ~~**D&D のネイティブ実機確認**~~ ✅ 完了（2026-07-27）。`make dev` 起動で `Shift`+ドロップ＝移動・フォルダ行への吸い込み・複数選択ドラッグを目視確認。
 3. ~~**M1 完了の宣言**~~ ✅ **M1 完了（2026-07-27）**。優先度 M の FR/NFR は達成。
 4. **M2 進行中（実装済み）**: **FR-07 Places 完了**（ドライブ/クラウド同期/**WSL**/標準フォルダ）、**FR-16 完了**（フィット⇄実寸・連続ズーム・中央維持・パン）、プレビュー縦幅リサイズ、FR-17 履歴、**FR-08 タブ完了**、二打鍵プレフィックス（t/y/o）、**FR-18 検索（Ctrl+F・/, grep）**。**次**: (a) タブ構成をお気に入り保存(backlog `#idea`)、(b) FR-16 ＋−キー、(c) FR-18 真のキャンセル/正規表現、(d) `make release` 非対話化。Q4（お気に入りの永続化を localStorage→設定JSON）は残課題。
-5. モジュールを増やすたびに `__tests__` と Rust `#[cfg(test)]` を追加し、`make check` を green に保つ。コードを増やすにつれ DESIGN.md §2.2 の目標構成へ寄せる。
+5. **WSL → Windows 連携（FR-13 拡張, 2026-08-02 実装）**: 既定オープン先の設定・`o → w`/`o → e`・外部アプリごとの起動先・Windows パスのコピーまで実装済み（[WSL.md](WSL.md)）。起動経路は WSL 実機で確認済み（開く=`explorer.exe <path>` ✅ / 選択表示=空白なしは直接 ✅・**空白ありは直接だと別の場所が開くため PowerShell の Start-Process 経由** ✅）。**残**: Tana 本体を `make dev` で起動しての通し確認（メニュー・二打鍵・設定 UI）。
+6. モジュールを増やすたびに `__tests__` と Rust `#[cfg(test)]` を追加し、`make check` を green に保つ。コードを増やすにつれ DESIGN.md §2.2 の目標構成へ寄せる。
 
 ### バックログ（設計検討済み・未着手）
 - **お気に入りサイドバーへのドロップ**（D&D 段階2）: [DRAG-AND-DROP.md](DRAG-AND-DROP.md) §3。`resolveDropTarget` に `.fav-item` の当たり判定を足す。

@@ -1,7 +1,9 @@
 // extapps.js — 「別のアプリで開く」に使う外部アプリ一覧の真実源 (FR-13)
-// エントリ: { id, name, command }
+// エントリ: { id, name, command, target }
 //   name    : メニューに出す表示名（省略時は command をそのまま使う）
 //   command : 実行するプログラム。OS ごとの意味は下記。
+//   target  : 起動先 'auto' | 'linux' | 'windows'（WSL 用。既定は 'auto'）。
+//             判断は wsl.js の resolveAppTarget が持ち、ここは値を保持するだけ。
 // UI 参照用に一時 id を付与（favorites.js と同様、永続化はしない）。
 //
 // command に何を書けるか（tauri-plugin-opener → open クレートの実装より）:
@@ -11,6 +13,8 @@
 // いずれも「プログラムを1つ」渡すだけで、引数は付けられない（`code --wait` は不可）。
 // 空白は macOS の "Visual Studio Code" や Windows の "C:\Program Files\..." で
 // 正当に現れるので、空白では弾かない。
+
+import { APP_TARGETS, TARGET } from './wsl.js';
 
 const STORAGE_KEY = 'tana.extapps';
 
@@ -44,20 +48,30 @@ export function validateApp(raw) {
   return { ok: true };
 }
 
+/** 起動先を正規化する。未知の値・未指定は 'auto'（= 自動判定に任せる）。 */
+export function normalizeTarget(target) {
+  return APP_TARGETS.includes(target) ? target : TARGET.AUTO;
+}
+
 /**
  * 入力を保存できる形へ整える。妥当でなければ null。
- * @returns {{name: string, command: string}|null}
+ * @returns {{name: string, command: string, target: string}|null}
  */
 export function normalizeApp(raw) {
   if (!validateApp(raw).ok) return null;
   const command = String(raw.command).trim();
   const name = String((raw && raw.name) || '').trim() || command;
-  return { name, command };
+  return { name, command, target: normalizeTarget(raw && raw.target) };
 }
 
 /** 永続化用に id を除いた配列へ変換 */
 export function serialize(list) {
-  return (Array.isArray(list) ? list : []).map((a) => ({ name: a.name, command: a.command }));
+  return (Array.isArray(list) ? list : []).map((a) => ({
+    name: a.name,
+    command: a.command,
+    // 旧バージョンが書いた target 無しの値も読めるようにしてある（hydrate 側）
+    target: normalizeTarget(a.target),
+  }));
 }
 
 /** 保存値から妥当なものだけを取り出す（壊れた値・型違いは捨てる） */
@@ -123,6 +137,17 @@ export function createExtApps(initial) {
       list = [...list, entry];
       emit();
       return { ok: true, entry };
+    },
+    /** 起動先を変更する（WSL 用）。存在しない id・同値なら false。 */
+    setTarget(id, target) {
+      const t = normalizeTarget(target);
+      const i = list.findIndex((a) => a.id === id);
+      if (i < 0 || list[i].target === t) return false;
+      const next = list.slice();
+      next[i] = { ...next[i], target: t };
+      list = next;
+      emit();
+      return true;
     },
     /** 削除。存在しない id は false。 */
     remove(id) {

@@ -61,6 +61,16 @@ import {
   validateApp,
   QUICK_SLOTS,
 } from './core/extapps.js';
+import {
+  TARGET,
+  NO_WSL,
+  normalizeInfo,
+  resolveAppTarget,
+  resolveDefaultTarget,
+  openLabel,
+  loadStoredDefaultOpen,
+  storeDefaultOpen,
+} from './core/wsl.js';
 import { createFavoritesView } from './core/favoritesview.js';
 import { createPlacesView } from './core/placesview.js';
 import { createHelp } from './core/help.js';
@@ -83,6 +93,10 @@ import {
   isDesktop,
   readPreview,
   assetUrl,
+  wslInfo,
+  windowsPath,
+  openInWindows,
+  revealInWindows,
 } from './backend.js';
 
 const safemode = createSafeMode(MODE.SAFE);
@@ -97,6 +111,10 @@ const favorites = createFavorites(loadStoredFavorites());
 favorites.subscribe(() => storeFavorites(favorites.toJSON()));
 const extApps = createExtApps(loadStoredExtApps());
 extApps.subscribe(() => storeExtApps(extApps.list()));
+// WSL 連携 (FR-13 の WSL 拡張)。実体は init() で Rust に問い合わせて差し替える。
+// それまでは「使えない」= 従来どおり OS 既定の opener だけ、として振る舞う。
+let wsl = { ...NO_WSL };
+let wslDefaultOpen = loadStoredDefaultOpen();
 const fileOps = createFileOps({
   canMutate: () => safemode.canMutate(),
   backend: { copyPath, movePath, deleteToTrash, deletePermanent, uniqueName, renamePath, makeDir },
@@ -366,6 +384,13 @@ function runPrefixAction(action) {
       break;
     case 'open:with:ask':
       if (entry) openWithPrompt(entry.path);
+      break;
+    // WSL 専用の二打鍵。非 WSL では黙って無反応にせず理由を出す。
+    case 'open:windows':
+      if (entry) openOnWindows('open', entry.path);
+      break;
+    case 'open:explorer':
+      if (entry) openOnWindows('reveal', entry.path);
       break;
     default:
       // o → 1..9: 登録した外部アプリのスロット
@@ -750,24 +775,85 @@ async function copyText(text) {
 
 /**
  * OS の既定アプリで開く / ファイルマネージャで表示（デスクトップのみ）。
+ * WSL 上では Windows 側へも流せる（起動先の判断は core/wsl.js が持つ）。
  * @param {'open'|'reveal'} kind
  * @param {string} path
- * @param {string} [app] 指定するとこのアプリで開く（FR-13「別のアプリで開く」）。
+ * @param {{name?: string, command: string, target?: string}|string|null} [app]
+ *   指定するとこのアプリで開く（FR-13「別のアプリで開く」）。
  *   プログラムを1つ渡すだけで引数は付けられない（extapps.js のコメント参照）。
+ * @param {string} [forceTarget] TARGET.LINUX / TARGET.WINDOWS を明示する。
+ *   メニューの「〜（Windows）」項目のように、設定に関係なく起動先を固定したいとき用。
  */
-async function openWith(kind, path, app) {
+async function openWith(kind, path, app, forceTarget) {
   if (!path) return;
   if (!isDesktop()) {
     toast('デスクトップ版でのみ利用できます');
     return;
   }
+  const spec = typeof app === 'string' ? { command: app } : app || null;
+  const label = spec ? spec.name || spec.command : null;
+  const target =
+    forceTarget || (spec ? resolveAppTarget(spec, wsl) : resolveDefaultTarget(wslDefaultOpen, wsl));
   try {
+    if (target === TARGET.WINDOWS) {
+      // WSL → Windows。パス変換と explorer.exe 経由の起動は Rust 側 (wsl.rs)。
+      if (kind === 'reveal') await revealInWindows(path);
+      else await openInWindows(path, spec ? spec.command : null);
+      return;
+    }
     const opener = await import('@tauri-apps/plugin-opener');
     if (kind === 'reveal') await opener.revealItemInDir(path);
-    else await opener.openPath(path, app || undefined);
+    else await opener.openPath(path, spec ? spec.command : undefined);
   } catch (e) {
     // 既定アプリの失敗は従来の文言、アプリ指定時は「どのアプリで失敗したか」を出す。
-    toast(app ? describeAppError(app, e) : '開けませんでした: ' + (e && e.message ? e.message : e));
+    toast(
+      label ? describeAppError(label, e) : '開けませんでした: ' + (e && e.message ? e.message : e),
+    );
+  }
+}
+
+/**
+ * 「ファイルマネージャで表示」系のメニュー項目を作る。
+ * WSL では Linux 側（xdg 系）と Windows 側（エクスプローラー）の両方を並べる。
+ * @param {string} path @param {{currentDir?: boolean}} opts
+ */
+function revealMenuItems(path, opts = {}) {
+  const prefix = opts.currentDir ? '現在地を' : '';
+  const defTarget = resolveDefaultTarget(wslDefaultOpen, wsl);
+  const otherTarget = defTarget === TARGET.WINDOWS ? TARGET.LINUX : TARGET.WINDOWS;
+  const items = [
+    {
+      label: prefix + openLabel('reveal', defTarget, wsl.available),
+      action: () => openWith('reveal', path),
+    },
+  ];
+  if (wsl.available) {
+    items.push({
+      label: prefix + openLabel('reveal', otherTarget, true),
+      action: () => openWith('reveal', path, null, otherTarget),
+    });
+  }
+  return items;
+}
+
+/** 起動先を Windows 側に固定して開く（o → w / o → e）。 */
+function openOnWindows(kind, path) {
+  if (!wsl.available) {
+    toast('WSL 環境（Windows 連携が有効なとき）でのみ利用できます');
+    return;
+  }
+  openWith(kind, path, null, TARGET.WINDOWS);
+}
+
+/** Windows パスをクリップボードへ（WSL のときだけメニューに出す） */
+async function copyWindowsPath(path) {
+  if (!path) return;
+  try {
+    const win = await windowsPath(path);
+    if (win) await copyText(win);
+    else toast('Windows パスに変換できませんでした');
+  } catch (e) {
+    toast('Windows パスに変換できませんでした: ' + (e && e.message ? e.message : e));
   }
 }
 
@@ -782,7 +868,8 @@ async function openWithPrompt(path) {
     toast(v.reason || 'コマンドを入力してください');
     return;
   }
-  await openWith('open', path, app.command);
+  // target は 'auto'。`notepad.exe` のような指定は WSL なら Windows 側へ流れる。
+  await openWith('open', path, app);
 }
 
 /**
@@ -793,10 +880,14 @@ async function openWithPrompt(path) {
 function showOpenWithMenu(x, y, path, opts = {}) {
   const apps = extApps.list();
   const items = apps.map((a, i) => ({
-    label: a.name,
+    // WSL では同じ一覧に Linux 側と Windows 側が混ざるので、どちらで起動するかを見せる。
+    label:
+      wsl.available && resolveAppTarget(a, wsl) === TARGET.WINDOWS
+        ? `${a.name}（Windows）`
+        : a.name,
     // 1..9 は二打鍵 o → 数字 と同じスロット。10件目以降はメニューからのみ。
     shortcut: i < QUICK_SLOTS ? `o → ${i + 1}` : '',
-    action: () => openWith('open', path, a.command),
+    action: () => openWith('open', path, a),
   }));
   if (!items.length) {
     items.push({ label: '（登録された外部アプリはありません）', disabled: true });
@@ -817,7 +908,7 @@ function openWithSlot(path, slot) {
     toast(`${slot} 番に外部アプリが登録されていません（設定 → 外部アプリ）`);
     return;
   }
-  openWith('open', path, app.command);
+  openWith('open', path, app);
 }
 
 /**
@@ -846,11 +937,21 @@ function showEntryMenu(pane, info) {
     if (entry.is_dir) {
       items.push({ label: '開く', shortcut: 'Enter', action: () => navigateActive(entry.path) });
     } else {
+      // WSL では「Linux 側 / Windows 側」の両方を並べる。既定（Enter と同じ動き）が
+      // どちらかはラベルで分かるようにし、もう一方も 1 項目だけ添える。
+      const defTarget = resolveDefaultTarget(wslDefaultOpen, wsl);
+      const otherTarget = defTarget === TARGET.WINDOWS ? TARGET.LINUX : TARGET.WINDOWS;
       items.push({
-        label: '外部アプリで開く',
+        label: openLabel('open', defTarget, wsl.available),
         shortcut: 'Enter',
         action: () => openWith('open', entry.path),
       });
+      if (wsl.available) {
+        items.push({
+          label: openLabel('open', otherTarget, true),
+          action: () => openWith('open', entry.path, null, otherTarget),
+        });
+      }
       items.push({
         label: '別のアプリで開く…',
         // 同じ位置に一段掘り下げたメニューを出す（menu.js にサブメニューは無い）。
@@ -859,7 +960,7 @@ function showEntryMenu(pane, info) {
       });
     }
     items.push(
-      { label: 'ファイルマネージャで表示', action: () => openWith('reveal', entry.path) },
+      ...revealMenuItems(entry.path),
       { separator: true },
       {
         label: `反対のペインへコピー${suffix}`,
@@ -891,8 +992,12 @@ function showEntryMenu(pane, info) {
       { separator: true },
       { label: 'パスをコピー', action: () => copyText(entry.path) },
       { label: '名前をコピー', action: () => copyText(entry.name) },
-      { separator: true },
     );
+    // WSL では Windows 側に貼れる形（\\wsl.localhost\… / C:\…）も要る
+    if (wsl.available) {
+      items.push({ label: 'Windows パスをコピー', action: () => copyWindowsPath(entry.path) });
+    }
+    items.push({ separator: true });
   }
 
   items.push(
@@ -904,10 +1009,7 @@ function showEntryMenu(pane, info) {
     { label: 'ここをお気に入りに追加', shortcut: 'Ctrl+D', action: addCurrentToFavorites },
     { separator: true },
     { label: '現在地のパスをコピー', action: () => copyText(fp.getCurrentDir()) },
-    {
-      label: '現在地をファイルマネージャで表示',
-      action: () => openWith('reveal', fp.getCurrentDir()),
-    },
+    ...revealMenuItems(fp.getCurrentDir(), { currentDir: true }),
   );
 
   showMenu(x, y, items, { focusFirst: !!info.fromKeyboard });
@@ -921,6 +1023,13 @@ function openSettingsPanel() {
     getShowHidden: () => showHidden,
     setShowHidden,
     extApps,
+    wsl,
+    // 既定オープン（Enter / ダブルクリック）の行き先。WSL のときだけ設定に出す。
+    getDefaultOpen: () => resolveDefaultTarget(wslDefaultOpen, wsl),
+    setDefaultOpen: (v) => {
+      wslDefaultOpen = v;
+      storeDefaultOpen(v);
+    },
   });
 }
 
@@ -1518,7 +1627,7 @@ function onKeydown(e) {
   if (isPrefixLeader(e.key) && !isEditableTarget(e.target)) {
     e.preventDefault();
     pendingPrefix = e.key.toLowerCase();
-    toast(prefixHint(pendingPrefix));
+    toast(prefixHint(pendingPrefix, { wsl: wsl.available }));
     return;
   }
 
@@ -1647,6 +1756,15 @@ async function init() {
       .then((places) => placesView.render(places))
       .catch(() => placesView.render([]));
   }
+
+  // WSL 連携の可否を確認 (FR-13)。失敗しても「使えない」に倒すだけで起動は妨げない。
+  wslInfo()
+    .then((info) => {
+      wsl = normalizeInfo(info);
+    })
+    .catch(() => {
+      wsl = { ...NO_WSL };
+    });
 
   const addFolderBtn = document.getElementById('fav-add-folder');
   if (addFolderBtn) {

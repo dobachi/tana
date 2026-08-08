@@ -218,3 +218,62 @@ describe('外部アプリ セクション', () => {
     expect(document.querySelector('#setting-extapps-list').textContent).toContain('まだ登録');
   });
 });
+
+// --- WSL 連携（FR-13 の WSL 拡張） ---
+describe('WSL セクション', () => {
+  const rows = () => document.querySelectorAll('.extapp-row');
+  const WSL = { available: true, distro: 'Ubuntu-22.04' };
+
+  it('WSL でなければ WSL 用の UI は一切出ない', () => {
+    openSettings({ ...deps, extApps: createExtApps([{ name: 'A', command: 'a' }]) });
+    expect(document.querySelector('#setting-wsl-group')).toBeNull();
+    expect(document.querySelector('#setting-extapp-target')).toBeNull();
+    expect(rows()[0].querySelector('.extapp-target')).toBeNull();
+  });
+
+  it('WSL では既定オープンの行き先を選べ、現在値が入る', () => {
+    const setDefaultOpen = vi.fn();
+    openSettings({
+      ...deps,
+      wsl: WSL,
+      getDefaultOpen: () => 'linux',
+      setDefaultOpen,
+    });
+    const sel = document.querySelector('#setting-wsl-default');
+    expect(sel).toBeTruthy();
+    expect(sel.value).toBe('linux');
+    expect(document.querySelector('#setting-wsl-group').textContent).toContain('Ubuntu-22.04');
+
+    sel.value = 'windows';
+    sel.dispatchEvent(new Event('change'));
+    expect(setDefaultOpen).toHaveBeenCalledWith('windows');
+  });
+
+  it('WSL では各アプリに起動先の選択が付き、変更が反映される', () => {
+    const extApps = createExtApps([{ name: 'メモ帳', command: 'notepad.exe' }]);
+    openSettings({ ...deps, extApps, wsl: WSL });
+    const sel = rows()[0].querySelector('.extapp-target');
+    expect(sel).toBeTruthy();
+    expect(sel.value).toBe('auto'); // 既定は自動判定
+
+    sel.value = 'windows';
+    sel.dispatchEvent(new Event('change'));
+    expect(extApps.list()[0].target).toBe('windows');
+  });
+
+  it('WSL では起動先を指定して追加できる', () => {
+    const extApps = createExtApps();
+    openSettings({ ...deps, extApps, wsl: WSL });
+    document.querySelector('#setting-extapp-command').value = 'gimp';
+    document.querySelector('#setting-extapp-target').value = 'linux';
+    document.querySelector('#setting-extapp-add').click();
+    expect(extApps.list()[0].target).toBe('linux');
+    // 追加後は「自動」に戻る（前の指定が次の登録へ漏れない）
+    expect(document.querySelector('#setting-extapp-target').value).toBe('auto');
+  });
+
+  it('available:false の WSL 情報は「WSL でない」と同じ扱い', () => {
+    openSettings({ ...deps, extApps: createExtApps(), wsl: { available: false, distro: '' } });
+    expect(document.querySelector('#setting-wsl-group')).toBeNull();
+  });
+});

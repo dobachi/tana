@@ -59,4 +59,28 @@ describe('prefixHint', () => {
     for (const k of Object.keys(PREFIX_LEADERS)) expect(prefixHint(k)).toBeTruthy();
     expect(prefixHint('z')).toBe('');
   });
+
+  it('WSL のときだけ Windows 側のキーを案内する', () => {
+    expect(prefixHint('o')).not.toContain('Windows');
+    expect(prefixHint('o', { wsl: true })).toContain('Windows');
+    expect(prefixHint('o', { wsl: true })).toContain('エクスプローラー');
+    // WSL 専用キーが無いリーダーは文言が変わらない
+    expect(prefixHint('y', { wsl: true })).toBe(prefixHint('y'));
+    expect(prefixHint('z', { wsl: true })).toBe('');
+  });
+});
+
+describe('WSL 用の二打鍵 (o → w / o → e)', () => {
+  it('Windows 側で開く / エクスプローラーで表示 に解決する', () => {
+    expect(resolvePrefixAction('o', 'w')).toBe('open:windows');
+    expect(resolvePrefixAction('o', 'e')).toBe('open:explorer');
+    expect(resolvePrefixAction('o', 'W')).toBe('open:windows'); // 大文字でも引ける
+  });
+
+  it('既存の割り当てを奪っていない', () => {
+    expect(resolvePrefixAction('o', 'o')).toBe('open:app');
+    expect(resolvePrefixAction('o', 'r')).toBe('open:reveal');
+    expect(resolvePrefixAction('o', 'a')).toBe('open:with:ask');
+    expect(resolvePrefixAction('o', '1')).toBe('open:with:1');
+  });
 });

@@ -259,6 +259,12 @@ body[data-mode='operation'] .settings-panel {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 起動先（WSL のときだけ出る）。行内なので幅は中身なりに。 */
+.setting-group select.extapp-target {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 3px 6px;
+}
 .extapp-add input[type='text'] {
   flex: 1 1 50%;
   min-width: 0;

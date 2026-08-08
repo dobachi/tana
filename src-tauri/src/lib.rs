@@ -4,6 +4,7 @@ use serde::Serialize;
 
 mod places;
 mod search;
+mod wsl;
 
 /// ディレクトリ内の 1 エントリ（ファイル/フォルダ）
 #[derive(Debug, Serialize, PartialEq)]
@@ -449,7 +450,11 @@ pub fn run() {
             dir_signature,
             places::list_places,
             search::search_dir,
-            search::cancel_search
+            search::cancel_search,
+            wsl::wsl_info,
+            wsl::windows_path,
+            wsl::open_in_windows,
+            wsl::reveal_in_windows
         ])
         .run(tauri::generate_context!())
         .expect("error while running tana application");
