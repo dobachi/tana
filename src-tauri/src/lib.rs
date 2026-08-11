@@ -43,10 +43,22 @@ fn is_hidden_entry(name: &str, _meta: Option<&std::fs::Metadata>) -> bool {
     false
 }
 
+/// 相対パスをプロセスの cwd 基準の絶対パスへ直す（cwd が読めなければそのまま）。
+///
+/// エントリの `path` は `dir.join(name)` で作るので、dir が相対だとエントリまで
+/// 相対（`./reports/x.md`）になる。絶対パスを要求する経路（wsl.rs の Windows 連携）が
+/// そこで失敗するため、一覧を作る時点で絶対に寄せておく。
+/// 起動ディレクトリ側の解決は pathnav.js の resolveStartDir が担当（こちらは保険）。
+fn absolute_dir(path: &Path) -> PathBuf {
+    std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
 /// 指定ディレクトリのエントリ一覧を返す（フォルダ優先 → 名前順）。
 /// Tauri から切り離した純粋関数にしてユニットテスト可能にする。
 fn read_dir_entries(path: &Path) -> Result<Vec<DirEntry>, String> {
-    let read = std::fs::read_dir(path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    // エラー文言は呼び出し側が渡した綴りのまま返す（describeOpenError が先頭パスを剥がす）。
+    let base = absolute_dir(path);
+    let read = std::fs::read_dir(&base).map_err(|e| format!("{}: {}", path.display(), e))?;
     let mut entries: Vec<DirEntry> = Vec::new();
     for item in read {
         let item = match item {
@@ -111,6 +123,15 @@ fn dir_signature(path: String) -> u64 {
 #[tauri::command]
 fn home_dir() -> Option<String> {
     dirs::home_dir().map(|p| p.to_string_lossy().to_string())
+}
+
+/// プロセスの起動時カレントディレクトリを返す Tauri コマンド。
+/// CLI 引数の相対パス（`tana .`）を絶対パスへ直すために使う。
+#[tauri::command]
+fn current_dir() -> Option<String> {
+    std::env::current_dir()
+        .ok()
+        .map(|p| p.to_string_lossy().to_string())
 }
 
 /// アプリのバージョン（Cargo.toml の version）を返す Tauri コマンド。
@@ -437,6 +458,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_dir,
             home_dir,
+            current_dir,
             parent_dir,
             unique_name,
             copy_path,
@@ -487,6 +509,37 @@ mod tests {
     fn errors_on_missing_dir() {
         let result = read_dir_entries(Path::new("/no/such/path/tana-xyz"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn absolute_dir_keeps_absolute_and_resolves_relative() {
+        let abs = Path::new("/tmp/tana");
+        assert_eq!(absolute_dir(abs), PathBuf::from("/tmp/tana"));
+        let rel = absolute_dir(Path::new("sub/dir"));
+        assert!(rel.is_absolute());
+        assert!(rel.ends_with("sub/dir"));
+    }
+
+    #[test]
+    fn entries_of_relative_dir_have_absolute_paths() {
+        // cargo test の cwd はパッケージルート（src-tauri）なので "src" は必ずある。
+        // 相対 dir で一覧しても、エントリのパスは絶対（`./src/lib.rs` にならない）。
+        let entries = read_dir_entries(Path::new("./src")).unwrap();
+        assert!(!entries.is_empty());
+        for e in &entries {
+            assert!(
+                Path::new(&e.path).is_absolute() && !e.path.contains("/./"),
+                "relative entry path: {}",
+                e.path
+            );
+        }
+    }
+
+    #[test]
+    fn missing_relative_dir_error_keeps_given_spelling() {
+        // 文言の先頭は呼び出し側が渡した綴りのまま（describeOpenError の前提）。
+        let err = read_dir_entries(Path::new("./no-such-dir-tana")).unwrap_err();
+        assert!(err.starts_with("./no-such-dir-tana: "), "{err}");
     }
 
     #[test]

@@ -27,7 +27,12 @@ import { SORT_KEYS, SORT_LABELS } from './core/sort.js';
 import { loadSession, storeSession, createSessionSaver } from './core/session.js';
 import { createToast } from './core/toast.js';
 import { checkForUpdates } from './core/updater.js';
-import { resolveInputPath, describeOpenError, parentPath } from './core/pathnav.js';
+import {
+  resolveInputPath,
+  resolveStartDir,
+  describeOpenError,
+  parentPath,
+} from './core/pathnav.js';
 import { createSearch } from './core/searchview.js';
 import { createWorkspaces, loadStoredWorkspaces, storeWorkspaces } from './core/workspaces.js';
 import { createWorkspacesView } from './core/workspacesview.js';
@@ -76,6 +81,7 @@ import { createPlacesView } from './core/placesview.js';
 import { createHelp } from './core/help.js';
 import {
   homeDir,
+  currentDir,
   appVersion,
   getCliPath,
   listPlaces,
@@ -1830,11 +1836,15 @@ async function init() {
   initPreviewResize();
 
   // 起動ディレクトリ: CLI 引数 > セッション復元(FR-14) > ホーム
+  // `tana .` のような相対パスは cwd で解決してから読む。相対のまま読むと
+  // エントリのパスも相対になり、Windows 連携（FR-13）等が開けなくなる。
   const cli = await getCliPath();
   const home = (await homeDir()) || '.';
+  const cwd = (await currentDir()) || '';
+  const startDir = (dir) => resolveStartDir(dir, { home, cwd });
   const loadOr = async (fp, dir) => {
     try {
-      await fp.load(dir || home);
+      await fp.load(startDir(dir) || home);
     } catch {
       // 存在しなくなったパス等はホームへフォールバック（堅牢性）
       await fp.load(home);
@@ -1861,8 +1871,10 @@ async function init() {
     if (Array.isArray(savedTabs) && savedTabs.length > 1) {
       // 複数タブを復元。アクティブタブの dir は起動時にロード済みとは限らないので
       // 必要なら読み直す。存在しない dir は loadOr がホームへ倒す。
-      paneTabs[p] = createTabList(savedTabs[0]);
-      for (let i = 1; i < savedTabs.length; i++) paneTabs[p].add(savedTabs[i]);
+      // 相対パスで保存された古いセッションもここで絶対パスへ直す。
+      const dirs = savedTabs.map((d) => startDir(d) || home);
+      paneTabs[p] = createTabList(dirs[0]);
+      for (let i = 1; i < dirs.length; i++) paneTabs[p].add(dirs[i]);
       const idx = Math.min((session.activeTab && session.activeTab[p]) || 0, savedTabs.length - 1);
       paneTabs[p].activate(idx);
       const activeDir = paneTabs[p].active().dir;

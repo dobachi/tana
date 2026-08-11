@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   resolveInputPath,
+  resolveStartDir,
   pathSegments,
   normalizePath,
   normalizeSeparators,
@@ -32,6 +33,41 @@ describe('normalizePath', () => {
   it('根より上には登らない', () => {
     expect(normalizePath('/a/../../..')).toBe('/');
     expect(normalizePath('C:/a/../..')).toBe('C:/');
+  });
+});
+
+describe('resolveStartDir', () => {
+  const ctx = { home: '/home/u', cwd: '/home/u/docs' };
+
+  // 再発防止: `tana .` で起動するとエントリのパスまで相対（./reports/x.md）になり、
+  // Windows 側で開く経路が「絶対パスではありません」で失敗していた。
+  it('CLI の相対パスを cwd から解決する', () => {
+    expect(resolveStartDir('.', ctx)).toBe('/home/u/docs');
+    expect(resolveStartDir('./reports', ctx)).toBe('/home/u/docs/reports');
+    expect(resolveStartDir('reports/2026', ctx)).toBe('/home/u/docs/reports/2026');
+    expect(resolveStartDir('..', ctx)).toBe('/home/u');
+  });
+
+  it('~ をホームに展開する', () => {
+    expect(resolveStartDir('~/work', ctx)).toBe('/home/u/work');
+  });
+
+  // list_dir はネイティブ区切りで返すので、絶対パスの綴りは変えない
+  it('絶対パスは綴りを変えずそのまま返す', () => {
+    expect(resolveStartDir('/etc/nginx', ctx)).toBe('/etc/nginx');
+    expect(resolveStartDir('C:\\Users\\me', ctx)).toBe('C:\\Users\\me');
+    expect(resolveStartDir('\\\\wsl.localhost\\Ubuntu\\home', ctx)).toBe(
+      '\\\\wsl.localhost\\Ubuntu\\home',
+    );
+    expect(resolveStartDir('  /etc  ', ctx)).toBe('/etc');
+  });
+
+  it('空・非文字列・cwd 不明の相対パスは null', () => {
+    expect(resolveStartDir('', ctx)).toBeNull();
+    expect(resolveStartDir('   ', ctx)).toBeNull();
+    expect(resolveStartDir(null, ctx)).toBeNull();
+    expect(resolveStartDir(undefined, ctx)).toBeNull();
+    expect(resolveStartDir('sub', { home: '/home/u' })).toBeNull();
   });
 });
 

@@ -136,6 +136,11 @@ export async function homeDir() {
   return invoke('home_dir');
 }
 
+/** プロセスのカレントディレクトリを取得する (current_dir コマンド)。相対パス解決用 */
+export async function currentDir() {
+  return invoke('current_dir');
+}
+
 /** 起動時 CLI 引数 path（開くディレクトリ）を取得する。無ければ null */
 export async function getCliPath() {
   try {

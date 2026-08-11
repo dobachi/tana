@@ -80,6 +80,29 @@ export function resolveInputPath(input, ctx = {}) {
 }
 
 /**
+ * 起動時に受け取ったディレクトリ（CLI 引数 / セッション復元 / タブ復元）を絶対パスへ直す。
+ *
+ * `tana .` のように相対パスで起動されると、list_dir が返すエントリのパスまで
+ * 相対（`./reports/x.md`）になり、絶対パスを要求する経路——WSL から Windows 側で開く
+ * （wsl.rs の to_windows_path）——が「絶対パスではありません」で失敗する。
+ * 入口で cwd 基準に解決して、相対パスをアプリ内へ持ち込まない。
+ *
+ * 絶対パスは触らずそのまま返す（Windows の `\` 綴りを `/` に書き換えないため。
+ * list_dir はネイティブ区切りで返すので、カーソル位置の突き合わせに影響する）。
+ *
+ * @param {unknown} dir CLI 引数やセッションに入っていた文字列
+ * @param {{home?: string, cwd?: string}} [ctx]
+ * @returns {string|null} 絶対パス。空・解決できない場合は null
+ */
+export function resolveStartDir(dir, ctx = {}) {
+  if (typeof dir !== 'string') return null;
+  const raw = dir.trim();
+  if (!raw) return null;
+  if (isAbsolute(raw)) return raw;
+  return resolveInputPath(raw, ctx);
+}
+
+/**
  * 親ディレクトリのパスを返す（純粋）。ルート（"/" や "C:/"）は親なしで null。
  * ドライブ直下（"C:/a" → "C:/"）や POSIX ルート直下（"/a" → "/"）も扱う。
  * @param {string} path
