@@ -513,8 +513,15 @@ mod tests {
 
     #[test]
     fn absolute_dir_keeps_absolute_and_resolves_relative() {
-        let abs = Path::new("/tmp/tana");
-        assert_eq!(absolute_dir(abs), PathBuf::from("/tmp/tana"));
+        // 「既に絶対」の綴りは OS で違う。Windows の `/tmp/tana` はドライブが無いので
+        // 絶対ではなく、std::path::absolute がカレントドライブを補って `D:\tmp\tana`
+        // になる（CI の Windows ランナーで失敗した）。判定は OS ごとの絶対パスで行う。
+        #[cfg(unix)]
+        let abs = PathBuf::from("/tmp/tana");
+        #[cfg(windows)]
+        let abs = PathBuf::from(r"C:\tmp\tana");
+        assert!(abs.is_absolute());
+        assert_eq!(absolute_dir(&abs), abs);
         let rel = absolute_dir(Path::new("sub/dir"));
         assert!(rel.is_absolute());
         assert!(rel.ends_with("sub/dir"));
