@@ -4,6 +4,7 @@ use serde::Serialize;
 
 mod places;
 mod search;
+mod updater_env;
 mod wsl;
 
 /// ディレクトリ内の 1 エントリ（ファイル/フォルダ）
@@ -473,6 +474,7 @@ pub fn run() {
             places::list_places,
             search::search_dir,
             search::cancel_search,
+            updater_env::update_env,
             wsl::wsl_info,
             wsl::windows_path,
             wsl::open_in_windows,

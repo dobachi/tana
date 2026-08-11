@@ -89,7 +89,7 @@ make docker-check  # CI相当チェック
 | `core/help.js` | ショートカット一覧ヘルプ（`?` / `F1`） |
 | `core/toast.js` | トースト通知 |
 | `core/selection.js` | 複数選択のロジック（選択はパスの Set）。純粋関数のみ |
-| `core/updater.js` | 起動時の更新検知 + 手動チェック。純粋関数 `describeManualCheck` で判定だけを切り出し |
+| `core/updater.js` | 起動時の更新検知 + 手動チェック。純粋関数 `describeManualCheck` / `describeInstallPlan`（`update_env` を見てアプリ内更新か手動更新か）/ `describeInstallError` で判定だけを切り出し。適用できない環境（WSL の deb/rpm）ではボタンを「リリースページを開く」に差し替え、失敗時は理由を出したままにする |
 | `core/menu.js` | 汎用ドロップダウン/コンテキストメニュー（Fude から移植） |
 | `core/menubar.js` | メニューバー（Ctrl+Shift+B で開閉・既定は非表示・永続化） |
 | `core/settings.js` | 設定画面（テーマ/文字サイズ/隠しファイル）。即時反映・即時保存で Save ボタンは無し |
@@ -116,11 +116,12 @@ make docker-check  # CI相当チェック
 ### バックエンド `src-tauri/src/`
 `lib.rs` に集約（ファイル操作系）。`places.rs`（FR-07 の場所検出）を分離済み。`main.rs` は薄いエントリ。
 
-- Tauri コマンド: `list_dir` / `home_dir` / `parent_dir` / `unique_name` / `copy_path` / `move_path` / `delete_to_trash` / `delete_permanent` / `rename_path` / `make_dir` / `read_preview` / `app_version` / `dir_signature` / `places::list_places` / `search::search_dir` / `search::cancel_search` / `wsl::wsl_info` / `wsl::windows_path` / `wsl::open_in_windows` / `wsl::reveal_in_windows`
+- Tauri コマンド: `list_dir` / `home_dir` / `parent_dir` / `unique_name` / `copy_path` / `move_path` / `delete_to_trash` / `delete_permanent` / `rename_path` / `make_dir` / `read_preview` / `app_version` / `dir_signature` / `places::list_places` / `search::search_dir` / `search::cancel_search` / `updater_env::update_env` / `wsl::wsl_info` / `wsl::windows_path` / `wsl::open_in_windows` / `wsl::reveal_in_windows`
   - 登録漏れは `src/js/__tests__/commands.test.js` が検出する（backend.js の invoke 名 ⇄ `generate_handler!`）
 - テスト対象の純粋関数: `is_hidden_entry` / `read_dir_entries` / `target_path` / `unique_target_name` / `copy_recursive` / `remove_any`
 - **`search.rs`** (FR-18): `contains_match`/`snippet`/`build_matcher`（純粋・テスト済み）+ `search_dir_impl`（再帰走査: 名前一致＋本文一致(任意)、node_modules 等の除外、バイナリ/大サイズ/隠し除外、件数上限、`cancelled()` で中断）。`SearchState.epoch` によるキャンセル。コマンド `search_dir` / `cancel_search`
 - **`wsl.rs`** (FR-13 の WSL 拡張): `to_windows_path`（`/mnt/c/x`→`C:\x` / それ以外→`\\wsl.localhost\<distro>\x`）/ `windows_to_linux_path`（登録アプリの `C:\…` を exec 可能な形へ）/ `looks_like_wsl`・`interop_enabled_from`・`automount_root_from_mounts`（判定はすべて引数注入の純粋関数）。起動は interop で `explorer.exe` を spawn（終了コードは見ない・待たない）
+- **`updater_env.rs`**: アプリ内更新が完了できる環境かの判定。`bundle_type()`（deb/rpm は適用に root が要る）× `wsl::is_wsl()`（polkit のセッションが無く認証できない）で `can_install` を決め、コマンド `update_env` で返す。WSL の deb 版では updater が pkexec（コンソール）→ zenity（GUI）と 2 度パスワードを聞いた末に必ず失敗するため、その経路に入る前に手動更新へ誘導する
 - **`places.rs`**: `build_places`（存在フィルタ+パス重複除去、注入で純粋テスト）/ `windows_drive_candidates`（A:〜Z: 生成）/ `standard_candidates`（dirs）/ `is_cloud_folder`・`cloud_places_from`（クラウド同期検出、純粋）/ `read_subdirs`（ボリューム/WSL 列挙、汎用）/ OS 別 `drive_candidates` / `wsl_places`（Win: `\\wsl$` → UNC）
 - 依存は最小（tauri / tauri-cli / plugin-dialog / opener / updater / process / serde / dirs / trash / **regex-lite**（FR-18 正規表現、軽量））
 

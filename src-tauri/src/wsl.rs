@@ -204,15 +204,27 @@ fn read_first<'a>(paths: impl IntoIterator<Item = &'a str>) -> Option<String> {
         .find_map(|p| std::fs::read_to_string(p).ok())
 }
 
+/// WSL 上かどうか（interop の有無は問わない。プロセス内で一度だけ判定）。
+///
+/// interop の可否まで含む `detect()` とは分けてある。updater_env はここだけを見る
+/// ——「Windows アプリを起動できるか」と「polkit で認証できるか」は別の話なので。
+pub fn is_wsl() -> bool {
+    static IS_WSL: OnceLock<bool> = OnceLock::new();
+    *IS_WSL.get_or_init(|| {
+        let distro = std::env::var("WSL_DISTRO_NAME").unwrap_or_default();
+        let osrelease = std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default();
+        looks_like_wsl(Some(&distro), &osrelease)
+    })
+}
+
 /// WSL 連携の可否を調べる（プロセス内で一度だけ）。
 fn detect() -> &'static WslInfo {
     static INFO: OnceLock<WslInfo> = OnceLock::new();
     INFO.get_or_init(|| {
-        let distro = std::env::var("WSL_DISTRO_NAME").unwrap_or_default();
-        let osrelease = std::fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default();
-        if !looks_like_wsl(Some(&distro), &osrelease) {
+        if !is_wsl() {
             return WslInfo::default();
         }
+        let distro = std::env::var("WSL_DISTRO_NAME").unwrap_or_default();
         let binfmt = read_first([
             "/proc/sys/fs/binfmt_misc/WSLInterop",
             "/proc/sys/fs/binfmt_misc/WSLInterop-late",

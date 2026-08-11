@@ -81,6 +81,14 @@ export async function cancelSearch() {
   return invoke('cancel_search');
 }
 
+/**
+ * アプリ内更新を完了できる環境かを問い合わせる (update_env コマンド)。
+ * Tauri 不在（テスト/ブラウザ）では null。判定は updater_env.rs 側。
+ */
+export async function updateEnv() {
+  return invoke('update_env');
+}
+
 // ===== WSL 連携 (FR-13 の WSL 拡張) =====
 
 /**
