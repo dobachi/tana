@@ -280,7 +280,7 @@ async function load(entry) {
 |---|---|---|
 | `image.js` | 画像 | `<img src={convertFileSrc(path)}>`。等倍 / フィット切替、寸法をステータス表示。SVG は §9 の通り sandbox iframe |
 | `text.js` | プレーンテキスト | `textContent` に流すだけ(`innerHTML` は使わない)。行番号なし。切り詰め時は末尾に「先頭 256KB のみ表示」バナー |
-| `markdown.js` | Markdown | markdown-it。**HTML 無効 + サニタイズ**(§9)。相対パス画像は `convertFileSrc` で解決 |
+| `markdown.js` | Markdown | markdown-it。**HTML 無効 + サニタイズ**(§9)。画像は `src` を入れずに描き、`core/mdimages.js` が md ファイル基準で解決（ローカルは `convertFileSrc`、リモートは取り寄せた写し。外部 URL は出さない。1 枚ずつ最大 30 枚） |
 | `meta.js` | ディレクトリ / 未対応 / 上限超過 / エラー | 名前・種別・サイズ・更新日時・パスのカード表示 |
 
 `meta.js` は最軽量なので `features/preview/` 内でも最初に import される。これが PV-5(必ず何か出す)を担保する。

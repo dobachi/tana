@@ -5,6 +5,7 @@
 
 import { KIND, LIMITS, detectKind, maxBytesFor } from './previewkind.js';
 import { isRemote } from './remotepath.js';
+import { resolveMarkdownImages } from './mdimages.js';
 
 /** リモートの画像は手元へ取得してから表示する。回線を占有しないよう大きさに上限を設ける。 */
 export const MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -129,6 +130,11 @@ export function createPreview(deps) {
         if (gen !== generation) return;
         M.renderMarkdown(container, { data }, doc);
         info(KIND.MARKDOWN, data, null);
+        const mdPath = entry.path;
+        resolveMarkdownImages(container, mdPath, {
+          toSrc: (p) => (backend.previewSrc ? backend.previewSrc(p) : backend.assetUrl(p)),
+          isCurrent: () => gen === generation,
+        }).catch(() => {});
       } else {
         R.renderText(container, { data }, doc);
         info(KIND.TEXT, data, null);

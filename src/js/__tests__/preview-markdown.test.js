@@ -32,3 +32,15 @@ describe('renderMarkdown (jsdom)', () => {
     expect(c.querySelector('.preview-truncated')).not.toBeNull();
   });
 });
+
+describe('renderMarkdown の画像', () => {
+  it('src を入れず data-md-src に参照を残す（相対 URL をアプリ内として読ませない）', () => {
+    const c = document.createElement('div');
+    renderMarkdown(c, { data: { text: '![図](img/a.png "t")' } }, document);
+    const img = c.querySelector('img');
+    expect(img.getAttribute('src')).toBeNull();
+    expect(img.getAttribute('data-md-src')).toBe('img/a.png');
+    expect(img.getAttribute('alt')).toBe('図');
+    expect(img.getAttribute('title')).toBe('t');
+  });
+});

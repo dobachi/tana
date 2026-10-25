@@ -1397,6 +1397,13 @@ body[data-mode='operation'] .mode-indicator {
   max-width: 100%;
   height: auto;
 }
+/* 参照先が無い・外部 URL などで表示しない画像は、点線の枠だけ残す（alt はツールチップ） */
+.preview-markdown img.md-img-missing {
+  display: inline-block;
+  min-width: 1.2em;
+  min-height: 1.2em;
+  outline: 1px dashed var(--border);
+}
 .preview-markdown table {
   border-collapse: collapse;
 }

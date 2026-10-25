@@ -17,6 +17,18 @@ function getMd() {
       typographer: true,
       breaks: true,
     });
+    // 画像は src を入れずに描く。参照先は md ファイル基準で core/mdimages.js が後から解決する
+    // （そのまま src にすると WebView が相対 URL をアプリ内として読みに行く）
+    const image = md.renderer.rules.image;
+    md.renderer.rules.image = (tokens, idx, options, env, self) => {
+      const t = tokens[idx];
+      const i = t.attrIndex('src');
+      if (i >= 0) {
+        t.attrPush(['data-md-src', t.attrs[i][1]]);
+        t.attrs.splice(i, 1);
+      }
+      return image(tokens, idx, options, env, self);
+    };
   }
   return md;
 }

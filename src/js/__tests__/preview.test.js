@@ -279,3 +279,34 @@ describe('createPreview — close', () => {
     expect(R.renderText).not.toHaveBeenCalled();
   });
 });
+
+describe('Markdown 中の画像 (FR-09, FR-20)', () => {
+  it('リモートの md は相手側の画像を previewSrc で取り寄せて src に入れる', async () => {
+    const container = document.createElement('div');
+    const previewSrc = vi.fn(async (p) => `asset://local/${p}`);
+    const M = {
+      renderMarkdown: vi.fn((c) => {
+        c.innerHTML = '<div class="preview-markdown"><img data-md-src="img/a.png" alt=""></div>';
+      }),
+    };
+    const preview = createPreview({
+      backend: {
+        readPreview: vi.fn(async () => ({ text: '![](img/a.png)', sniff: [33] })),
+        assetUrl: vi.fn(),
+        previewSrc,
+      },
+      getContainer: () => container,
+      loadRenderers: async () => makeRenderers(),
+      loadMarkdown: async () => M,
+      doc: document,
+      scheduler: makeScheduler(),
+    });
+    preview.setTarget({ name: 'r.md', path: 'sftp://k16/home/u/r.md', size: 20, is_dir: false });
+    preview.open();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(previewSrc).toHaveBeenCalledWith('sftp://k16/home/u/img/a.png');
+    expect(container.querySelector('img').getAttribute('src')).toBe(
+      'asset://local/sftp://k16/home/u/img/a.png',
+    );
+  });
+});
