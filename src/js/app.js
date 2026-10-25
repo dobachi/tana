@@ -1419,7 +1419,10 @@ async function pollPaneOnce(p) {
   if (sig !== polledSig[p]) {
     polledSig[p] = sig;
     await fp.reload(); // カーソル/選択は保持される
-    if (p === panes.getActive()) updateStatus();
+    if (p === panes.getActive()) {
+      updateStatus();
+      preview.setTarget(fp.getCursorEntry()); // 表示中のファイルが変わっていれば読み直す
+    }
   }
 }
 
@@ -1438,7 +1441,10 @@ function reloadActivePane() {
   if (!fp || !fp.getCurrentDir()) return;
   polledDir[panes.getActive()] = null; // 次のポーリングで基準化し直す
   fp.reload().then(() => {
-    if (fp === activeFilePane()) updateStatus();
+    if (fp === activeFilePane()) {
+      updateStatus();
+      preview.setTarget(fp.getCursorEntry());
+    }
   });
 }
 
@@ -1758,8 +1764,8 @@ function onKeydown(e) {
     previewPlacement.toggle();
     return;
   }
-  // 手動更新: Ctrl+R（webview の再読込を奪う。自動更新の即時版, FR-19）
-  if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.code === 'KeyR' || e.key.toLowerCase() === 'r')) {
+  // 手動更新: Ctrl+R / Ctrl+Shift+R（webview の再読込・強制再読込を奪う。自動更新の即時版, FR-19）
+  if (e.ctrlKey && !e.altKey && (e.code === 'KeyR' || e.key.toLowerCase() === 'r')) {
     e.preventDefault();
     reloadActivePane();
     return;

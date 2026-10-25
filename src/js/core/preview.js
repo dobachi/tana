@@ -29,6 +29,11 @@ const NOTE = {
  * @param {typeof LIMITS} [deps.limits]
  * @param {{set:Function, clear:Function}} [deps.scheduler] タイマ（テスト注入用）
  */
+/** 描画済みかを見分ける鍵。外部で書き換わったファイルは更新日時かサイズが変わる。 */
+function renderKey(entry) {
+  return `${entry.path}\u0000${entry.size ?? ''}\u0000${entry.modified ?? ''}`;
+}
+
 export function createPreview(deps) {
   const {
     backend,
@@ -45,7 +50,7 @@ export function createPreview(deps) {
 
   let opened = false;
   let target = null; // 直近の setTarget 対象（未オープン時も記録）
-  let renderedPath = null; // 現在描画中のパス（同一パス再読込の抑止）
+  let renderedPath = null; // 現在描画中の対象（パス+サイズ+更新日時。同じなら再読込しない）
   let generation = 0;
   let timer = null;
 
@@ -86,7 +91,7 @@ export function createPreview(deps) {
         if (isRemote(entry.path) && entry.size > MAX_REMOTE_IMAGE_BYTES) {
           R.renderPlaceholder(container, { kind: KIND.TOO_LARGE, note: NOTE[KIND.TOO_LARGE] }, doc);
           info(KIND.TOO_LARGE, null, null);
-          renderedPath = entry.path;
+          renderedPath = renderKey(entry);
           return;
         }
         const src = backend.previewSrc
@@ -96,7 +101,7 @@ export function createPreview(deps) {
         R.renderImage(container, { entry, src }, doc);
         if (onImage) onImage(container);
         info(KIND.IMAGE, null, src);
-        renderedPath = entry.path;
+        renderedPath = renderKey(entry);
         return;
       }
       if (
@@ -108,7 +113,7 @@ export function createPreview(deps) {
       ) {
         R.renderPlaceholder(container, { kind: kind1, note: NOTE[kind1] }, doc);
         info(kind1, null, null);
-        renderedPath = entry.path;
+        renderedPath = renderKey(entry);
         return;
       }
 
@@ -118,7 +123,7 @@ export function createPreview(deps) {
       if (!data) {
         R.renderPlaceholder(container, { kind: KIND.BINARY, note: '読み取れませんでした' }, doc);
         info(KIND.BINARY, null, null);
-        renderedPath = entry.path;
+        renderedPath = renderKey(entry);
         return;
       }
       const kind2 = detectKind(entry, data.sniff, limits);
@@ -139,12 +144,12 @@ export function createPreview(deps) {
         R.renderText(container, { data }, doc);
         info(KIND.TEXT, data, null);
       }
-      renderedPath = entry.path;
+      renderedPath = renderKey(entry);
     } catch {
       if (gen !== generation) return;
       R.renderPlaceholder(container, { kind: KIND.BINARY, note: '読み取れませんでした' }, doc);
       info(KIND.BINARY, null, null);
-      renderedPath = entry.path;
+      renderedPath = renderKey(entry);
     }
   }
 
@@ -162,7 +167,8 @@ export function createPreview(deps) {
       target = entry || null;
       if (!opened) return;
       // 同一パスへの再指定は無視（同じ場所での選択トグル等で無駄に再読しない）
-      if (target && target.path === renderedPath) return;
+      // 同じファイルでも中身が変わっていれば（サイズ/更新日時）読み直す (FR-19)
+      if (target && renderKey(target) === renderedPath) return;
       scheduleLoad();
     },
     open() {

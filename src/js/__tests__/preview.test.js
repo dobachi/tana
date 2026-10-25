@@ -228,6 +228,22 @@ describe('createPreview — debounce & dedupe', () => {
     preview.setTarget(textFile); // same path
     expect(scheduler.hasPending()).toBe(false);
   });
+
+  it('同じパスでも外部で書き換わった（サイズ/更新日時が違う）なら読み直す (FR-19)', async () => {
+    const { preview, readPreview, scheduler } = setup();
+    preview.setTarget({ ...textFile, modified: 100 });
+    preview.open();
+    await flushAll();
+    preview.setTarget({ ...textFile, modified: 100 }); // 再読込しても変化なし
+    expect(scheduler.hasPending()).toBe(false);
+    preview.setTarget({ ...textFile, modified: 200 });
+    expect(scheduler.hasPending()).toBe(true);
+    scheduler.flush();
+    await flushAll();
+    expect(readPreview).toHaveBeenCalledTimes(2);
+    preview.setTarget({ ...textFile, size: 99, modified: 200 });
+    expect(scheduler.hasPending()).toBe(true);
+  });
 });
 
 describe('createPreview — meta routing', () => {
