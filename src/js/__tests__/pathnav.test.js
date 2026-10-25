@@ -260,3 +260,33 @@ describe('describeOpenError', () => {
     );
   });
 });
+
+describe('リモートの場所 sftp://（FR-20）', () => {
+  it('resolveInputPath: sftp:// はそのまま整える（~ は残す）', () => {
+    expect(resolveInputPath(' sftp://k16/a/../b ')).toBe('sftp://k16/b');
+    expect(resolveInputPath('sftp://k16')).toBe('sftp://k16');
+    expect(resolveInputPath('"sftp://k16/~/x"')).toBe('sftp://k16/~/x');
+    expect(resolveInputPath('sftp://-oX/')).toBeNull();
+  });
+  it('resolveInputPath: リモートにいるときの相対入力はその場所基準', () => {
+    const ctx = { home: '/home/me', cwd: 'sftp://k16/srv/app' };
+    expect(resolveInputPath('logs', ctx)).toBe('sftp://k16/srv/app/logs');
+    expect(resolveInputPath('../etc', ctx)).toBe('sftp://k16/srv/etc');
+    // ~ と絶対パスは手元
+    expect(resolveInputPath('~', ctx)).toBe('/home/me');
+    expect(resolveInputPath('/tmp', ctx)).toBe('/tmp');
+  });
+  it('resolveStartDir: セッションに残ったリモートはそのまま', () => {
+    expect(resolveStartDir('sftp://k16/home/u', { cwd: '/x' })).toBe('sftp://k16/home/u');
+  });
+  it('parentPath / pathSegments はリモートの規則で', () => {
+    expect(parentPath('sftp://k16/a/b')).toBe('sftp://k16/a');
+    expect(parentPath('sftp://k16/')).toBeNull();
+    expect(pathSegments('sftp://k16/a').map((s) => s.name)).toEqual(['k16:', 'a']);
+  });
+  it('describeOpenError: host:path で示し、Rust の「uri: 理由」から理由を取り出す', () => {
+    expect(describeOpenError('sftp://k16/x', 'sftp://k16/x: 見つかりません')).toBe(
+      '開けませんでした: k16:/x（見つかりません）',
+    );
+  });
+});

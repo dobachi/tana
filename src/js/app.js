@@ -77,6 +77,16 @@ import {
   storeDefaultOpen,
 } from './core/wsl.js';
 import { createFavoritesView } from './core/favoritesview.js';
+import {
+  isRemote,
+  remoteHost,
+  remoteLabel,
+  needsResolve,
+  readOnlyHostAmong,
+  readOnlyMessage,
+} from './core/remotepath.js';
+import { createRemotes, loadStoredRemotes, storeRemotes } from './core/remotes.js';
+import { createRemoteView } from './core/remoteview.js';
 import { createPlacesView } from './core/placesview.js';
 import { createHelp } from './core/help.js';
 import {
@@ -99,6 +109,14 @@ import {
   isDesktop,
   readPreview,
   assetUrl,
+  previewSrc,
+  listDir,
+  remoteDisconnect,
+  remoteSessions,
+  remoteSetWritable,
+  remoteHosts,
+  remoteResolve,
+  remoteFetch,
   wslInfo,
   windowsPath,
   openInWindows,
@@ -121,6 +139,13 @@ extApps.subscribe(() => storeExtApps(extApps.list()));
 // それまでは「使えない」= 従来どおり OS 既定の opener だけ、として振る舞う。
 let wsl = { ...NO_WSL };
 let wslDefaultOpen = loadStoredDefaultOpen();
+// リモート接続 (FR-20)。最近の接続先は保存、書き込み許可は保存しない（既定は閲覧のみ）。
+const remotes = createRemotes(loadStoredRemotes());
+remotes.subscribe(() => {
+  storeRemotes(remotes.toJSON());
+  syncPaneRemote(PANE.LEFT);
+  syncPaneRemote(PANE.RIGHT);
+});
 const fileOps = createFileOps({
   canMutate: () => safemode.canMutate(),
   backend: { copyPath, movePath, deleteToTrash, deletePermanent, uniqueName, renamePath, makeDir },
@@ -129,6 +154,12 @@ const fileOps = createFileOps({
   confirm: confirmDialog,
   toast,
   refresh: refreshPanes,
+  // 閲覧のみのリモート接続へは書き込まない（安全モードとは別のゲート, FR-20）
+  writeBlocked: (paths) => {
+    const host = readOnlyHostAmong(paths, remotes.isWritable);
+    return host ? readOnlyMessage(host) : null;
+  },
+  noTrash: (entry) => isRemote(entry.path),
 });
 
 // ファイルクリップボード (FR-02): Ctrl+C コピー / Ctrl+X 切り取り / Ctrl+V 貼り付け。
@@ -161,6 +192,12 @@ const paneTabs = { left: null, right: null };
 
 function tabLabel(dir) {
   if (!dir) return '—';
+  if (isRemote(dir)) {
+    // リモートは接続先を前に付けて手元のタブと見分ける（k16:notes）
+    const name = remoteLabel(dir).split('/').filter(Boolean).pop();
+    const host = remoteHost(dir);
+    return name && name !== `${host}:` ? `${host}:${name}` : `${host}:/`;
+  }
   const base = dir.split(/[/\\]/).filter(Boolean).pop();
   return base || dir; // ドライブ直下やルートは dir をそのまま出す
 }
@@ -391,6 +428,9 @@ function runPrefixAction(action) {
     case 'open:with:ask':
       if (entry) openWithPrompt(entry.path);
       break;
+    case 'open:remote':
+      openRemoteView();
+      break;
     // WSL 専用の二打鍵。非 WSL では黙って無反応にせず理由を出す。
     case 'open:windows':
       if (entry) openOnWindows('open', entry.path);
@@ -465,6 +505,58 @@ const workspacesView = createWorkspacesView({
   onOpen: (ws) => applyWorkspace(ws),
 });
 
+// リモート接続画面 (FR-20)。開く/切断/書き込み許可は Rust remote.rs へ。
+const remoteView = createRemoteView({
+  remotes,
+  getConfiguredHosts: remoteHosts,
+  getSessions: remoteSessions,
+  onOpen: async (uri, { host, writable }) => {
+    await remoteSetWritable(host, writable);
+    remotes.setWritable(host, writable);
+    const target = needsResolve(uri) ? await remoteResolve(uri) : uri;
+    const fp = activeFilePane();
+    if (!fp) return;
+    try {
+      await fp.load(target);
+    } catch (e) {
+      throw new Error(describeOpenError(target, e), { cause: e });
+    }
+    remotes.touch(host, target);
+    focusActivePane();
+    updateStatus();
+  },
+  onDisconnect: async (host) => {
+    await remoteDisconnect(host);
+    // 切断した接続先を表示しているペインは手元へ戻す（自動更新で張り直さないため）
+    const home = (await homeDir()) || '.';
+    for (const p of [PANE.LEFT, PANE.RIGHT]) {
+      const fp = filePanes[p];
+      if (fp && remoteHost(fp.getCurrentDir()) === host) await fp.load(home).catch(() => {});
+    }
+  },
+  onSetWritable: async (host, on) => {
+    await remoteSetWritable(host, on);
+    remotes.setWritable(host, on);
+  },
+});
+
+/** リモート接続画面を開く。アクティブペインがリモートなら、その接続先と場所で始める。 */
+function openRemoteView() {
+  const dir = activeFilePane()?.getCurrentDir();
+  const host = remoteHost(dir);
+  remoteView.open(host ? { host, path: remoteLabel(dir).slice(host.length + 1) } : {});
+}
+
+/** ペインがリモートを表示しているかを見た目に反映する（接続先の色・閲覧のみの印）。 */
+function syncPaneRemote(p) {
+  const el = paneEl(p);
+  const fp = filePanes[p];
+  if (!el || !fp) return;
+  const host = remoteHost(fp.getCurrentDir());
+  el.classList.toggle('pane-remote', !!host);
+  el.classList.toggle('pane-remote-ro', !!host && !remotes.isWritable(host));
+}
+
 /** 現在の両ペインのタブ構成をスナップショットにする。 */
 function captureWorkspaceSnapshot() {
   const dirs = (p) => (paneTabs[p] ? paneTabs[p].list().map((t) => t.dir) : []);
@@ -532,7 +624,7 @@ const previewPlacement = createPreviewPlacement(loadStoredPlacement());
 // プレビュー画像の表示モード (FR-16): 既定フィット、クリックで実寸切替。
 const previewZoom = createPreviewZoom();
 const preview = createPreview({
-  backend: { readPreview, assetUrl },
+  backend: { readPreview, assetUrl, previewSrc },
   getContainer: () => document.getElementById('preview-content'),
   getInfoContainer: () => document.getElementById('preview-info'),
   onImage: (container) => wireImageZoom(container),
@@ -749,7 +841,7 @@ function syncTheme(t) {
 async function navigatePane(pane, value, o = {}) {
   const fp = filePanes[pane];
   if (!fp) return;
-  const target = o.raw
+  let target = o.raw
     ? resolveInputPath(value, { home: await homeDir(), cwd: fp.getCurrentDir() })
     : value;
   if (!target) {
@@ -757,7 +849,10 @@ async function navigatePane(pane, value, o = {}) {
     return;
   }
   try {
+    // `sftp://k16` や `sftp://k16/~/x` は接続してから絶対パスへ（FR-20）
+    if (needsResolve(target)) target = await remoteResolve(target);
     await fp.load(target);
+    if (isRemote(target)) remotes.touch(remoteHost(target), target);
     panes.setActive(pane);
     focusActivePane();
     updateStatus();
@@ -796,6 +891,22 @@ async function openWith(kind, path, app, forceTarget) {
     toast('デスクトップ版でのみ利用できます');
     return;
   }
+  // リモート (FR-20): 手元の一時フォルダへ取得して、その写しを開く。
+  // 書き戻しはしないので、その旨を知らせる。
+  const remote = isRemote(path);
+  if (remote) {
+    if (kind === 'reveal') {
+      toast('リモートの場所はファイルマネージャで表示できません');
+      return;
+    }
+    toast(`${remoteLabel(path)} を取得しています…`);
+    try {
+      path = await remoteFetch(path);
+    } catch (e) {
+      toast('取得できませんでした: ' + (e && e.message ? e.message : e));
+      return;
+    }
+  }
   const spec = typeof app === 'string' ? { command: app } : app || null;
   const label = spec ? spec.name || spec.command : null;
   const target =
@@ -810,6 +921,7 @@ async function openWith(kind, path, app, forceTarget) {
     const opener = await import('@tauri-apps/plugin-opener');
     if (kind === 'reveal') await opener.revealItemInDir(path);
     else await opener.openPath(path, spec ? spec.command : undefined);
+    if (remote) toast('一時コピーを開きました（保存しても相手には戻りません）');
   } catch (e) {
     // 既定アプリの失敗は従来の文言、アプリ指定時は「どのアプリで失敗したか」を出す。
     toast(
@@ -1060,6 +1172,7 @@ function buildMenuDefinition() {
       items: () => [
         { label: 'お気に入りに現在地を追加', shortcut: 'Ctrl+D', action: addCurrentToFavorites },
         { label: 'ワークスペース…（タブ構成の保存/復元）', action: () => workspacesView.open() },
+        { label: 'リモート接続…（SSH / SFTP）', shortcut: 'o → s', action: openRemoteView },
         { separator: true },
         { label: '終了', action: () => window.close() },
       ],
@@ -1218,7 +1331,7 @@ function updateStatus(info) {
   const dir = info ? info.dir : fp && fp.getCurrentDir();
   const entry = info ? info.entry : fp && fp.getCursorEntry();
   const count = info ? info.count : fp && fp.getCount();
-  if (pathEl) pathEl.textContent = dir || '';
+  if (pathEl) pathEl.textContent = isRemote(dir) ? remoteLabel(dir) : dir || '';
   if (selEl) {
     const name = entry ? entry.name : '';
     const picked =
@@ -1244,15 +1357,25 @@ const AUTO_REFRESH_MS = 1500;
 const polledDir = { left: null, right: null }; // 前回ポーリング時の dir
 const polledSig = { left: null, right: null }; // 前回の署名
 
+// リモート (FR-20) は回線越しに一覧を取るので間隔を空け、前回の問い合わせが
+// 返るまで次を出さない（回線断のとき ssh の起動が積み重ならないように）。
+const REMOTE_POLL_EVERY = 4; // AUTO_REFRESH_MS の何回に 1 回か（= 6 秒）
+let pollTick = 0;
+const polling = { left: false, right: false };
+
 async function pollPaneOnce(p) {
   const fp = filePanes[p];
   const dir = fp && fp.getCurrentDir();
-  if (!dir) return;
+  if (!dir || polling[p]) return;
+  if (isRemote(dir) && pollTick % REMOTE_POLL_EVERY !== 0) return;
   let sig;
+  polling[p] = true;
   try {
     sig = await dirSignature(dir);
   } catch {
     return; // 取得失敗（消えた等）は次回に任せる
+  } finally {
+    polling[p] = false;
   }
   if (fp.getCurrentDir() !== dir) return; // ポーリング中に移動した
   if (polledDir[p] !== dir) {
@@ -1271,6 +1394,7 @@ async function pollPaneOnce(p) {
 function startAutoRefresh() {
   setInterval(() => {
     if (typeof document !== 'undefined' && document.hidden) return; // 非表示中は休む
+    pollTick += 1;
     pollPaneOnce(PANE.LEFT);
     pollPaneOnce(PANE.RIGHT);
   }, AUTO_REFRESH_MS);
@@ -1351,7 +1475,10 @@ function clipboardPaste() {
 
 function navigateActive(path) {
   const fp = activeFilePane();
-  if (fp && path) fp.load(path);
+  if (!fp || !path) return;
+  // リモート（お気に入り等）は接続の失敗があり得るので、理由を出せる経路で開く
+  if (isRemote(path)) navigatePane(panes.getActive(), path);
+  else fp.load(path);
 }
 function focusActivePane() {
   const el = paneEl(panes.getActive());
@@ -1444,12 +1571,18 @@ function onKeydown(e) {
   }
   // ワークスペース オーバーレイ表示中は本体のキー操作をしない（overlay 側で処理）
   if (workspacesView.isOpen()) return;
+  if (remoteView.isOpen()) return; // リモート接続画面も同様
+
   // 検索を開く: Ctrl+F または / （vim 風。入力欄では無効）
   if (
     (e.ctrlKey && !e.altKey && !e.metaKey && (e.code === 'KeyF' || e.key.toLowerCase() === 'f')) ||
     (!e.ctrlKey && !e.altKey && !e.metaKey && e.key === '/' && !isEditableTarget(e.target))
   ) {
     e.preventDefault();
+    if (isRemote(activeFilePane()?.getCurrentDir())) {
+      toast('リモートの場所では検索は使えません');
+      return;
+    }
     search.open();
     return;
   }
@@ -1794,6 +1927,7 @@ async function init() {
       onDragStart: (info) => dragSession.begin(info),
       onOpenFile: (entry) => openWith('open', entry.path),
       onChange: (info) => {
+        syncPaneRemote(p); // リモート表示の印 (FR-20)
         recordNav(p, info.dir); // 履歴へ (FR-17)。dir 変化時のみ積む
         syncActiveTab(p, info.dir); // アクティブタブの dir 追従 (FR-08)
         sessionSaver.schedule(); // ディレクトリ移動をセッションに保存（デバウンス）
@@ -1843,8 +1977,21 @@ async function init() {
   const cwd = (await currentDir()) || '';
   const startDir = (dir) => resolveStartDir(dir, { home, cwd });
   const loadOr = async (fp, dir) => {
+    const d = startDir(dir);
+    if (isRemote(d)) {
+      // リモート (FR-20) は回線を待つので起動を止めない。いったん手元を出し、
+      // 繋がったら（その間に移動していなければ）移る。
+      await fp.load(home).catch(() => {});
+      (needsResolve(d) ? remoteResolve(d) : Promise.resolve(d))
+        .then(async (abs) => {
+          await listDir(abs);
+          if (fp.getCurrentDir() === home) await fp.load(abs);
+        })
+        .catch(() => toast(`${remoteLabel(d)} を開けませんでした（接続できません）`));
+      return;
+    }
     try {
-      await fp.load(startDir(dir) || home);
+      await fp.load(d || home);
     } catch {
       // 存在しなくなったパス等はホームへフォールバック（堅牢性）
       await fp.load(home);

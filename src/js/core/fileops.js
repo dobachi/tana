@@ -17,16 +17,49 @@ function isExists(e) {
  * @param {(msg: string) => Promise<boolean>|boolean} deps.confirm 完全削除の確認
  * @param {(msg: string) => void} deps.toast 通知
  * @param {() => Promise<void>|void} deps.refresh 完了後のペイン更新
+ * @param {(paths: string[]) => string|null} [deps.writeBlocked] 書き込みが起きる場所のうち
+ *   許可されていないものがあれば理由（閲覧のみのリモート接続, FR-20）。無ければ null
+ * @param {(entry: object) => boolean} [deps.noTrash] ゴミ箱が使えない対象か（リモート）。
+ *   該当があれば「ゴミ箱へ」は完全削除の確認に回す
  */
 export function createFileOps(deps) {
   const { canMutate, backend, resolveConflict, promptName, confirm, toast, refresh } = deps;
+  const writeBlocked = deps.writeBlocked || (() => null);
+  const noTrash = deps.noTrash || (() => false);
 
-  async function gate() {
+  /** 安全モード → 接続ごとの書き込み許可、の順に確かめる。paths は書き込みが起きる場所。 */
+  async function gate(paths = []) {
     if (!canMutate()) {
       toast('安全モードです（切替: Ctrl+Shift+Space）');
       return false;
     }
+    const blocked = writeBlocked(paths.filter(Boolean));
+    if (blocked) {
+      toast(blocked);
+      return false;
+    }
     return true;
+  }
+
+  const pathsOf = (list) => list.map((e) => e.path);
+
+  /** 確認を 1 回だけ取ってから完全削除する。note は確認文の先頭に添える。 */
+  async function deleteForever(list, note = '') {
+    // 確認は最初に1回だけ。件数が多いときに全ファイル名を並べても読めないので、
+    // 数件までは名前を出し、それ以上は件数で示す。
+    const names =
+      list.length <= 3
+        ? list.map((e) => e.name).join('\n')
+        : `${list
+            .slice(0, 3)
+            .map((e) => e.name)
+            .join('\n')}\nほか ${list.length - 3} 件`;
+    const ok = await confirm(
+      `${note}完全に削除します（元に戻せません）:\n${names}\nよろしいですか？`,
+    );
+    if (!ok) return;
+    const r = await runBatch(list, (entry) => backend.deletePermanent(entry.path));
+    await reportBatch(r, '完全に削除', '完全に削除しました');
   }
 
   // 宛先が既存(EXISTS)なら3択（名前変更/上書き/キャンセル）で解決して再実行。
@@ -110,7 +143,7 @@ export function createFileOps(deps) {
     async copy(entryOrList, destDir) {
       const list = asList(entryOrList);
       if (!list.length || !destDir) return;
-      if (!(await gate())) return;
+      if (!(await gate([destDir]))) return;
       const r = await runBatch(list, (entry) =>
         withConflict(entry, destDir, (name, ow) => backend.copyPath(entry.path, destDir, name, ow)),
       );
@@ -121,7 +154,8 @@ export function createFileOps(deps) {
     async move(entryOrList, destDir) {
       const list = asList(entryOrList);
       if (!list.length || !destDir) return;
-      if (!(await gate())) return;
+      // 移動は元を消すので、元の場所にも書き込み許可が要る
+      if (!(await gate([destDir, ...pathsOf(list)]))) return;
       const r = await runBatch(list, (entry) =>
         withConflict(entry, destDir, (name, ow) => backend.movePath(entry.path, destDir, name, ow)),
       );
@@ -132,7 +166,12 @@ export function createFileOps(deps) {
     async trash(entryOrList) {
       const list = asList(entryOrList);
       if (!list.length) return;
-      if (!(await gate())) return;
+      if (!(await gate(pathsOf(list)))) return;
+      if (list.some(noTrash)) {
+        // リモートにゴミ箱は無い。黙って消さず、完全削除として確認を取る
+        await deleteForever(list, 'リモートにはゴミ箱がありません。\n');
+        return;
+      }
       const r = await runBatch(list, (entry) => backend.deleteToTrash(entry.path));
       await reportBatch(r, 'ゴミ箱へ移動', 'ゴミ箱へ移動しました');
     },
@@ -140,7 +179,7 @@ export function createFileOps(deps) {
     /** entry の名前を変更（同じフォルダ内, FR-03） */
     async rename(entry) {
       if (!entry) return;
-      if (!(await gate())) return;
+      if (!(await gate([entry.path]))) return;
       const name = await promptName('名前の変更', entry.name);
       if (name == null) return;
       const trimmed = name.trim();
@@ -157,7 +196,7 @@ export function createFileOps(deps) {
     /** dir 配下に新規フォルダを作成（FR-03） */
     async makeNewFolder(dir) {
       if (!dir) return;
-      if (!(await gate())) return;
+      if (!(await gate([dir]))) return;
       const name = await promptName('新しいフォルダ', '新しいフォルダ');
       if (name == null) return;
       const trimmed = name.trim();
@@ -175,20 +214,8 @@ export function createFileOps(deps) {
     async deletePermanent(entryOrList) {
       const list = asList(entryOrList);
       if (!list.length) return;
-      if (!(await gate())) return;
-      // 確認は最初に1回だけ。件数が多いときに全ファイル名を並べても読めないので、
-      // 数件までは名前を出し、それ以上は件数で示す。
-      const names =
-        list.length <= 3
-          ? list.map((e) => e.name).join('\n')
-          : `${list
-              .slice(0, 3)
-              .map((e) => e.name)
-              .join('\n')}\nほか ${list.length - 3} 件`;
-      const ok = await confirm(`完全に削除します（元に戻せません）:\n${names}\nよろしいですか？`);
-      if (!ok) return;
-      const r = await runBatch(list, (entry) => backend.deletePermanent(entry.path));
-      await reportBatch(r, '完全に削除', '完全に削除しました');
+      if (!(await gate(pathsOf(list)))) return;
+      await deleteForever(list);
     },
   };
 }

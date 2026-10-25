@@ -1313,4 +1313,24 @@ Host \"quoted\"
         );
         assert!(st.connect("-bad").is_err());
     }
+
+    /// 本物の ssh で繋ぐ確認（手動）。`TANA_TEST_SSH_HOST=k16 cargo test -- --ignored real_ssh`
+    #[test]
+    #[ignore]
+    fn real_ssh_host_lists_home() {
+        let Ok(host) = std::env::var("TANA_TEST_SSH_HOST") else {
+            return;
+        };
+        let st = RemoteState::default();
+        let home = st.connect(&host).unwrap();
+        assert!(home.starts_with(&format!("sftp://{}/", host)));
+        let entries = st.list_dir(&home).unwrap();
+        assert!(!entries.is_empty());
+        assert!(st
+            .make_dir(&home, "tana-should-not-exist")
+            .unwrap_err()
+            .starts_with("READ_ONLY:"));
+        let bad = RemoteState::default().connect("tana-no-such-host.invalid");
+        assert!(bad.unwrap_err().contains("接続できません"));
+    }
 }

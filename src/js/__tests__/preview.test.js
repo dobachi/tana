@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createPreview } from '../core/preview.js';
+import { createPreview, MAX_REMOTE_IMAGE_BYTES } from '../core/preview.js';
 
 // Controllable scheduler modelling debounce (set replaces via clear).
 function makeScheduler() {
@@ -48,7 +48,9 @@ function setup(over = {}) {
   const assetUrl = vi.fn((p) => `asset://${p}`);
   const onImage = over.onImage || vi.fn();
   const preview = createPreview({
-    backend: { readPreview, assetUrl },
+    backend: over.previewSrc
+      ? { readPreview, assetUrl, previewSrc: over.previewSrc }
+      : { readPreview, assetUrl },
     getContainer: () => container,
     getInfoContainer: () => infoContainer,
     onImage,
@@ -117,6 +119,51 @@ describe('createPreview — routing', () => {
     await flushAll();
     expect(onImage).toHaveBeenCalledTimes(1);
     expect(onImage).toHaveBeenCalledWith(container);
+  });
+});
+
+describe('createPreview — リモートの画像 (FR-20)', () => {
+  const remoteImg = { name: 'p.png', path: 'sftp://k16/p/p.png', is_dir: false, size: 10 };
+
+  it('previewSrc で取得した表示元を使う', async () => {
+    const previewSrc = vi.fn(async () => 'asset://cache/p.png');
+    const { preview, R, assetUrl, scheduler } = setup({ previewSrc });
+    preview.open();
+    await flushAll();
+    preview.setTarget(remoteImg);
+    scheduler.flush();
+    await flushAll();
+    expect(previewSrc).toHaveBeenCalledWith('sftp://k16/p/p.png');
+    expect(assetUrl).not.toHaveBeenCalled();
+    expect(R.renderImage).toHaveBeenCalledTimes(1);
+    expect(R.renderImage.mock.calls[0][1].src).toBe('asset://cache/p.png');
+  });
+
+  it('大きすぎるリモート画像は取得せずに断る', async () => {
+    const previewSrc = vi.fn(async () => 'x');
+    const { preview, R, scheduler } = setup({ previewSrc });
+    preview.open();
+    await flushAll();
+    preview.setTarget({ ...remoteImg, size: MAX_REMOTE_IMAGE_BYTES + 1 });
+    scheduler.flush();
+    await flushAll();
+    expect(previewSrc).not.toHaveBeenCalled();
+    expect(R.renderImage).not.toHaveBeenCalled();
+    expect(R.renderPlaceholder).toHaveBeenCalled();
+  });
+
+  it('取得に失敗したら読み取れない旨を出す', async () => {
+    const previewSrc = vi.fn(async () => {
+      throw new Error('down');
+    });
+    const { preview, R, scheduler } = setup({ previewSrc });
+    preview.open();
+    await flushAll();
+    preview.setTarget(remoteImg);
+    scheduler.flush();
+    await flushAll();
+    expect(R.renderImage).not.toHaveBeenCalled();
+    expect(R.renderPlaceholder).toHaveBeenCalled();
   });
 });
 

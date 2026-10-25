@@ -6,6 +6,8 @@ function setup({
   conflictResult = { action: 'overwrite' },
   confirmReturn = true,
   promptReturn = 'newname.txt',
+  writeBlocked,
+  noTrash,
 } = {}) {
   const backend = {
     copyPath: vi.fn(async () => '/dest/f'),
@@ -29,6 +31,8 @@ function setup({
     confirm,
     toast,
     refresh,
+    writeBlocked,
+    noTrash,
   });
   return { ops, backend, toast, resolveConflict, promptName, confirm, refresh };
 }
@@ -338,5 +342,74 @@ describe('fileops 複数件の一括操作', () => {
     const { ops, backend } = setup({ confirmReturn: false });
     await ops.deletePermanent(entries('a.txt', 'b.txt'));
     expect(backend.deletePermanent).not.toHaveBeenCalled();
+  });
+});
+
+describe('fileops リモート接続の書き込み許可 (FR-20)', () => {
+  // sftp:// のうち "w" だけ書き込みを許可している想定
+  const writeBlocked = (paths) => {
+    const ro = paths.find((p) => p.startsWith('sftp://') && !p.startsWith('sftp://w/'));
+    return ro ? `閲覧のみ: ${ro}` : null;
+  };
+  const noTrash = (e) => e.path.startsWith('sftp://');
+  const remote = { name: 'r.txt', path: 'sftp://ro/r.txt' };
+
+  it('閲覧のみの宛先へのコピーはバックエンドを呼ばず理由を出す', async () => {
+    const { ops, backend, toast } = setup({ writeBlocked });
+    await ops.copy(entry, 'sftp://ro/dir');
+    expect(backend.copyPath).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith('閲覧のみ: sftp://ro/dir');
+  });
+
+  it('閲覧のみのリモートからローカルへのコピーは読むだけなので通す', async () => {
+    const { ops, backend } = setup({ writeBlocked });
+    await ops.copy(remote, '/dest');
+    expect(backend.copyPath).toHaveBeenCalledWith('sftp://ro/r.txt', '/dest', null, false);
+  });
+
+  it('移動は元を消すので元の接続にも許可が要る', async () => {
+    const { ops, backend } = setup({ writeBlocked });
+    await ops.move(remote, '/dest');
+    expect(backend.movePath).not.toHaveBeenCalled();
+    await ops.move({ name: 'x', path: 'sftp://w/x' }, '/dest');
+    expect(backend.movePath).toHaveBeenCalledTimes(1);
+  });
+
+  it('改名・新規フォルダ・完全削除も対象の接続で判定する', async () => {
+    const { ops, backend } = setup({ writeBlocked });
+    await ops.rename(remote);
+    await ops.makeNewFolder('sftp://ro/d');
+    await ops.deletePermanent(remote);
+    expect(backend.renamePath).not.toHaveBeenCalled();
+    expect(backend.makeDir).not.toHaveBeenCalled();
+    expect(backend.deletePermanent).not.toHaveBeenCalled();
+  });
+
+  it('安全モードの判定が先（理由は安全モード）', async () => {
+    const { ops, toast } = setup({ canMutate: false, writeBlocked });
+    await ops.copy(entry, 'sftp://ro/dir');
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining('安全モード'));
+  });
+
+  it('リモートの「ゴミ箱へ」は完全削除の確認に回す', async () => {
+    const { ops, backend, confirm } = setup({ writeBlocked, noTrash });
+    const w = { name: 'x', path: 'sftp://w/x' };
+    await ops.trash([w, entry]);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('ゴミ箱がありません'));
+    expect(backend.deleteToTrash).not.toHaveBeenCalled();
+    expect(backend.deletePermanent).toHaveBeenCalledTimes(2);
+  });
+
+  it('確認で断ればリモートは消さない', async () => {
+    const { ops, backend } = setup({ writeBlocked, noTrash, confirmReturn: false });
+    await ops.trash({ name: 'x', path: 'sftp://w/x' });
+    expect(backend.deletePermanent).not.toHaveBeenCalled();
+  });
+
+  it('ローカルだけなら従来どおりゴミ箱へ', async () => {
+    const { ops, backend, confirm } = setup({ writeBlocked, noTrash });
+    await ops.trash(entry);
+    expect(backend.deleteToTrash).toHaveBeenCalledWith('/src/f.txt');
+    expect(confirm).not.toHaveBeenCalled();
   });
 });

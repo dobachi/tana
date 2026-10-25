@@ -2,6 +2,15 @@
 //
 // DOM にも Tauri にも依存しないので単体テストできる。実際の移動可否
 // （存在するか・ディレクトリか）は listDir の成否で判断する。
+// リモートの場所（`sftp://HOST/path`, FR-20）は remotepath.js に委ねる。
+
+import {
+  isRemote,
+  normalizeRemote,
+  remoteParent,
+  remoteSegments,
+  remoteLabel,
+} from './remotepath.js';
 
 /** POSIX の "/"、UNC の "\\"、Windows のドライブ（C:\ / C:/）を根とみなす */
 function isAbsolute(p) {
@@ -67,6 +76,12 @@ export function resolveInputPath(input, ctx = {}) {
 
   const { home = '', cwd = '' } = ctx;
 
+  // リモート: `sftp://…` はそのまま整える。リモートにいるときの相対入力はその場所基準。
+  if (isRemote(raw)) return normalizeRemote(raw);
+  if (isRemote(cwd) && !isAbsolute(raw) && raw !== '~' && !/^~[/\\]/.test(raw)) {
+    return normalizeRemote(`${cwd.replace(/\/+$/, '')}/${raw.replace(/\\/g, '/')}`);
+  }
+
   if (raw === '~' || raw.startsWith('~/') || raw.startsWith('~\\')) {
     if (!home) return null;
     const rest = raw.slice(1).replace(/^[/\\]/, '');
@@ -98,6 +113,7 @@ export function resolveStartDir(dir, ctx = {}) {
   if (typeof dir !== 'string') return null;
   const raw = dir.trim();
   if (!raw) return null;
+  if (isRemote(raw)) return normalizeRemote(raw);
   if (isAbsolute(raw)) return raw;
   return resolveInputPath(raw, ctx);
 }
@@ -109,6 +125,7 @@ export function resolveStartDir(dir, ctx = {}) {
  * @returns {string|null}
  */
 export function parentPath(path) {
+  if (isRemote(path)) return remoteParent(path);
   const p = normalizeSeparators(String(path || ''));
   if (!p) return null;
   // ルート（POSIX "/" / ドライブ "C:/" / UNC ホスト "//host"）に親なし
@@ -171,7 +188,7 @@ export function describeOpenError(target, error) {
     const base = `ドライブ ${drive[1].toUpperCase()}: を開けません`;
     return reason ? `${base}（${reason}）` : `${base}（見つからないかアクセスできません）`;
   }
-  const base = `開けませんでした: ${target}`;
+  const base = `開けませんでした: ${isRemote(target) ? remoteLabel(target) : target}`;
   return reason ? `${base}（${reason}）` : base;
 }
 
@@ -182,6 +199,7 @@ export function describeOpenError(target, error) {
  */
 export function pathSegments(dir) {
   if (!dir || typeof dir !== 'string') return [];
+  if (isRemote(dir)) return remoteSegments(dir);
   const path = normalizeSeparators(dir);
 
   // UNC（//host/share/...）。先頭要素はホスト `//host`（表示は \\host）。

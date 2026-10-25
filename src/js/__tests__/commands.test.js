@@ -13,10 +13,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const backendSrc = readFileSync(resolve(here, '../backend.js'), 'utf8');
 const libSrc = readFileSync(resolve(here, '../../../src-tauri/src/lib.rs'), 'utf8');
 
-/** backend.js から呼んでいるコマンド名を抜き出す（invoke('x') と fn('x') の両方） */
+/** backend.js から呼んでいるコマンド名を抜き出す（invoke / fn / remoteInvoke の呼び出し） */
 function invokedCommands() {
   const names = new Set();
-  const re = /\b(?:invoke|fn)\(\s*'([a-z_][a-z0-9_]*)'/g;
+  const re = /\b(?:invoke|fn|remoteInvoke)\(\s*'([a-z_][a-z0-9_]*)'/g;
   let m;
   while ((m = re.exec(backendSrc))) names.add(m[1]);
   return names;
@@ -55,6 +55,31 @@ describe('backend.js と Rust コマンド登録の整合', () => {
   it('WSL 連携のコマンドが揃っている (FR-13 の WSL 拡張)', () => {
     const registered = registeredCommands();
     for (const c of ['wsl_info', 'windows_path', 'open_in_windows', 'reveal_in_windows']) {
+      expect(registered.has(c)).toBe(true);
+    }
+  });
+
+  it('リモート接続のコマンドが揃っている (FR-20)', () => {
+    const registered = registeredCommands();
+    const invoked = invokedCommands();
+    for (const c of [
+      'remote_list_dir',
+      'remote_dir_signature',
+      'remote_read_preview',
+      'remote_fetch',
+      'remote_copy',
+      'remote_move',
+      'remote_unique_name',
+      'remote_delete',
+      'remote_rename',
+      'remote_make_dir',
+      'remote_resolve',
+      'remote_disconnect',
+      'remote_sessions',
+      'remote_set_writable',
+      'remote_hosts',
+    ]) {
+      expect(invoked.has(c)).toBe(true);
       expect(registered.has(c)).toBe(true);
     }
   });

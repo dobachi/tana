@@ -110,6 +110,9 @@ make docker-check  # CI相当チェック
 | `core/dragdrop.js` | **D&D の追跡（DOM）**。ポインタイベントで自作。`resolveDropTarget` は将来の OS ドロップでも再利用する。安全モードは拒否ゴースト＋トーストで示す |
 | `core/editmenu.js` | **メニューバー「編集」の項目（純粋）**。対象・宛先の有無で無効化を判定。app.js が状態と action を注入 |
 | `core/wsl.js` | **WSL から Windows 側で開く判断（純粋, FR-13 拡張）**。既定オープン先（設定・WSL では既定 Windows）／外部アプリの起動先 auto 判定（`.exe`・`C:\…`）／メニューのラベル／localStorage。起動そのものは Rust `wsl.rs`。詳細: [WSL.md](WSL.md) |
+| `core/remotepath.js` | **リモートの場所 `sftp://HOST/path` の純粋な扱い (FR-20)**。判定/分解/親/ブレッドクラム/表示名/READ_ONLY の言い換え/閲覧のみ判定 |
+| `core/remotes.js` | **リモート接続の状態（純粋）**。最近の接続先・接続先ごとの最後の場所（localStorage）、書き込み許可の写し（保存しない）、候補の並べ方、入力→URI |
+| `core/remoteview.js` | **リモート接続のオーバーレイUI**。接続先＋パスで開く、書き込み許可、接続中の一覧（許可切替/開く/切断） |
 
 テストは `src/js/__tests__/<name>.test.js` に対応（47ファイル）。
 
@@ -122,6 +125,8 @@ make docker-check  # CI相当チェック
 - **`search.rs`** (FR-18): `contains_match`/`snippet`/`build_matcher`（純粋・テスト済み）+ `search_dir_impl`（再帰走査: 名前一致＋本文一致(任意)、node_modules 等の除外、バイナリ/大サイズ/隠し除外、件数上限、`cancelled()` で中断）。`SearchState.epoch` によるキャンセル。コマンド `search_dir` / `cancel_search`
 - **`wsl.rs`** (FR-13 の WSL 拡張): `to_windows_path`（`/mnt/c/x`→`C:\x` / それ以外→`\\wsl.localhost\<distro>\x`）/ `windows_to_linux_path`（登録アプリの `C:\…` を exec 可能な形へ）/ `looks_like_wsl`・`interop_enabled_from`・`automount_root_from_mounts`（判定はすべて引数注入の純粋関数）。起動は interop で `explorer.exe` を spawn（終了コードは見ない・待たない）
 - **`updater_env.rs`**: アプリ内更新が完了できる環境かの判定。`bundle_type()`（deb/rpm は適用に root が要る）× `wsl::is_wsl()`（polkit のセッションが無く認証できない）で `can_install` を決め、コマンド `update_env` で返す。WSL の deb 版では updater が pkexec（コンソール）→ zenity（GUI）と 2 度パスワードを聞いた末に必ず失敗するため、その経路に入る前に手動更新へ誘導する
+- **`sftp.rs`** (FR-20): 最小の SFTP v3 クライアント。パケットの組み立て/解釈は純粋、読み書きは先行要求で往復待ちを隠す。テストはローカルの `sftp-server` と実際に話す
+- **`remote.rs`** (FR-20): `sftp://` の解釈・接続先の検証（`-` 始まり等を拒否）・`~/.ssh/config` の Host 抽出（純粋）、接続表（`Connector` 注入で張り直し）、閲覧のみゲート（`READ_ONLY:<host>`）、手元⇄リモート/リモート同士のコピー・移動、一時フォルダへの取得。コマンド `remote_*` は spawn_blocking で UI を止めない。本物の ssh の確認は `TANA_TEST_SSH_HOST=k16 cargo test -- --ignored real_ssh`
 - **`places.rs`**: `build_places`（存在フィルタ+パス重複除去、注入で純粋テスト）/ `windows_drive_candidates`（A:〜Z: 生成）/ `standard_candidates`（dirs）/ `is_cloud_folder`・`cloud_places_from`（クラウド同期検出、純粋）/ `read_subdirs`（ボリューム/WSL 列挙、汎用）/ OS 別 `drive_candidates` / `wsl_places`（Win: `\\wsl$` → UNC）
 - 依存は最小（tauri / tauri-cli / plugin-dialog / opener / updater / process / serde / dirs / trash / **regex-lite**（FR-18 正規表現、軽量））
 
@@ -151,6 +156,7 @@ make docker-check  # CI相当チェック
 | FR-15 | 隠しファイル表示トグル | M | ✅ | Ctrl+H、両ペイン共通 |
 | FR-18 | 現在ディレクトリ内検索(grep) | S | 🟡 | `Ctrl+F`・`/` で現在地配下を再帰検索。ファイル名＋テキスト内容一致を一覧、Enter でジャンプ（ファイルは親へ移動しカーソル）。トグル: **本文(`本文`, 既定OFF=名前のみで高速)・正規表現(`.*`)・大小区別(`Aa`)・隠し(`隠し`)**（正規表現は軽量 regex-lite）。**node_modules/target/.git 等の重いディレクトリは走査から除外**。バイナリ/大サイズ除外、件数上限500。世代(epoch)ベースの**キャンセル**（新検索/クローズで実行中を中断, `cancel_search`）。**結果は Tauri Channel でストリーミング**（見つかり次第 逐次表示）。`search.rs`+`searchview.js`。**残**: 並列走査・最小文字数等の微調整（任意） |
 | FR-19 | ディレクトリ変更の自動反映 | S | ✅ | 外部の作成/更新/削除を表示に自動反映。**署名ポーリング方式**（`dir_signature` を 1.5s ごとに取得し前回と違えば再読込、カーソル/選択は保持）。WSL/mnt・ネットワーク/クラウドでも確実。非表示中は休止。`Ctrl+R` で即時再読込。将来: notify 系のライブ監視（環境が対応する場合の高速化） |
+| FR-20 | リモート接続（SSH/SFTP） | S | ✅ | `o → s` の接続画面 / `Ctrl+L` に `sftp://接続先/パス`。相手側インストール不要の SFTP v3 自前実装（`sftp.rs`）＋接続管理・転送（`remote.rs`）。ペイン/タブ/お気に入り/セッションに `sftp://` がそのまま流れる（振り分けは `backend.js`）。**既定は閲覧のみ**、接続ごとに書き込み許可（保存しない）。開くは一時コピー（書き戻し無し）、削除は完全削除のみ、検索は非対応。詳細: [REMOTE.md](REMOTE.md) |
 | FR-16 | プレビューの表示制御(フィット/ズーム/パン) | S | ✅ | 画像で先行。既定フィット(contain)⇄実寸(100%)をクリックで切替＋Ctrl+ホイールで連続ズーム（画像上ではフォント拡縮より優先）＋**ズーム中はドラッグでパン**（クリックと閾値で判別、`img.draggable=false`）。横スクロール問題も解消（core/previewzoom.js）。＋/−キーでのズームは将来 |
 | FR-17 | ナビゲーション履歴(戻る/進む) | S | ✅ | ペインごとの履歴。`Alt+←`/`Alt+→`＋マウスの戻る/進むボタン。親移動(`h`)とは別概念（時系列）。`core/navhistory.js`（純粋）+ app.js 配線 |
 

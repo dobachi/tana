@@ -4,6 +4,10 @@
 // レンダラ（features/preview/render.js）は遅延ロードする（NFR-P2）。
 
 import { KIND, LIMITS, detectKind, maxBytesFor } from './previewkind.js';
+import { isRemote } from './remotepath.js';
+
+/** リモートの画像は手元へ取得してから表示する。回線を占有しないよう大きさに上限を設ける。 */
+export const MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024;
 
 const NOTE = {
   [KIND.DIR]: 'フォルダです',
@@ -15,7 +19,8 @@ const NOTE = {
 
 /**
  * @param {object} deps
- * @param {{readPreview:Function, assetUrl:Function}} deps.backend
+ * @param {{readPreview:Function, assetUrl:Function, previewSrc?:Function}} deps.backend
+ *   previewSrc があれば画像の表示元はそれで得る（リモートは取得してから, FR-20）
  * @param {() => HTMLElement} deps.getContainer プレビュー本文の入れ物
  * @param {() => Promise<object>} [deps.loadRenderers] レンダラモジュール（遅延）
  * @param {Document} [deps.doc]
@@ -77,7 +82,16 @@ export function createPreview(deps) {
       const kind1 = detectKind(entry, null, limits);
 
       if (kind1 === KIND.IMAGE) {
-        const src = backend.assetUrl(entry.path);
+        if (isRemote(entry.path) && entry.size > MAX_REMOTE_IMAGE_BYTES) {
+          R.renderPlaceholder(container, { kind: KIND.TOO_LARGE, note: NOTE[KIND.TOO_LARGE] }, doc);
+          info(KIND.TOO_LARGE, null, null);
+          renderedPath = entry.path;
+          return;
+        }
+        const src = backend.previewSrc
+          ? await backend.previewSrc(entry.path)
+          : backend.assetUrl(entry.path);
+        if (gen !== generation) return;
         R.renderImage(container, { entry, src }, doc);
         if (onImage) onImage(container);
         info(KIND.IMAGE, null, src);
