@@ -127,6 +127,16 @@ describe('remoteview', () => {
     document.removeEventListener('keydown', outer);
   });
 
+  it('右上の × で閉じられる', async () => {
+    const { view } = setup();
+    view.open();
+    await flush();
+    expect($('.remote-title').textContent).toContain('リモート接続');
+    $('.remote-box .modal-close').click();
+    expect(view.isOpen()).toBe(false);
+    expect($('.remote-overlay')).toBeNull();
+  });
+
   it('initial で接続先と場所を入れて始められる', async () => {
     const { view } = setup();
     view.open({ host: 'other', path: '/srv' });

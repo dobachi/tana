@@ -108,7 +108,7 @@ describe('remoteLabel', () => {
 describe('describeRemoteError', () => {
   it('READ_ONLY を案内に言い換える', () => {
     expect(describeRemoteError('READ_ONLY:k16')).toContain('k16 は閲覧のみ');
-    expect(describeRemoteError({ message: 'READ_ONLY:k16' })).toContain('o → s');
+    expect(describeRemoteError({ message: 'READ_ONLY:k16' })).toContain('Ctrl+Shift+X');
   });
   it('それ以外はそのまま', () => {
     expect(describeRemoteError('EXISTS')).toBe('EXISTS');

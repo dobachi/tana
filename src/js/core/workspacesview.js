@@ -4,6 +4,8 @@
 // キーボード: 入力欄で Enter=保存 / ↓=一覧へ、一覧で j/k 移動・Enter で開く・
 // Del or × で削除・Esc で閉じる。モデルは workspaces.js（純粋・テスト済み）。
 
+import { createModalHeader } from './modalheader.js';
+
 /**
  * @param {object} deps
  * @param {object} deps.workspaces workspaces モデル
@@ -153,10 +155,13 @@ export function createWorkspacesView(deps) {
     const box = doc.createElement('div');
     box.className = 'modal ws-box';
 
-    const title = doc.createElement('h2');
-    title.className = 'ws-title';
-    title.textContent = 'ワークスペース（タブ構成）';
-    box.appendChild(title);
+    box.appendChild(
+      createModalHeader(doc, {
+        title: 'ワークスペース（タブ構成）',
+        titleClass: 'ws-title',
+        onClose: close,
+      }),
+    );
 
     const head = doc.createElement('div');
     head.className = 'ws-head';

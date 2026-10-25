@@ -898,6 +898,34 @@ body[data-mode='operation'] .modal {
   font-size: 0.86em;
 }
 
+/* オーバーレイ画面の見出し行（題名 + 右上の × 閉じる） */
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.modal-header > h2 {
+  flex: 1;
+}
+.modal .modal-close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px 0 0;
+  padding: 0;
+  font-size: 1.2em;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.modal .modal-close:hover {
+  color: var(--fg);
+  border-color: var(--border);
+}
+
 /* ワークスペース（タブ構成の保存/復元） */
 .ws-box {
   width: 520px;

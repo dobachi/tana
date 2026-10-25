@@ -74,4 +74,14 @@ describe('workspacesview', () => {
       .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(view.isOpen()).toBe(false);
   });
+
+  it('右上の × で閉じる（行の削除 × とは別）', () => {
+    const workspaces = createWorkspaces();
+    workspaces.save('残す', SNAP);
+    const { view } = setup({ workspaces });
+    view.open();
+    document.querySelector('.ws-box .modal-close').click();
+    expect(view.isOpen()).toBe(false);
+    expect(workspaces.list()).toHaveLength(1);
+  });
 });

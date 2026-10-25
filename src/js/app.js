@@ -1199,7 +1199,7 @@ function buildMenuDefinition() {
       items: () => [
         { label: 'お気に入りに現在地を追加', shortcut: 'Ctrl+D', action: addCurrentToFavorites },
         { label: 'ワークスペース…（タブ構成の保存/復元）', action: () => workspacesView.open() },
-        { label: 'リモート接続…（SSH / SFTP）', shortcut: 'o → s', action: openRemoteView },
+        { label: 'リモート接続…（SSH / SFTP）', shortcut: 'Ctrl+Shift+X', action: openRemoteView },
         { separator: true },
         { label: '終了', action: () => window.close() },
       ],
@@ -1640,6 +1640,12 @@ function onKeydown(e) {
   if (e.ctrlKey && e.shiftKey && (e.code === 'KeyB' || e.key.toLowerCase() === 'b')) {
     e.preventDefault();
     toggleMenuBar();
+    return;
+  }
+  // リモート接続画面: Ctrl+Shift+X（Fude と同じ。o → s でも開く, FR-20）
+  if (e.ctrlKey && e.shiftKey && !e.altKey && (e.code === 'KeyX' || e.key.toLowerCase() === 'x')) {
+    e.preventDefault();
+    openRemoteView();
     return;
   }
   // タブ (FR-08): Ctrl+Tab 次 / Ctrl+Shift+Tab 前 / Ctrl+T 新規 / Ctrl+W 閉じる

@@ -6,6 +6,7 @@
 // キーボード: 入力欄で Enter=開く、Esc=閉じる。候補・パスの組み立ては remotes.js（純粋）。
 
 import { hostCandidates, targetUri } from './remotes.js';
+import { createModalHeader } from './modalheader.js';
 
 const SOURCE_LABEL = { recent: '最近', connected: '接続中', config: 'ssh config' };
 
@@ -194,10 +195,13 @@ export function createRemoteView(deps) {
     const box = doc.createElement('div');
     box.className = 'modal remote-box';
 
-    const title = doc.createElement('h2');
-    title.className = 'remote-title';
-    title.textContent = 'リモート接続（SSH / SFTP）';
-    box.appendChild(title);
+    box.appendChild(
+      createModalHeader(doc, {
+        title: 'リモート接続（SSH / SFTP）',
+        titleClass: 'remote-title',
+        onClose: close,
+      }),
+    );
 
     const form = doc.createElement('div');
     form.className = 'remote-form';

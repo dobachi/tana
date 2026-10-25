@@ -153,7 +153,7 @@ export function hostKeyConfirmMessage(host) {
 
 /** 閲覧のみの接続へ書き込もうとしたときの案内。 */
 export function readOnlyMessage(host) {
-  return `${host} は閲覧のみの接続です（書き込みはリモート接続画面で許可: o → s）`;
+  return `${host} は閲覧のみの接続です（書き込みはリモート接続画面で許可: Ctrl+Shift+X）`;
 }
 
 /**
