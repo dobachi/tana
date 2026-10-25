@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { createFavorites, serialize, searchTree } from '../core/favorites.js';
+import {
+  createFavorites,
+  serialize,
+  searchTree,
+  defaultBookmarkName,
+  bookmarkTitle,
+} from '../core/favorites.js';
 
 describe('favorites モデル', () => {
   it('ブックマーク/フォルダを追加し、ネストできる', () => {
@@ -103,6 +109,29 @@ describe('serialize', () => {
     expect(out).toEqual([
       { type: 'folder', name: 'f', open: false, children: [] },
       { type: 'bookmark', name: 'b', path: '/b' },
+    ]);
+  });
+});
+
+describe('リモートのお気に入り (FR-20)', () => {
+  it('既定名は末尾の階層名、リモートは接続先付き', () => {
+    expect(defaultBookmarkName('/home/u/docs')).toBe('docs');
+    expect(defaultBookmarkName('C:\\Users\\u')).toBe('u');
+    expect(defaultBookmarkName('/')).toBe('/');
+    expect(defaultBookmarkName('sftp://k16/home/u/notes')).toBe('k16:notes');
+    expect(defaultBookmarkName('sftp://me@k16/')).toBe('me@k16:/');
+    expect(defaultBookmarkName('sftp://k16')).toBe('k16:~');
+  });
+  it('ツールチップはリモートなら host:path', () => {
+    expect(bookmarkTitle('sftp://k16/a/b')).toBe('k16:/a/b');
+    expect(bookmarkTitle('/a/b')).toBe('/a/b');
+  });
+  it('リモートの場所をブックマークでき、保存・復元しても残る', () => {
+    const f = createFavorites();
+    f.addBookmark('k16:notes', 'sftp://k16/home/u/notes');
+    const restored = createFavorites(JSON.parse(JSON.stringify(f.toJSON())));
+    expect(restored.toJSON()).toEqual([
+      { type: 'bookmark', name: 'k16:notes', path: 'sftp://k16/home/u/notes' },
     ]);
   });
 });

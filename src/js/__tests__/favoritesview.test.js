@@ -126,4 +126,20 @@ describe('favoritesview', () => {
     expect(items).toHaveLength(1);
     expect(listEl.querySelector('.fav-breadcrumb').textContent).toBe('仕事');
   });
+
+  it('リモートのブックマークは 🌐 付きで、クリックで sftp:// の場所へ (FR-20)', () => {
+    const { listEl, searchEl } = mount();
+    const favorites = createFavorites();
+    favorites.addBookmark('k16:notes', 'sftp://k16/home/u/notes');
+    favorites.addBookmark('local', '/home/u');
+    const onNavigate = vi.fn();
+    createFavoritesView({ listEl, searchEl, favorites, onNavigate });
+    const rows = listEl.querySelectorAll('.fav-bookmark');
+    expect(rows[0].classList.contains('fav-remote')).toBe(true);
+    expect(rows[0].querySelector('.fav-remote-mark').title).toBe('k16');
+    expect(rows[0].querySelector('.fav-row').title).toBe('k16:/home/u/notes');
+    expect(rows[1].querySelector('.fav-remote-mark')).toBeNull();
+    rows[0].querySelector('.fav-row').click();
+    expect(onNavigate).toHaveBeenCalledWith('sftp://k16/home/u/notes');
+  });
 });

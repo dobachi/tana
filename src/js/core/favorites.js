@@ -2,7 +2,28 @@
 // ノード: { type:'folder', name, open, children[] } | { type:'bookmark', name, path }
 // UI 参照用に各ノードへ一時 id を付与（永続化はしない）。
 
+import { parseRemote, remoteLabel } from './remotepath.js';
+
 const STORAGE_KEY = 'tana.favorites';
+
+/**
+ * 現在地をお気に入りに入れるときの既定名。末尾の階層名。
+ * リモート（`sftp://k16/a/b`, FR-20）は接続先を前に付ける（`k16:b`、ホームは `k16:~`）。
+ */
+export function defaultBookmarkName(dir) {
+  const r = parseRemote(dir);
+  if (r) {
+    const base = r.path.split('/').filter(Boolean).pop();
+    return `${r.host}:${base || (r.path === '/' ? '/' : '~')}`;
+  }
+  const s = String(dir || '');
+  return s.split(/[/\\]/).filter(Boolean).pop() || s;
+}
+
+/** お気に入り行のツールチップ（リモートは `k16:/a/b` の短い表記）。 */
+export function bookmarkTitle(path) {
+  return parseRemote(path) ? remoteLabel(path) : String(path || '');
+}
 
 /** 永続化用に id を除いたツリーへ変換 */
 export function serialize(nodes) {

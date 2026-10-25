@@ -55,7 +55,12 @@ import { createInputDialog } from './core/inputdialog.js';
 import { createNavHistory } from './core/navhistory.js';
 import { createTabList } from './core/tabs.js';
 import { isPrefixLeader, resolvePrefixAction, prefixHint } from './core/keyprefix.js';
-import { createFavorites, loadStoredFavorites, storeFavorites } from './core/favorites.js';
+import {
+  createFavorites,
+  loadStoredFavorites,
+  storeFavorites,
+  defaultBookmarkName,
+} from './core/favorites.js';
 import {
   createExtApps,
   loadStoredExtApps,
@@ -1542,7 +1547,7 @@ async function addCurrentToFavorites() {
   const fp = activeFilePane();
   const dir = fp && fp.getCurrentDir();
   if (!dir) return;
-  const base = dir.split(/[/\\]/).filter(Boolean).pop() || dir;
+  const base = defaultBookmarkName(dir);
   const name = await promptName('お気に入りに追加', base);
   if (name == null) return;
   favorites.addBookmark(name.trim() || base, dir);

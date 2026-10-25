@@ -424,6 +424,11 @@ body[data-mode='operation'] .place-row:focus {
 .fav-folder > .fav-row .fav-name {
   font-weight: 600;
 }
+.fav-remote-mark {
+  flex-shrink: 0;
+  margin-right: 4px;
+  font-size: 0.85em;
+}
 .fav-breadcrumb {
   color: var(--fg-dim);
   font-size: 0.8em;

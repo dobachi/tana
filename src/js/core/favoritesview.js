@@ -2,6 +2,9 @@
 // ツリー表示・開閉・ナビゲート・削除・検索（パンくず付き平坦表示）。
 // キーボード: j/k 移動, Enter/l 開く, h 閉じる, Esc/Tab でペインへ戻る。
 
+import { bookmarkTitle } from './favorites.js';
+import { remoteHost } from './remotepath.js';
+
 /**
  * @param {object} deps
  * @param {HTMLElement} deps.listEl お気に入りを描画する <ul>
@@ -39,7 +42,18 @@ export function createFavoritesView(deps) {
     row.className = 'fav-row';
     row.tabIndex = -1;
     row.style.paddingLeft = `${8 + depth * 12}px`;
-    row.title = node.path;
+    row.title = bookmarkTitle(node.path);
+
+    // リモート（FR-20）は 🌐 と接続先で見分ける
+    const host = remoteHost(node.path);
+    if (host) {
+      li.classList.add('fav-remote');
+      const mark = document.createElement('span');
+      mark.className = 'fav-remote-mark';
+      mark.textContent = '🌐';
+      mark.title = host;
+      row.appendChild(mark);
+    }
 
     const name = document.createElement('span');
     name.className = 'fav-name';
