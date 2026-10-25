@@ -1133,9 +1133,11 @@ Host \"quoted\"
         assert!(err.contains("見つかりません"), "{}", err);
         assert_ne!(st.dir_signature(&uri(&dir, "")), 0);
 
+        // realpath はリンクを辿る（macOS の一時フォルダ /var は /private/var の別名）
+        let canon = std::fs::canonicalize(dir.path()).unwrap();
         assert_eq!(
             st.resolve(&format!("{}/sub/..", uri(&dir, ""))).unwrap(),
-            uri(&dir, "")
+            format_uri("h", &canon.to_string_lossy())
         );
         st.disconnect("h");
         assert!(st.sessions().is_empty());
