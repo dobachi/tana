@@ -78,6 +78,7 @@ describe('backend.js と Rust コマンド登録の整合', () => {
       'remote_sessions',
       'remote_set_writable',
       'remote_hosts',
+      'remote_trust_host',
     ]) {
       expect(invoked.has(c)).toBe(true);
       expect(registered.has(c)).toBe(true);

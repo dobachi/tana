@@ -192,7 +192,8 @@ impl Drop for Session {
 }
 
 /// 接続先名から Session を作る関数（本番は ssh、テストはローカルの sftp-server）。
-pub type Connector = Arc<dyn Fn(&str) -> Result<Session, String> + Send + Sync>;
+/// 第 2 引数は「未登録のホスト鍵を登録してよいか」（利用者が確認したときだけ true）。
+pub type Connector = Arc<dyn Fn(&str, bool) -> Result<Session, String> + Send + Sync>;
 
 /// アプリ全体の接続表。Tauri の State として持ち、ワーカースレッドへ複製して渡す。
 #[derive(Clone)]
@@ -207,6 +208,8 @@ struct Inner {
     writable: Mutex<HashMap<String, bool>>,
     /// 接続先ごとのホーム（`sftp://HOST` だけを開いたときの行き先）。
     homes: Mutex<HashMap<String, String>>,
+    /// ホスト鍵が未登録でも登録して繋いでよいと利用者が確認した接続先。
+    trusted: Mutex<std::collections::HashSet<String>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -235,6 +238,7 @@ impl RemoteState {
                 sessions: Mutex::new(HashMap::new()),
                 writable: Mutex::new(HashMap::new()),
                 homes: Mutex::new(HashMap::new()),
+                trusted: Mutex::new(Default::default()),
             }),
         }
     }
@@ -244,7 +248,8 @@ impl RemoteState {
             return Ok(s.clone());
         }
         // 接続中は表を握らない（他の接続先の操作を止めないため）
-        let s = Arc::new(Mutex::new((self.inner.connector)(host)?));
+        let trust = lock(&self.inner.trusted).contains(host);
+        let s = Arc::new(Mutex::new((self.inner.connector)(host, trust)?));
         let mut map = lock(&self.inner.sessions);
         Ok(map.entry(host.to_string()).or_insert(s).clone())
     }
@@ -280,6 +285,11 @@ impl RemoteState {
                 Err(e) => return Err(e.to_string()),
             }
         }
+    }
+
+    /// 未登録のホスト鍵を登録して繋ぐことを許す（利用者の確認後に呼ぶ）。
+    pub fn trust_host(&self, host: &str) {
+        lock(&self.inner.trusted).insert(host.to_string());
     }
 
     pub fn is_writable(&self, host: &str) -> bool {
@@ -742,10 +752,22 @@ fn upload_tree(c: &mut Io, from: &Path, to: &str) -> Result<(), sftp::Error> {
 
 /// ssh に渡す引数（純粋）。パスワード等の対話はできないので BatchMode。
 /// 生存確認で、スリープや回線断に 1 分以内に気づく。
-pub fn ssh_args(host: &str) -> Vec<String> {
-    [
+/// ~/.ssh/config の転送（Fude の RemoteForward 等）は張らず、接続共有の親にもならない
+/// （Tana が切断したときに、相乗りしている他の ssh まで道連れにしないため）。
+/// `accept_new` は利用者が確認したときだけ: 未登録の鍵は登録、**変わった鍵は従来どおり拒否**。
+pub fn ssh_args(host: &str, accept_new: bool) -> Vec<String> {
+    let mut v: Vec<&str> = vec![
         "-o",
         "BatchMode=yes",
+        "-o",
+        "ClearAllForwardings=yes",
+        "-o",
+        "ControlMaster=no",
+    ];
+    if accept_new {
+        v.extend(["-o", "StrictHostKeyChecking=accept-new"]);
+    }
+    v.extend([
         "-o",
         "ConnectTimeout=15",
         "-o",
@@ -756,19 +778,24 @@ pub fn ssh_args(host: &str) -> Vec<String> {
         "--",
         host,
         "sftp",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect()
+    ]);
+    v.into_iter().map(str::to_string).collect()
 }
 
-fn ssh_connect(host: &str) -> Result<Session, String> {
+/// ssh の失敗がホスト鍵の未登録（初めての相手）によるものか。鍵が変わった場合
+/// （なりすましの疑い）は含めない。
+pub fn is_unknown_host_key(stderr: &str) -> bool {
+    stderr.contains("Host key verification failed")
+        && !stderr.contains("REMOTE HOST IDENTIFICATION HAS CHANGED")
+}
+
+fn ssh_connect(host: &str, accept_new: bool) -> Result<Session, String> {
     use std::process::{Command, Stdio};
     if !valid_host(host) {
         return Err(format!("接続先が不正です: {}", host));
     }
     let mut cmd = Command::new("ssh");
-    cmd.args(ssh_args(host))
+    cmd.args(ssh_args(host, accept_new))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -805,7 +832,12 @@ fn ssh_connect(host: &str) -> Result<Session, String> {
         Err(e) => {
             // 子プロセスは Session::new 内で落ちた（drop 済み）。stderr の読み終わりを少し待つ
             std::thread::sleep(std::time::Duration::from_millis(200));
-            let detail = ssh_error_line(&lock(&err_buf)).unwrap_or_else(|| e.to_string());
+            let stderr = lock(&err_buf).clone();
+            if is_unknown_host_key(&stderr) {
+                // フロントが確認ダイアログを出して trust_host → 再接続する目印
+                return Err(format!("UNKNOWN_HOST_KEY:{}", host));
+            }
+            let detail = ssh_error_line(&stderr).unwrap_or_else(|| e.to_string());
             Err(format!("{} に接続できません（{}）", host, detail))
         }
     }
@@ -852,6 +884,11 @@ pub fn remote_disconnect(state: St<'_>, host: String) {
 #[tauri::command]
 pub fn remote_sessions(state: St<'_>) -> Vec<SessionInfo> {
     state.sessions()
+}
+
+#[tauri::command]
+pub fn remote_trust_host(state: St<'_>, host: String) {
+    state.trust_host(&host);
 }
 
 #[tauri::command]
@@ -1042,10 +1079,43 @@ Host \"quoted\"
 
     #[test]
     fn ssh_args_end_options_before_host() {
-        let a = ssh_args("k16");
+        let a = ssh_args("k16", false);
         let i = a.iter().position(|x| x == "--").unwrap();
         assert_eq!(&a[i + 1..], ["k16", "sftp"]);
         assert!(a.contains(&"BatchMode=yes".to_string()));
+        // Fude の RemoteForward / 接続共有を横取りしない
+        assert!(a.contains(&"ClearAllForwardings=yes".to_string()));
+        assert!(a.contains(&"ControlMaster=no".to_string()));
+        assert!(!a.iter().any(|x| x.starts_with("StrictHostKeyChecking")));
+        let b = ssh_args("k16", true);
+        assert!(b.contains(&"StrictHostKeyChecking=accept-new".to_string()));
+        let i = b.iter().position(|x| x == "--").unwrap();
+        assert_eq!(&b[i + 1..], ["k16", "sftp"]);
+    }
+
+    #[test]
+    fn unknown_host_key_is_not_a_changed_key() {
+        assert!(is_unknown_host_key(
+            "No ED25519 host key is known for k16 and you have requested strict checking.\r\nHost key verification failed.\r\n"
+        ));
+        assert!(!is_unknown_host_key(
+            "@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @\nHost key verification failed.\n"
+        ));
+        assert!(!is_unknown_host_key("Permission denied (publickey)."));
+    }
+
+    #[test]
+    fn trust_host_is_passed_to_connector_only_after_consent() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let s2 = seen.clone();
+        let st = RemoteState::with_connector(Arc::new(move |h: &str, trust: bool| {
+            lock(&s2).push(trust);
+            Err(format!("UNKNOWN_HOST_KEY:{}", h))
+        }));
+        assert_eq!(st.connect("k16").unwrap_err(), "UNKNOWN_HOST_KEY:k16");
+        st.trust_host("k16");
+        let _ = st.connect("k16");
+        assert_eq!(*lock(&seen), [false, true]);
     }
 
     #[test]
@@ -1087,7 +1157,7 @@ Host \"quoted\"
     fn local_state() -> Option<RemoteState> {
         // sftp-server が無い環境では飛ばす
         drop(crate::sftp::tests::local_server()?);
-        let connector: Connector = Arc::new(|_host: &str| {
+        let connector: Connector = Arc::new(|_host: &str, _trust: bool| {
             let mut child = crate::sftp::tests::local_server().ok_or("no sftp-server")?;
             let out = child.stdout.take().unwrap();
             let inp = child.stdin.take().unwrap();
@@ -1304,7 +1374,7 @@ Host \"quoted\"
 
     #[test]
     fn connection_failure_is_reported_with_host() {
-        let st = RemoteState::with_connector(Arc::new(|h: &str| {
+        let st = RemoteState::with_connector(Arc::new(|h: &str, _trust: bool| {
             Err(format!("{} に接続できません（Permission denied）", h))
         }));
         let e = st.list_dir("sftp://k16/x").unwrap_err();

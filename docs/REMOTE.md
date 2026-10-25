@@ -16,7 +16,9 @@ ssh で入れるマシンのファイルを、手元のファイルと同じよ�
 リモートを表示しているペインは、見出しに 🌐 と `k16:` が付き、タブ名も `k16:notes` のようになる。
 
 前提: **パスワード入力なしで `ssh 接続先` できること**（鍵認証・ssh-agent・Tailscale SSH など）。
-画面からパスワードやホスト鍵の確認には答えられないので、初めての相手は一度端末で `ssh 接続先` して `yes` と答えておく。
+画面からパスワードは聞けない。初めての相手（この PC の ssh にホスト鍵が未登録）なら、
+Tana が「鍵を登録して接続しますか？」と確認し、承認すると登録して繋ぐ（`StrictHostKeyChecking=accept-new` 相当。
+**鍵が変わった相手は確認も出さずに拒否**する）。Windows 版と WSL 版は ssh の `known_hosts` が別なので、それぞれで一度確認が出る。
 
 ## 閲覧のみ（既定）と書き込み
 
@@ -51,7 +53,8 @@ ssh で入れるマシンのファイルを、手元のファイルと同じよ�
 
 ## 仕組み
 
-Tana が `ssh -o BatchMode=yes … -s -- 接続先 sftp` を起動し、その標準入出力で SFTP v3 を話す
+Tana が `ssh -o BatchMode=yes -o ClearAllForwardings=yes -o ControlMaster=no … -s -- 接続先 sftp` を起動し
+（`~/.ssh/config` にある Fude 用の `RemoteForward` や接続共有を横取りしない）、その標準入出力で SFTP v3 を話す
 （`src-tauri/src/sftp.rs` は依存を増やさない最小実装、接続管理は `remote.rs`）。
 アプリ内ではリモートの場所を `sftp://接続先/絶対パス` という文字列で表し、`backend.js` がリモートなら
 `remote_*` コマンドへ振り分ける。ペイン・タブ・お気に入り等はローカルと区別しない。
@@ -61,7 +64,8 @@ Tana が `ssh -o BatchMode=yes … -s -- 接続先 sftp` を起動し、その�
 | 症状 | 見るところ |
 | --- | --- |
 | `… に接続できません（Permission denied (publickey).）` | 鍵認証が通っていない。端末で `ssh 接続先` がパスワード無しで通るか |
-| `… に接続できません（Host key verification failed.）` | 初めての相手。端末で一度 `ssh 接続先` して `yes` |
+| 「初めての接続先です」の確認が出る | その PC の ssh が相手の鍵を知らない。承認すれば登録される（端末で一度 `ssh 接続先` → `yes` でも同じ） |
+| `… に接続できません（Host key verification failed.）` | 鍵が**変わった**相手（再インストール・なりすまし等）。理由を確かめてから `ssh-keygen -R 接続先` で古い鍵を消す |
 | `… に接続できません（Could not resolve hostname …）` | `~/.ssh/config` の `HostName` |
 | `… は閲覧のみの接続です` | `o → s` の接続画面で「書き込みを許可」 |
 | `ssh を起動できません` | `ssh` コマンドが PATH に無い（Windows は「OpenSSH クライアント」機能を有効に） |

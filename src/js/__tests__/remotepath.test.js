@@ -12,6 +12,8 @@ import {
   remoteLabel,
   describeRemoteError,
   readOnlyHostAmong,
+  unknownHostKeyHost,
+  hostKeyConfirmMessage,
 } from '../core/remotepath.js';
 
 describe('isValidHost', () => {
@@ -123,5 +125,28 @@ describe('readOnlyHostAmong', () => {
   it('ローカルと許可済みだけなら null', () => {
     expect(readOnlyHostAmong(['/local', 'sftp://w/a', null, undefined], isW)).toBeNull();
     expect(readOnlyHostAmong([], isW)).toBeNull();
+  });
+});
+
+describe('ホスト鍵が未登録（初めての接続先）', () => {
+  it('Rust の目印から接続先を取り出す（文言が前後に付いても）', () => {
+    expect(unknownHostKeyHost('UNKNOWN_HOST_KEY:k16')).toBe('k16');
+    expect(unknownHostKeyHost(new Error('sftp://k16/x: UNKNOWN_HOST_KEY:me@k16'))).toBe('me@k16');
+  });
+  it('backend が言い換えた後でも cause から分かる', () => {
+    const raw = 'UNKNOWN_HOST_KEY:k16';
+    const e = new Error(describeRemoteError(raw), { cause: raw });
+    expect(e.message).toContain('ホスト鍵が未登録');
+    expect(unknownHostKeyHost(e)).toBe('k16');
+  });
+  it('他の失敗は null', () => {
+    expect(unknownHostKeyHost('k16 に接続できません（Permission denied）')).toBeNull();
+    expect(unknownHostKeyHost(null)).toBeNull();
+    expect(unknownHostKeyHost(new Error('x'))).toBeNull();
+  });
+  it('確認文は接続先と、鍵が変わった相手は拒否することを示す', () => {
+    const m = hostKeyConfirmMessage('k16');
+    expect(m).toContain('k16');
+    expect(m).toContain('鍵が変わった相手は引き続き拒否');
   });
 });

@@ -482,6 +482,7 @@ pub fn run() {
             remote::remote_disconnect,
             remote::remote_sessions,
             remote::remote_set_writable,
+            remote::remote_trust_host,
             remote::remote_hosts,
             remote::remote_resolve,
             remote::remote_list_dir,

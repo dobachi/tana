@@ -122,7 +122,33 @@ export function describeRemoteError(error) {
   const s = msg == null ? '' : String(msg);
   const m = /^READ_ONLY:(.*)$/.exec(s);
   if (m) return readOnlyMessage(m[1]);
+  const k = /UNKNOWN_HOST_KEY:([^\s)）]+)/.exec(s);
+  if (k) return `${k[1]} のホスト鍵が未登録です（初めての接続先）`;
   return s;
+}
+
+/**
+ * ssh が「ホスト鍵が未登録（初めての相手）」で断ったときの接続先。それ以外は null。
+ * backend.js が文言を言い換えた後でも分かるよう、元のエラー（cause）も見る。
+ * 鍵が**変わった**相手は Rust 側でこの目印にしない（なりすましの疑いは確認なしに拒否）。
+ */
+export function unknownHostKeyHost(error) {
+  for (let e = error, i = 0; e != null && i < 4; e = e.cause, i++) {
+    const s = typeof e === 'object' && 'message' in e ? e.message : e;
+    const m = /UNKNOWN_HOST_KEY:([^\s)）]+)/.exec(String(s));
+    if (m) return m[1];
+    if (typeof e !== 'object') break;
+  }
+  return null;
+}
+
+/** ホスト鍵の登録を確認する文言。 */
+export function hostKeyConfirmMessage(host) {
+  return (
+    `${host} は初めての接続先です（この PC の ssh にホスト鍵が未登録）。\n` +
+    `鍵を登録して接続しますか？\n` +
+    `（端末で一度 ssh ${host} して yes と答えるのと同じです。鍵が変わった相手は引き続き拒否します）`
+  );
 }
 
 /** 閲覧のみの接続へ書き込もうとしたときの案内。 */

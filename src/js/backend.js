@@ -274,6 +274,11 @@ export async function remoteSessions() {
   return (await invoke('remote_sessions')) || [];
 }
 
+/** 未登録のホスト鍵を登録して繋ぐことを許す（利用者が確認した後に呼ぶ）。 */
+export async function remoteTrustHost(host) {
+  return invoke('remote_trust_host', { host });
+}
+
 /** 接続先への書き込みを許可/禁止する（既定は閲覧のみ）。 */
 export async function remoteSetWritable(host, writable) {
   return invoke('remote_set_writable', { host, writable });

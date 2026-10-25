@@ -84,6 +84,8 @@ import {
   needsResolve,
   readOnlyHostAmong,
   readOnlyMessage,
+  unknownHostKeyHost,
+  hostKeyConfirmMessage,
 } from './core/remotepath.js';
 import { createRemotes, loadStoredRemotes, storeRemotes } from './core/remotes.js';
 import { createRemoteView } from './core/remoteview.js';
@@ -114,6 +116,7 @@ import {
   remoteDisconnect,
   remoteSessions,
   remoteSetWritable,
+  remoteTrustHost,
   remoteHosts,
   remoteResolve,
   remoteFetch,
@@ -513,11 +516,14 @@ const remoteView = createRemoteView({
   onOpen: async (uri, { host, writable }) => {
     await remoteSetWritable(host, writable);
     remotes.setWritable(host, writable);
-    const target = needsResolve(uri) ? await remoteResolve(uri) : uri;
     const fp = activeFilePane();
     if (!fp) return;
+    let target = uri;
     try {
-      await fp.load(target);
+      await withHostKeyConsent(async () => {
+        target = needsResolve(uri) ? await remoteResolve(uri) : uri;
+        await fp.load(target);
+      });
     } catch (e) {
       throw new Error(describeOpenError(target, e), { cause: e });
     }
@@ -539,6 +545,24 @@ const remoteView = createRemoteView({
     remotes.setWritable(host, on);
   },
 });
+
+/**
+ * リモートへの最初の接続で「ホスト鍵が未登録」と断られたら、確認を取って登録し、
+ * もう一度だけ実行する（Tana の ssh は対話できないため、ここで代わりに聞く）。
+ */
+async function withHostKeyConsent(run) {
+  try {
+    return await run();
+  } catch (e) {
+    const host = unknownHostKeyHost(e);
+    if (!host) throw e;
+    if (!(await confirmDialog(hostKeyConfirmMessage(host)))) {
+      throw new Error(`${host} のホスト鍵を登録しなかったため接続しませんでした`, { cause: e });
+    }
+    await remoteTrustHost(host);
+    return run();
+  }
+}
 
 /** リモート接続画面を開く。アクティブペインがリモートなら、その接続先と場所で始める。 */
 function openRemoteView() {
@@ -850,8 +874,11 @@ async function navigatePane(pane, value, o = {}) {
   }
   try {
     // `sftp://k16` や `sftp://k16/~/x` は接続してから絶対パスへ（FR-20）
-    if (needsResolve(target)) target = await remoteResolve(target);
-    await fp.load(target);
+    const raw = target;
+    await withHostKeyConsent(async () => {
+      target = needsResolve(raw) ? await remoteResolve(raw) : raw;
+      await fp.load(target);
+    });
     if (isRemote(target)) remotes.touch(remoteHost(target), target);
     panes.setActive(pane);
     focusActivePane();
@@ -1982,12 +2009,11 @@ async function init() {
       // リモート (FR-20) は回線を待つので起動を止めない。いったん手元を出し、
       // 繋がったら（その間に移動していなければ）移る。
       await fp.load(home).catch(() => {});
-      (needsResolve(d) ? remoteResolve(d) : Promise.resolve(d))
-        .then(async (abs) => {
-          await listDir(abs);
-          if (fp.getCurrentDir() === home) await fp.load(abs);
-        })
-        .catch(() => toast(`${remoteLabel(d)} を開けませんでした（接続できません）`));
+      withHostKeyConsent(async () => {
+        const abs = needsResolve(d) ? await remoteResolve(d) : d;
+        await listDir(abs);
+        if (fp.getCurrentDir() === home) await fp.load(abs);
+      }).catch(() => toast(`${remoteLabel(d)} を開けませんでした（接続できません）`));
       return;
     }
     try {
