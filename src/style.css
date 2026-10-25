@@ -677,6 +677,9 @@ body[data-mode='operation'] .pane.active {
   padding: 4px 0;
   overflow-y: auto;
   flex: 1;
+  /* 行のクリック・ドラッグで文字列選択が走らないように（名前のコピーはメニューから） */
+  -webkit-user-select: none;
+  user-select: none;
 }
 /* 一覧の列（名前 / サイズ / 更新日時）。ヘッダと行で同じテンプレートを使う。 */
 .pane-columns,

@@ -119,6 +119,19 @@ describe('ドラッグの開始', () => {
     expect(onDrop).not.toHaveBeenCalled();
   });
 
+  it('ドラッグが始まったら、それまでに走った文字列選択を消す', () => {
+    const p = document.createElement('p');
+    p.textContent = 'some text';
+    document.body.appendChild(p);
+    const range = document.createRange();
+    range.selectNodeContents(p);
+    document.getSelection().addRange(range);
+    expect(document.getSelection().toString()).toBe('some text');
+    beginDrag();
+    expect(document.getSelection().toString()).toBe('');
+    p.remove();
+  });
+
   it('しきい値を超えるとドラッグが始まりゴーストが出る', () => {
     beginDrag();
     expect(session.isDragging()).toBe(true);

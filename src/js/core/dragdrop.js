@@ -127,6 +127,9 @@ export function createDragSession(deps) {
       stop();
       return;
     }
+    // しきい値を越えるまでに始まってしまった文字列選択を消す
+    const sel = doc.getSelection ? doc.getSelection() : null;
+    if (sel && sel.removeAllRanges) sel.removeAllRanges();
     // ドラッグ元の行を半透明にする
     const paths = new Set(active.sources.map((s) => s.path));
     for (const row of doc.querySelectorAll('.entry')) {

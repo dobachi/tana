@@ -190,6 +190,8 @@ export function createFilePane(rootEl, opts = {}) {
   }
 
   function render() {
+    // 描き直しても見ていた位置を保つ（作り直しの間に一覧が空になり先頭へ戻るため）
+    const scrollTop = listEl.scrollTop;
     listEl.replaceChildren();
     entries.forEach((e, i) => {
       const li = document.createElement('li');
@@ -282,6 +284,7 @@ export function createFilePane(rootEl, opts = {}) {
       listEl.appendChild(li);
     });
     renderColumns();
+    listEl.scrollTop = scrollTop;
     const cur = listEl.children[cursor];
     if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
   }
@@ -301,6 +304,7 @@ export function createFilePane(rootEl, opts = {}) {
     if (dir !== currentDir) {
       selected = new Set();
       anchor = -1;
+      listEl.scrollTop = 0; // 別のフォルダは先頭から
     }
     currentDir = dir;
     recompute();

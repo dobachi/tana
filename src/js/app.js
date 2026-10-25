@@ -1381,7 +1381,8 @@ async function refreshPanes() {
   const jobs = [];
   for (const p of [PANE.LEFT, PANE.RIGHT]) {
     const fp = filePanes[p];
-    if (fp && fp.getCurrentDir()) jobs.push(fp.load(fp.getCurrentDir()));
+    // reload はカーソル（パス一致）と表示位置を保つ。load だと先頭へ戻ってしまう
+    if (fp && fp.getCurrentDir()) jobs.push(fp.reload());
   }
   await Promise.all(jobs);
   updateStatus();
