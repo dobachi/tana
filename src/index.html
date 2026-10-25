@@ -22,9 +22,13 @@
         <section class="sidebar-section" id="favorites-section">
           <h2 class="sidebar-title">
             お気に入り
-            <button id="fav-add-folder" class="sidebar-btn" title="フォルダを追加">＋</button>
+            <span class="sidebar-btns">
+              <button id="fav-options" class="sidebar-btn" title="並べ替え・まとめ方">⇅</button>
+              <button id="fav-add-folder" class="sidebar-btn" title="フォルダを追加">＋</button>
+            </span>
           </h2>
-          <input id="fav-search" class="fav-search" type="search" placeholder="検索…" />
+          <input id="fav-search" class="fav-search" type="search" placeholder="検索…（#タグ）" />
+          <div id="fav-tags" class="fav-tags" hidden></div>
           <ul id="favorites" class="sidebar-list"></ul>
         </section>
       </aside>

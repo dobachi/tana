@@ -61,6 +61,7 @@ import {
   storeFavorites,
   defaultBookmarkName,
 } from './core/favorites.js';
+import { createFavViewState, loadFavView, storeFavView } from './core/favarrange.js';
 import {
   createExtApps,
   loadStoredExtApps,
@@ -141,6 +142,9 @@ const resolveConflict = createConflictDialog();
 const promptName = createInputDialog();
 const favorites = createFavorites(loadStoredFavorites());
 favorites.subscribe(() => storeFavorites(favorites.toJSON()));
+// お気に入りの見せ方（並べ替え・まとめ方・タグの絞り込み・見出しの開閉）
+const favViewState = createFavViewState(loadFavView());
+favViewState.subscribe(() => storeFavView(favViewState.toJSON()));
 const extApps = createExtApps(loadStoredExtApps());
 extApps.subscribe(() => storeExtApps(extApps.list()));
 // WSL 連携 (FR-13 の WSL 拡張)。実体は init() で Rust に問い合わせて差し替える。
@@ -1921,10 +1925,15 @@ async function init() {
   favView = createFavoritesView({
     listEl: document.getElementById('favorites'),
     searchEl: document.getElementById('fav-search'),
+    tagsEl: document.getElementById('fav-tags'),
+    optionsBtn: document.getElementById('fav-options'),
     favorites,
+    viewState: favViewState,
     onNavigate: navigateActive,
     onReturn: focusActivePane,
     promptName,
+    showMenu,
+    notify: toast,
   });
   // 「場所(Places)」サイドバー (FR-07)。起動時に検出して並べる。ドライブや
   // 標準フォルダをクリック / キーボードで開ける（別ドライブへの導線）。

@@ -346,6 +346,42 @@ body[data-mode='operation'] .settings-panel {
   color: var(--accent);
   border-color: var(--accent);
 }
+.sidebar-btns {
+  display: inline-flex;
+  gap: 4px;
+}
+/* 並べ替え・まとめ方が既定（手動・まとめない）以外のとき */
+.sidebar-btn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.fav-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 8px 6px;
+}
+.fav-tags[hidden] {
+  display: none;
+}
+.fav-tag {
+  font: inherit;
+  font-size: 0.8em;
+  line-height: 1.4;
+  padding: 0 6px;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.fav-tag:hover {
+  color: var(--fg);
+}
+.fav-tag.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 .fav-search {
   display: block;
   width: calc(100% - 16px);
@@ -443,8 +479,36 @@ body[data-mode='operation'] .place-row:focus {
   border-bottom: 4px solid transparent;
   transition: transform 0.1s;
 }
-.fav-folder.open > .fav-row .fav-caret {
+.fav-folder.open > .fav-row .fav-caret,
+.fav-group.open > .fav-row .fav-caret {
   transform: rotate(90deg);
+}
+/* まとめ方の見出し（接続先・タグ） */
+.fav-group-row .fav-name {
+  font-weight: 600;
+  color: var(--fg-dim);
+}
+.fav-count {
+  flex-shrink: 0;
+  font-size: 0.8em;
+  color: var(--fg-dim);
+}
+/* ドラッグで並べ替え */
+.fav-row.fav-dragging {
+  opacity: 0.5;
+}
+.fav-row.fav-drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.fav-row.fav-drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.fav-row.fav-drop-into {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+#favorites .fav-row {
+  user-select: none;
 }
 .fav-remove {
   visibility: hidden;

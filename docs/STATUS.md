@@ -143,8 +143,8 @@ make docker-check  # CI相当チェック
 | FR-02 | ペイン間コピー/移動 | M | ✅ | F5/F6（複数選択対応）＋ D&D。既定コピー / Shift で移動。加えて Ctrl+C/Ctrl+X→Ctrl+V のファイルクリップボードで任意の現在地へ貼り付け可（core/clipboard.js） |
 | FR-03 | 削除・リネーム・新規フォルダ | M | ✅ | Delete/Shift+Delete・F2・F7。安全モードゲート |
 | FR-04 | 安全/操作モード切替 | M | ✅ | Ctrl+Shift+Space トグル + 視覚表示 |
-| FR-05 | お気に入り（ネスト） | M | ✅ | ツリー・Ctrl+D 追加・localStorage |
-| FR-06 | お気に入り検索 | M | ✅ | インクリメンタル検索 |
+| FR-05 | お気に入り（ネスト） | M | ✅ | ツリー・Ctrl+D 追加・localStorage。手動並べ替え（ドラッグ / Alt+矢印）・自動並べ替え（名前順 / 登録日順・昇降）・まとめ方（接続先 / タグ、見出しはたためる）・タグ。詳細: [FAVORITES.md](FAVORITES.md) |
+| FR-06 | お気に入り検索 | M | ✅ | インクリメンタル検索。`#タグ` とタグのチップで絞り込み |
 | FR-07 | 場所(Places)検出 | S | ✅ | サイドバー「場所」に自動検出を表示・クリック/キーボード移動（`places.rs`+`placesview.js`）。ドライブ/ボリューム（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）＋クラウド同期（OneDrive 個人/職場・Box・Dropbox・Google Drive）＋**WSL ディストロ（Win: `\\wsl$`/`\\wsl.localhost` → UNC `//wsl$/<distro>`、pathnav を UNC 対応化）**＋標準フォルダ。Places の手動追加はお気に入り(FR-05)で代替（見送り） |
 | FR-08 | タブ | S | ✅ | ペイン単位のタブ（Q3 確定）。Ctrl+T 新規/Ctrl+W 閉じる/Ctrl+Tab・Ctrl+Shift+Tab 切替＋タブ帯 UI（クリック/中クリック/×/＋）。各タブが dir＋カーソル/選択を保持し切替で復元（`core/tabs.js` + filepane getViewState/applyViewState）。起動時のタブ構成復元（session.js）＋**タブの D&D 並べ替え**（pointer ベース、クリックと閾値で判別）に対応 |
 | FR-09 | 多形式プレビュー | S | ✅ | 画像/テキスト/Markdown/メタ + 配置(右/下)/Ctrl+P。Markdownは markdown-it を遅延チャンク化(html:false)+CSP。**動画(mp4/webm)は将来対応**(backlog)。詳細設計: [PREVIEW.md](PREVIEW.md) |
