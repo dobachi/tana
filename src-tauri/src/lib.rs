@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 mod places;
+mod remote;
 mod search;
+mod sftp;
 mod updater_env;
 mod wsl;
 
@@ -56,7 +58,7 @@ fn absolute_dir(path: &Path) -> PathBuf {
 
 /// 指定ディレクトリのエントリ一覧を返す（フォルダ優先 → 名前順）。
 /// Tauri から切り離した純粋関数にしてユニットテスト可能にする。
-fn read_dir_entries(path: &Path) -> Result<Vec<DirEntry>, String> {
+pub(crate) fn read_dir_entries(path: &Path) -> Result<Vec<DirEntry>, String> {
     // エラー文言は呼び出し側が渡した綴りのまま返す（describeOpenError が先頭パスを剥がす）。
     let base = absolute_dir(path);
     let read = std::fs::read_dir(&base).map_err(|e| format!("{}: {}", path.display(), e))?;
@@ -98,7 +100,7 @@ fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
 /// エントリ群から、順序に依存しない安価な署名(u64)を作る（純粋）。
 /// 名前・サイズ・更新時刻・種別を畳み込むので、追加/削除/リネーム/更新で値が変わる。
 /// フロントが定期的に取得し、前回と違えば再読込する（自動更新, FR-19）。
-fn fold_signature(entries: &[DirEntry]) -> u64 {
+pub(crate) fn fold_signature(entries: &[DirEntry]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut acc: u64 = 0;
     for e in entries {
@@ -162,7 +164,7 @@ fn target_path(src: &Path, dest_dir: &Path, dest_name: Option<&str>) -> Option<P
 }
 
 /// `dest_dir` 内で衝突しないベース名を返す（既存なら "name (1).ext", "name (2).ext" …）。
-fn unique_target_name(dest_dir: &Path, name: &str) -> String {
+pub(crate) fn unique_target_name(dest_dir: &Path, name: &str) -> String {
     if !dest_dir.join(name).exists() {
         return name.to_string();
     }
@@ -315,7 +317,7 @@ fn make_dir(parent: String, name: String) -> Result<String, String> {
 // ── プレビュー用データ取得 (FR-09) ─────────────────────────
 
 /// プレビュー可能な最大読み取りバイト数の絶対上限（フロント指定値も再クランプ）。
-const PREVIEW_READ_CEILING: usize = 1_048_576; // 1 MiB
+pub(crate) const PREVIEW_READ_CEILING: usize = 1_048_576; // 1 MiB
 
 /// 種別判定用に先頭から返すバイト数。
 const SNIFF_BYTES: usize = 16;
@@ -334,7 +336,7 @@ pub struct PreviewData {
 }
 
 /// フロント指定の上限を絶対上限にクランプする。
-fn clamp_max_bytes(n: usize) -> usize {
+pub(crate) fn clamp_max_bytes(n: usize) -> usize {
     n.min(PREVIEW_READ_CEILING)
 }
 
@@ -412,12 +414,29 @@ fn read_preview_impl(path: &Path, max_bytes: usize) -> Result<PreviewData, Strin
         .read_to_end(&mut buf)
         .map_err(|e| format!("{}: {}", path.display(), e))?;
 
+    Ok(preview_from_buf(size, buf))
+}
+
+/// 先頭から読んだバイト列（`buf`）とファイル全体の大きさから、プレビュー用データを
+/// 組み立てる純粋ロジック。ローカルとリモート（remote.rs）で共有する。
+pub(crate) fn preview_from_buf(size: u64, buf: Vec<u8>) -> PreviewData {
+    if size == 0 && buf.is_empty() {
+        return PreviewData {
+            kind: "empty".to_string(),
+            size: 0,
+            read_bytes: 0,
+            truncated: false,
+            encoding: "utf-8".to_string(),
+            text: Some(String::new()),
+            sniff: Vec::new(),
+        };
+    }
     let read_bytes = buf.len();
     let truncated = size as usize > read_bytes;
     let sniff = buf[..buf.len().min(SNIFF_BYTES)].to_vec();
 
     if is_binary_head(&buf[..buf.len().min(4096)]) {
-        return Ok(PreviewData {
+        return PreviewData {
             kind: "binary".to_string(),
             size,
             read_bytes,
@@ -425,12 +444,12 @@ fn read_preview_impl(path: &Path, max_bytes: usize) -> Result<PreviewData, Strin
             encoding: "binary".to_string(),
             text: None,
             sniff,
-        });
+        };
     }
 
     let cut = truncate_at_char_boundary(&buf, buf.len());
     let (text, encoding) = decode_text(&buf[..cut]);
-    Ok(PreviewData {
+    PreviewData {
         kind: "text".to_string(),
         size,
         read_bytes,
@@ -438,7 +457,7 @@ fn read_preview_impl(path: &Path, max_bytes: usize) -> Result<PreviewData, Strin
         encoding: encoding.to_string(),
         text: Some(text),
         sniff,
-    })
+    }
 }
 
 /// プレビュー用データを取得する Tauri コマンド。
@@ -451,6 +470,7 @@ fn read_preview(path: String, max_bytes: usize) -> Result<PreviewData, String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(search::SearchState::default())
+        .manage(remote::RemoteState::default())
         .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -458,6 +478,22 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             list_dir,
+            remote::remote_connect,
+            remote::remote_disconnect,
+            remote::remote_sessions,
+            remote::remote_set_writable,
+            remote::remote_hosts,
+            remote::remote_resolve,
+            remote::remote_list_dir,
+            remote::remote_dir_signature,
+            remote::remote_read_preview,
+            remote::remote_fetch,
+            remote::remote_unique_name,
+            remote::remote_copy,
+            remote::remote_move,
+            remote::remote_delete,
+            remote::remote_rename,
+            remote::remote_make_dir,
             home_dir,
             current_dir,
             parent_dir,
