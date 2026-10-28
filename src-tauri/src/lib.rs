@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+mod extensions;
 mod places;
 mod remote;
 mod search;
@@ -467,6 +468,21 @@ fn read_preview(path: String, max_bytes: usize) -> Result<PreviewData, String> {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// ファイルの中身をそのまま返す（PDF プレビュー用）。上限を超えるものは読まない。
+/// JSON の数値配列にせず、生のバイト列（JS 側では ArrayBuffer）で渡す。
+fn read_file_bytes_impl(path: &Path, max_bytes: u64) -> Result<Vec<u8>, String> {
+    let meta = std::fs::metadata(path).map_err(|e| format!("読めません: {e}"))?;
+    if meta.len() > max_bytes {
+        return Err("TOO_LARGE".to_string());
+    }
+    std::fs::read(path).map_err(|e| format!("読めません: {e}"))
+}
+
+#[tauri::command]
+fn read_file_bytes(path: String, max_bytes: u64) -> Result<tauri::ipc::Response, String> {
+    read_file_bytes_impl(Path::new(&path), max_bytes).map(tauri::ipc::Response::new)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(search::SearchState::default())
@@ -506,6 +522,11 @@ pub fn run() {
             rename_path,
             make_dir,
             read_preview,
+            read_file_bytes,
+            extensions::extension_status,
+            extensions::read_extension_file,
+            extensions::uninstall_extension,
+            extensions::install_extension,
             app_version,
             dir_signature,
             places::list_places,
@@ -523,6 +544,16 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn read_file_bytes_respects_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.pdf");
+        std::fs::write(&p, b"%PDF-1.4").unwrap();
+        assert_eq!(super::read_file_bytes_impl(&p, 100).unwrap(), b"%PDF-1.4");
+        assert_eq!(super::read_file_bytes_impl(&p, 3).unwrap_err(), "TOO_LARGE");
+        assert!(super::read_file_bytes_impl(&dir.path().join("none"), 100).is_err());
+    }
+
     use super::*;
     use std::fs;
 

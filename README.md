@@ -24,6 +24,7 @@
 - [WSL 連携 (docs/WSL.md)](docs/WSL.md) — WSL 上の Tana から Windows 側のアプリ / エクスプローラーで開く
 - [リモート接続 (docs/REMOTE.md)](docs/REMOTE.md) — ssh 先のファイルをペインで開く（SFTP、相手側インストール不要、既定は閲覧のみ）
 - [お気に入り (docs/FAVORITES.md)](docs/FAVORITES.md) — 並べ替え（手動 / 名前順 / 登録日順）・接続先やタグでまとめる・タグで絞り込む
+- [プレビュー (docs/PREVIEW.md)](docs/PREVIEW.md) — 画像・テキスト・Markdown。PDF は設定 →「拡張機能」で有効にするオプション（エンジンは [tana-extensions](https://github.com/dobachi/tana-extensions) から取得）
 - ロードマップ: **M0 雛形** → M1 MVP(2ペイン操作 / 安全モード / お気に入り) → M2(Places / タブ / セッション復元)→ …
 
 ## 開発

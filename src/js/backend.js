@@ -298,3 +298,43 @@ export async function remoteResolve(path) {
 export async function remoteFetch(path) {
   return remoteInvoke('remote_fetch', { path });
 }
+
+// ===== ダウンロード型拡張 (Fude と同じ構成。extensions.rs) =====
+
+/** 拡張が入っているか。{installed, version}。Tauri 不在時は null */
+export async function extensionStatus(id) {
+  return invoke('extension_status', { id });
+}
+
+/** 導入済み拡張のファイルの中身（テキスト）。 */
+export async function readExtensionFile(id, rel) {
+  return invoke('read_extension_file', { id, rel });
+}
+
+/** 拡張を削除する。 */
+export async function uninstallExtension(id) {
+  return invoke('uninstall_extension', { id });
+}
+
+/**
+ * 拡張をダウンロード・検証・配置する。進み具合は onProgress(progress, total) に届く。
+ * 失敗は reject（文言は人が読めるもの）。
+ */
+export async function installExtension(id, onProgress) {
+  const fn = getInvoke();
+  if (!fn) throw new Error('この環境では拡張機能を入れられません');
+  const { Channel } = await import('@tauri-apps/api/core');
+  const channel = new Channel();
+  if (onProgress) channel.onmessage = (p) => onProgress(p.progress, p.total);
+  return fn('install_extension', { id, onProgress: channel });
+}
+
+/**
+ * ファイルの中身をバイト列（ArrayBuffer）で読む（PDF プレビュー用）。
+ * リモートは手元の一時フォルダへ取得してから読む。上限超過は "TOO_LARGE" で reject。
+ */
+export async function readFileBytes(path, maxBytes) {
+  const local = isRemote(path) ? await remoteInvoke('remote_fetch', { path }) : path;
+  if (!local) throw new Error('読めませんでした');
+  return invoke('read_file_bytes', { path: local, maxBytes });
+}

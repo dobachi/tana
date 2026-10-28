@@ -285,6 +285,22 @@ async function load(entry) {
 
 `meta.js` は最軽量なので `features/preview/` 内でも最初に import される。これが PV-5(必ず何か出す)を担保する。
 
+### PDF（オプション。ダウンロード型拡張 `pdfjs`）
+
+Fude の PlantUML / Mermaid 拡張と同じ構成。描画エンジン（Mozilla pdf.js）は本体に含めず、
+設定 →「拡張機能」で有効にしたときだけ取得する（既定はオフ。約 4.4MB）。
+
+- カタログ: `https://raw.githubusercontent.com/dobachi/tana-extensions/main/manifest.json`。
+  実体はリリースアセット。各ファイルを SHA-256 で検証し `<設定フォルダ>/tana/extensions/pdfjs/<版>/`
+  に置く（`src-tauri/src/extensions.rs`。途中で失敗したら何も残さない）
+- 描画: `features/pdf/adapter.js` が `sandbox="allow-scripts"` の iframe（不透明オリジン）で
+  本体同梱の `pdf-runner/runner.html` を開き、エンジンの中身と PDF のバイト列を postMessage で渡す。
+  runner が blob: URL から pdf.js を読み、ページを canvas に描く（見えたページから）。アプリの API には触れられない
+- PDF のバイト列は `read_file_bytes`（生バイト列で返す。上限 32MB）。リモートは取り寄せてから読む
+- 和文など埋め込みの無いフォントの PDF 用に CMap と標準フォントを同梱（`cmaps.json` / `standard_fonts.json`）
+- 解析用 worker は classic スクリプトで配る。不透明オリジンでは blob: の module worker を起動できないため
+- 実ブラウザでの確認: `node scripts/verify-pdf-runner.mjs <拡張のフォルダ> <PDF> <out.png>`（headless Chrome）
+
 ### Fude からの流用方針
 
 Fude の Markdown パイプライン(markdown-it 周り)は流用価値があるが、**PlantUML / Mermaid 等の図式レンダリングは v1 では持ち込まない**。あちらは iframe の実サイズ計測(`getBBox`)や base href の扱いに相当な複雑さを抱えており、ファイラの「ちら見」用途に対して重すぎる(NFR-P2 にも反する)。
@@ -313,6 +329,9 @@ Fude の Markdown パイプライン(markdown-it 周り)は流用価値がある
 2. **Markdown は HTML 無効**(`markdown-it({ html: false })`)。加えて生成後の DOM をサニタイズ(許可タグ/属性のホワイトリスト)。`javascript:` / `data:` スキームのリンクを除去
 3. **SVG は `<iframe sandbox>` 経由**でのみ表示。`<img src>` での SVG 表示はスクリプトが走らないが、外部参照とレンダリング爆弾のリスクが残るため sandbox に寄せる。sandbox 属性は空(= 全制限)
 4. **asset protocol の scope 見直し**(将来課題)。現状 `["**"]` は事実上全ファイル読み取り可。プレビュー導入により実際に使われる経路になるため、閲覧中ディレクトリへの動的スコープ制限を検討する → Open Issue PV-Q3
+
+PDF プレビュー（拡張）のために CSP へ `script-src blob:` / `worker-src blob:` / `frame-src 'self'` を足している。
+blob: は既にスクリプトを実行できる者にしか作れないため、追加の攻撃面は小さい。拡張のコードは sandbox iframe の中でだけ動く。
 
 ### その他
 

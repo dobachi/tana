@@ -8,6 +8,7 @@ import { THEMES, THEME_LABELS } from './theme.js';
 import { MIN_SCALE, MAX_SCALE, STEP, toPercent } from './fontscale.js';
 import { QUICK_SLOTS } from './extapps.js';
 import { APP_TARGETS, TARGET, TARGET_LABELS } from './wsl.js';
+import { describeProgress } from './pdfpreview.js';
 
 let panelEl = null;
 
@@ -44,6 +45,10 @@ export function closeSettings() {
  *   wsl?: {available: boolean, distro?: string},
  *   getDefaultOpen?: () => string,
  *   setDefaultOpen?: (v: string) => void,
+ *   pdfExt?: {getEnabled: () => boolean, setEnabled: (v: boolean) => void,
+ *             status: () => Promise<{installed: boolean, version?: string}|null>,
+ *             install: (onProgress: (p: number, t: number) => void) => Promise<void>,
+ *             uninstall: () => Promise<void>},
  * }} deps
  */
 export function openSettings(deps) {
@@ -102,6 +107,23 @@ export function openSettings(deps) {
         </div>`
             : ''
         }
+        <div class="setting-group" id="setting-extensions-group">
+          <label>拡張機能</label>
+          <div class="ext-row">
+            <label class="ext-toggle">
+              <input type="checkbox" id="setting-pdf" />
+              PDF プレビュー（pdf.js）
+            </label>
+            <span class="ext-status" id="setting-pdf-status"></span>
+            <button type="button" class="modal-btn" id="setting-pdf-remove" hidden>削除</button>
+          </div>
+          <progress id="setting-pdf-progress" max="1" value="0" hidden></progress>
+          <small class="setting-hint">
+            有効にすると、初回だけ描画エンジン（約 4.4 MB）を
+            <code>github.com/dobachi/tana-extensions</code> からダウンロードし、検証して保存します。
+            以降はオフラインで使えます。エンジンはアプリの権限を持たない枠の中で動きます。
+          </small>
+        </div>
         <div class="setting-group" id="setting-extapps-group">
           <label>外部アプリ（別のアプリで開く）</label>
           <div id="setting-extapps-list"></div>
@@ -171,9 +193,82 @@ export function openSettings(deps) {
   }
 
   setupExtApps(panelEl, extApps, wsl);
+  setupPdfExtension(panelEl, deps.pdfExt);
 
   panelEl.querySelector('.settings-close').focus();
   return panelEl;
+}
+
+/**
+ * 「拡張機能」の PDF プレビュー（Fude の拡張機能と同じ操作感）。
+ * チェックを入れると、未導入ならダウンロードしてから有効にする。失敗したらチェックを戻す。
+ * 外しても取得済みのエンジンは残る（「削除」で消せる）。
+ */
+export function setupPdfExtension(root, ext) {
+  const group = root.querySelector('#setting-extensions-group');
+  if (!group) return;
+  if (!ext) {
+    group.style.display = 'none';
+    return;
+  }
+  const box = root.querySelector('#setting-pdf');
+  const statusEl = root.querySelector('#setting-pdf-status');
+  const removeBtn = root.querySelector('#setting-pdf-remove');
+  const prog = root.querySelector('#setting-pdf-progress');
+  box.checked = ext.getEnabled();
+
+  async function refresh() {
+    const st = await Promise.resolve()
+      .then(() => ext.status())
+      .catch(() => null);
+    const installed = !!st?.installed;
+    statusEl.textContent = installed ? `導入済み（${st.version}）` : '未導入';
+    removeBtn.hidden = !installed;
+    return installed;
+  }
+
+  box.addEventListener('change', async () => {
+    if (!box.checked) {
+      ext.setEnabled(false);
+      return;
+    }
+    box.disabled = true;
+    try {
+      if (!(await refresh())) {
+        prog.hidden = false;
+        statusEl.textContent = 'ダウンロード中…';
+        await ext.install((p, t) => {
+          if (t > 0) prog.value = p / t;
+          statusEl.textContent = `ダウンロード中… ${describeProgress(p, t)}`;
+        });
+      }
+      ext.setEnabled(true);
+      await refresh();
+    } catch (err) {
+      box.checked = false;
+      ext.setEnabled(false);
+      statusEl.textContent = `失敗しました: ${err?.message || err}`;
+    } finally {
+      box.disabled = false;
+      prog.hidden = true;
+    }
+  });
+
+  removeBtn.addEventListener('click', async () => {
+    removeBtn.disabled = true;
+    try {
+      await ext.uninstall();
+      box.checked = false;
+      ext.setEnabled(false);
+      await refresh();
+    } catch (err) {
+      statusEl.textContent = `削除できませんでした: ${err?.message || err}`;
+    } finally {
+      removeBtn.disabled = false;
+    }
+  });
+
+  return refresh();
 }
 
 /**

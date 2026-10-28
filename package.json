@@ -5,7 +5,7 @@
   "scripts": {
     "dev:frontend": "esbuild src/js/app.js --bundle --outdir=dist --splitting --entry-names=bundle --format=esm --sourcemap --watch",
     "prebuild:frontend": "node -e \"require('fs').mkdirSync('dist',{recursive:true})\"",
-    "build:frontend": "node -e \"require('fs').cpSync('src/index.html','dist/index.html');require('fs').cpSync('src/style.css','dist/style.css')\" && esbuild src/js/app.js --bundle --outdir=dist --splitting --entry-names=bundle --format=esm --minify --tree-shaking=true",
+    "build:frontend": "node -e \"require('fs').cpSync('src/index.html','dist/index.html');require('fs').cpSync('src/style.css','dist/style.css');require('fs').cpSync('src/pdf-runner','dist/pdf-runner',{recursive:true})\" && esbuild src/js/app.js --bundle --outdir=dist --splitting --entry-names=bundle --format=esm --minify --tree-shaking=true",
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",

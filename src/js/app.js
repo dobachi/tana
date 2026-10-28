@@ -50,6 +50,7 @@ import { createFileOps } from './core/fileops.js';
 import { createFileClipboard } from './core/clipboard.js';
 import { createDragSession } from './core/dragdrop.js';
 import { buildEditMenuItems } from './core/editmenu.js';
+import { PDF_EXT_ID, loadPdfPreview, storePdfPreview } from './core/pdfpreview.js';
 import { buildFileMenuItems, buildEditExtraItems, buildGoMenuItems } from './core/appmenus.js';
 import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
@@ -131,6 +132,10 @@ import {
   windowsPath,
   openInWindows,
   revealInWindows,
+  readFileBytes,
+  extensionStatus,
+  installExtension,
+  uninstallExtension,
 } from './backend.js';
 
 const safemode = createSafeMode(MODE.SAFE);
@@ -675,8 +680,23 @@ function openSearchHit(hit) {
 const previewPlacement = createPreviewPlacement(loadStoredPlacement());
 // プレビュー画像の表示モード (FR-16): 既定フィット、クリックで実寸切替。
 const previewZoom = createPreviewZoom();
+// PDF プレビュー（オプション）。エンジンはダウンロード型拡張 pdfjs。導入状態は起動時と
+// 設定で入れた/消したときに調べ直す（プレビューのたびに問い合わせない）。
+let pdfEnabled = loadPdfPreview();
+let pdfInstalled = false;
+async function refreshPdfInstalled() {
+  try {
+    pdfInstalled = !!(await extensionStatus(PDF_EXT_ID))?.installed;
+  } catch {
+    pdfInstalled = false;
+  }
+  return pdfInstalled;
+}
+
 const preview = createPreview({
-  backend: { readPreview, assetUrl, previewSrc },
+  backend: { readPreview, assetUrl, previewSrc, readFileBytes },
+  pdf: () => ({ enabled: pdfEnabled, installed: pdfInstalled }),
+  isDark: () => theme.get() !== 'light',
   getContainer: () => document.getElementById('preview-content'),
   getInfoContainer: () => document.getElementById('preview-info'),
   onImage: (container) => wireImageZoom(container),
@@ -1203,7 +1223,35 @@ function openSettingsPanel() {
       wslDefaultOpen = v;
       storeDefaultOpen(v);
     },
+    pdfExt: {
+      getEnabled: () => pdfEnabled,
+      setEnabled: (v) => {
+        pdfEnabled = v;
+        storePdfPreview(v);
+        preview.refresh();
+      },
+      status: async () => {
+        const st = await extensionStatus(PDF_EXT_ID);
+        pdfInstalled = !!st?.installed;
+        return st;
+      },
+      install: async (onProgress) => {
+        await installExtension(PDF_EXT_ID, onProgress);
+        resetPdfEngine();
+        await refreshPdfInstalled();
+      },
+      uninstall: async () => {
+        await uninstallExtension(PDF_EXT_ID);
+        resetPdfEngine();
+        await refreshPdfInstalled();
+      },
+    },
   });
+}
+
+/** 拡張を入れ直した・消したら、読み込み済みのエンジンを捨てる（読んでいなければ何もしない）。 */
+function resetPdfEngine() {
+  import('./features/pdf/adapter.js').then((m) => m.resetEngine()).catch(() => {});
 }
 
 /** 設定画面を開閉する（Ctrl+, とメニューから） */
@@ -2167,6 +2215,9 @@ async function init() {
 
   // 外部変更の自動反映を開始 (FR-19)
   startAutoRefresh();
+
+  // PDF プレビューを有効にしているなら拡張の導入状態を調べ、表示中なら描き直す（待たない）
+  if (pdfEnabled) refreshPdfInstalled().then(() => preview.refresh());
 
   // 起動時の更新検知。待たない・失敗しても黙る（起動を妨げないため）。
   checkForUpdates();

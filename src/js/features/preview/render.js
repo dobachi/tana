@@ -69,6 +69,7 @@ export function renderInfo(container, { entry, kind, data, src }, doc) {
   // 種別ごとの追加情報
   let dimDd = null;
   if (kind === KIND.IMAGE) dimDd = add('寸法', '…');
+  if (kind === KIND.PDF && data && data.pages) add('ページ数', String(data.pages));
   if ((kind === KIND.TEXT || kind === KIND.MARKDOWN) && data) {
     if (data.encoding) add('エンコード', data.encoding);
     if (data.truncated) add('表示', '先頭のみ');

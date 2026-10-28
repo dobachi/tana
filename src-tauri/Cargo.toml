@@ -25,6 +25,13 @@ dirs = "5"
 trash = "5"
 # 検索(FR-18)の正規表現。軽量方針(NFR-P2)に合わせ regex より小さい regex-lite を使う。
 regex-lite = "0.1"
+# ダウンロード型拡張（extensions.rs）。いずれも updater が既に使っている版・構成に合わせ、
+# 依存を増やさない（reqwest は TLS 実装を選ばない構成。ring は updater と同じ）。
+reqwest = { version = "0.13", default-features = false, features = ["stream"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+futures-util = "0.3"
+sha2 = "0.10"
+hex = "0.4"
 
 [dev-dependencies]
 tempfile = "3"

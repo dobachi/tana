@@ -6,6 +6,7 @@
 import { KIND, LIMITS, detectKind, maxBytesFor } from './previewkind.js';
 import { isRemote } from './remotepath.js';
 import { resolveMarkdownImages } from './mdimages.js';
+import { pdfDecision } from './pdfpreview.js';
 
 /** リモートの画像は手元へ取得してから表示する。回線を占有しないよう大きさに上限を設ける。 */
 export const MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -14,15 +15,17 @@ const NOTE = {
   [KIND.DIR]: 'フォルダです',
   [KIND.TOO_LARGE]: '大きすぎるためプレビューしません',
   [KIND.BINARY]: 'バイナリのためプレビューできません',
-  [KIND.PDF]: 'PDF プレビューは未対応です',
   [KIND.EMPTY]: '空のファイルです',
 };
 
 /**
  * @param {object} deps
- * @param {{readPreview:Function, assetUrl:Function, previewSrc?:Function}} deps.backend
+ * @param {{readPreview:Function, assetUrl:Function, previewSrc?:Function, readFileBytes?:Function}} deps.backend
  *   previewSrc があれば画像の表示元はそれで得る（リモートは取得してから, FR-20）
  * @param {() => HTMLElement} deps.getContainer プレビュー本文の入れ物
+ * @param {() => {enabled: boolean, installed: boolean}} [deps.pdf] PDF プレビュー（拡張 pdfjs）の可否。既定は無効
+ * @param {() => Promise<object>} [deps.loadPdf] PDF レンダラ（遅延）
+ * @param {() => boolean} [deps.isDark] 暗いテーマか（PDF の背景色）
  * @param {() => Promise<object>} [deps.loadRenderers] レンダラモジュール（遅延）
  * @param {Document} [deps.doc]
  * @param {number} [deps.debounceMs]
@@ -40,6 +43,9 @@ export function createPreview(deps) {
     getContainer,
     getInfoContainer = () => null,
     onImage = null, // 画像を描画した直後に呼ぶ (FR-16: 表示モードの結線)
+    pdf = () => ({ enabled: false, installed: false }),
+    loadPdf = () => import('../features/pdf/adapter.js'),
+    isDark = () => false,
     loadRenderers = () => import('../features/preview/render.js'),
     loadMarkdown = () => import('../features/preview/markdown.js'),
     doc = typeof document !== 'undefined' ? document : null,
@@ -104,12 +110,45 @@ export function createPreview(deps) {
         renderedPath = renderKey(entry);
         return;
       }
+      if (kind1 === KIND.PDF) {
+        const d = pdfDecision({ ...pdf(), size: entry.size, maxBytes: limits.maxPreviewBytes });
+        if (!d.show) {
+          R.renderPlaceholder(container, { kind: KIND.PDF, note: d.note }, doc);
+          info(KIND.PDF, null, null);
+          renderedPath = renderKey(entry);
+          return;
+        }
+        const [P, data] = await Promise.all([
+          loadPdf(),
+          backend.readFileBytes(entry.path, limits.maxPreviewBytes),
+        ]);
+        if (gen !== generation) return;
+        const infoEl2 = getInfoContainer();
+        P.renderPdf(
+          container,
+          {
+            data,
+            dark: isDark(),
+            onLoaded: (pages) => {
+              if (gen !== generation || !infoEl2) return;
+              R.renderInfo(infoEl2, { entry, kind: KIND.PDF, data: { pages } }, doc);
+            },
+            onError: (note) => {
+              if (gen !== generation) return;
+              R.renderPlaceholder(container, { kind: KIND.PDF, note }, doc);
+            },
+          },
+          doc,
+        );
+        info(KIND.PDF, null, null);
+        renderedPath = renderKey(entry);
+        return;
+      }
       if (
         kind1 === KIND.DIR ||
         kind1 === KIND.EMPTY ||
         kind1 === KIND.TOO_LARGE ||
-        kind1 === KIND.BINARY ||
-        kind1 === KIND.PDF
+        kind1 === KIND.BINARY
       ) {
         R.renderPlaceholder(container, { kind: kind1, note: NOTE[kind1] }, doc);
         info(kind1, null, null);

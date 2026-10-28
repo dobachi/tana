@@ -326,3 +326,92 @@ describe('Markdown 中の画像 (FR-09, FR-20)', () => {
     );
   });
 });
+
+describe('createPreview — PDF（拡張 pdfjs, オプション）', () => {
+  const pdfFile = { name: 'a.pdf', path: '/p/a.pdf', size: 1000, is_dir: false };
+
+  function setupPdf({ enabled = true, installed = true, size } = {}) {
+    const container = { innerHTML: 'x' };
+    const infoContainer = { innerHTML: 'x' };
+    const R = makeRenderers();
+    const P = { renderPdf: vi.fn() };
+    const bytes = new ArrayBuffer(4);
+    const readFileBytes = vi.fn(async () => bytes);
+    const preview = createPreview({
+      backend: { readPreview: vi.fn(), assetUrl: vi.fn(), readFileBytes },
+      getContainer: () => container,
+      getInfoContainer: () => infoContainer,
+      loadRenderers: async () => R,
+      loadPdf: async () => P,
+      pdf: () => ({ enabled, installed }),
+      isDark: () => true,
+      doc: {},
+      scheduler: makeScheduler(),
+    });
+    const entry = size == null ? pdfFile : { ...pdfFile, size };
+    return { preview, R, P, readFileBytes, bytes, container, infoContainer, entry };
+  }
+
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('オフなら読まずに案内だけ出す（既定）', async () => {
+    const { preview, R, P, readFileBytes, entry } = setupPdf({ enabled: false });
+    preview.setTarget(entry);
+    preview.open();
+    await flush();
+    expect(readFileBytes).not.toHaveBeenCalled();
+    expect(P.renderPdf).not.toHaveBeenCalled();
+    expect(R.renderPlaceholder.mock.calls[0][1].note).toMatch(/オフ/);
+  });
+
+  it('有効でも拡張が入っていなければ案内する', async () => {
+    const { preview, R, readFileBytes, entry } = setupPdf({ installed: false });
+    preview.setTarget(entry);
+    preview.open();
+    await flush();
+    expect(readFileBytes).not.toHaveBeenCalled();
+    expect(R.renderPlaceholder.mock.calls[0][1].note).toMatch(/拡張機能が入っていません/);
+  });
+
+  it('大きすぎるものは読まない', async () => {
+    const { preview, R, readFileBytes, entry } = setupPdf({ size: 64 * 1024 * 1024 });
+    preview.setTarget(entry);
+    preview.open();
+    await flush();
+    expect(readFileBytes).not.toHaveBeenCalled();
+    expect(R.renderPlaceholder.mock.calls[0][1].note).toMatch(/大きすぎる/);
+  });
+
+  it('有効・導入済みならバイト列を読んで描き、ページ数を情報欄に出す', async () => {
+    const { preview, R, P, readFileBytes, bytes, container, infoContainer, entry } = setupPdf();
+    preview.setTarget(entry);
+    preview.open();
+    await flush();
+    expect(readFileBytes).toHaveBeenCalledWith('/p/a.pdf', expect.any(Number));
+    expect(P.renderPdf).toHaveBeenCalledTimes(1);
+    const [c, arg] = P.renderPdf.mock.calls[0];
+    expect(c).toBe(container);
+    expect(arg.data).toBe(bytes);
+    expect(arg.dark).toBe(true);
+    arg.onLoaded(12);
+    const last = R.renderInfo.mock.calls.at(-1);
+    expect(last[0]).toBe(infoContainer);
+    expect(last[1].data).toEqual({ pages: 12 });
+    arg.onError('PDF として読めませんでした');
+    expect(R.renderPlaceholder.mock.calls.at(-1)[1].note).toBe('PDF として読めませんでした');
+  });
+
+  it('描画が追い越されたら、古い PDF の通知は捨てる', async () => {
+    const { preview, R, P, entry } = setupPdf();
+    preview.setTarget(entry);
+    preview.open();
+    await flush();
+    const arg = P.renderPdf.mock.calls[0][1];
+    preview.close();
+    const before = R.renderInfo.mock.calls.length;
+    arg.onLoaded(3);
+    arg.onError('x');
+    expect(R.renderInfo.mock.calls.length).toBe(before);
+    expect(R.renderPlaceholder).not.toHaveBeenCalled();
+  });
+});

@@ -3676,9 +3676,14 @@ name = "tana"
 version = "0.5.5"
 dependencies = [
  "dirs 5.0.1",
+ "futures-util",
+ "hex",
  "regex-lite",
+ "reqwest",
+ "rustls",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-cli",

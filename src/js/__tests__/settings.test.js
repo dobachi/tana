@@ -277,3 +277,105 @@ describe('WSL セクション', () => {
     expect(document.querySelector('#setting-wsl-group')).toBeNull();
   });
 });
+
+describe('拡張機能: PDF プレビュー', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  function makeExt({ installed = false, installError = null } = {}) {
+    const state = { enabled: false, installed };
+    return {
+      state,
+      getEnabled: () => state.enabled,
+      setEnabled: vi.fn((v) => {
+        state.enabled = v;
+      }),
+      status: vi.fn(async () =>
+        state.installed ? { installed: true, version: '4.10.38' } : { installed: false },
+      ),
+      install: vi.fn(async (onProgress) => {
+        onProgress(1048576, 2 * 1048576);
+        if (installError) throw new Error(installError);
+        state.installed = true;
+      }),
+      uninstall: vi.fn(async () => {
+        state.installed = false;
+      }),
+    };
+  }
+
+  const q = (sel) => document.querySelector(sel);
+
+  it('pdfExt が無ければ欄ごと隠す', () => {
+    openSettings(deps);
+    expect(q('#setting-extensions-group').style.display).toBe('none');
+  });
+
+  it('導入状態を出す。未導入なら削除ボタンは無い', async () => {
+    openSettings({ ...deps, pdfExt: makeExt() });
+    await flush();
+    expect(q('#setting-pdf').checked).toBe(false);
+    expect(q('#setting-pdf-status').textContent).toBe('未導入');
+    expect(q('#setting-pdf-remove').hidden).toBe(true);
+  });
+
+  it('チェックで未導入ならダウンロードしてから有効にする', async () => {
+    const ext = makeExt();
+    openSettings({ ...deps, pdfExt: ext });
+    await flush();
+    const box = q('#setting-pdf');
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+    expect(ext.install).toHaveBeenCalledTimes(1);
+    expect(ext.setEnabled).toHaveBeenLastCalledWith(true);
+    expect(q('#setting-pdf-status').textContent).toBe('導入済み（4.10.38）');
+    expect(q('#setting-pdf-remove').hidden).toBe(false);
+    expect(q('#setting-pdf-progress').hidden).toBe(true);
+    expect(box.disabled).toBe(false);
+  });
+
+  it('導入済みならダウンロードせずに有効にする', async () => {
+    const ext = makeExt({ installed: true });
+    openSettings({ ...deps, pdfExt: ext });
+    await flush();
+    const box = q('#setting-pdf');
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    await flush();
+    expect(ext.install).not.toHaveBeenCalled();
+    expect(ext.setEnabled).toHaveBeenLastCalledWith(true);
+  });
+
+  it('ダウンロードに失敗したらチェックを戻し、理由を出す', async () => {
+    const ext = makeExt({ installError: 'SHA-256 が一致しません' });
+    openSettings({ ...deps, pdfExt: ext });
+    await flush();
+    const box = q('#setting-pdf');
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+    expect(box.checked).toBe(false);
+    expect(ext.state.enabled).toBe(false);
+    expect(q('#setting-pdf-status').textContent).toMatch(/失敗しました: SHA-256/);
+  });
+
+  it('チェックを外すと無効にするだけ。削除ボタンで消す', async () => {
+    const ext = makeExt({ installed: true });
+    ext.state.enabled = true;
+    openSettings({ ...deps, pdfExt: ext });
+    await flush();
+    const box = q('#setting-pdf');
+    expect(box.checked).toBe(true);
+    box.checked = false;
+    box.dispatchEvent(new Event('change'));
+    expect(ext.setEnabled).toHaveBeenLastCalledWith(false);
+    expect(ext.uninstall).not.toHaveBeenCalled();
+    q('#setting-pdf-remove').click();
+    await flush();
+    await flush();
+    expect(ext.uninstall).toHaveBeenCalledTimes(1);
+    expect(q('#setting-pdf-status').textContent).toBe('未導入');
+  });
+});
