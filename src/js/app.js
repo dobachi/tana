@@ -50,6 +50,7 @@ import { createFileOps } from './core/fileops.js';
 import { createFileClipboard } from './core/clipboard.js';
 import { createDragSession } from './core/dragdrop.js';
 import { buildEditMenuItems } from './core/editmenu.js';
+import { buildFileMenuItems, buildEditExtraItems, buildGoMenuItems } from './core/appmenus.js';
 import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
 import { createNavHistory } from './core/navhistory.js';
@@ -457,6 +458,24 @@ function runPrefixAction(action) {
       }
       break;
   }
+}
+
+/** 現在のフォルダ内の検索を開く（Ctrl+F / / とメニューから）。 */
+function openSearch() {
+  if (isRemote(activeFilePane()?.getCurrentDir())) {
+    toast('リモートの場所では検索は使えません');
+    return;
+  }
+  search.open();
+}
+
+/** メニューバーから「別のアプリで開く…」。カーソル行の位置に選択メニューを出す。 */
+function openWithFromMenu() {
+  const fp = activeFilePane();
+  const entry = fp && fp.getCursorEntry();
+  if (!entry) return;
+  const pt = fp.getCursorPoint();
+  showOpenWithMenu(pt.x, pt.y, entry.path, { focusFirst: true });
 }
 
 /** アクティブペインで戻る/進む。dir を履歴から取り出して読み込む。 */
@@ -1205,13 +1224,28 @@ function buildMenuDefinition() {
     {
       label: 'ファイル(F)',
       accessKey: 'F',
-      items: () => [
-        { label: 'お気に入りに現在地を追加', shortcut: 'Ctrl+D', action: addCurrentToFavorites },
-        { label: 'ワークスペース…（タブ構成の保存/復元）', action: () => workspacesView.open() },
-        { label: 'リモート接続…（SSH / SFTP）', shortcut: 'Ctrl+Shift+X', action: openRemoteView },
-        { separator: true },
-        { label: '終了', action: () => window.close() },
-      ],
+      items: () =>
+        buildFileMenuItems(
+          {
+            hasEntry: !!activeFilePane()?.getCursorEntry(),
+            wsl: wsl.available,
+            safe: safemode.isSafe(),
+          },
+          {
+            openApp: () => runPrefixAction('open:app'),
+            reveal: () => runPrefixAction('open:reveal'),
+            openWith: openWithFromMenu,
+            openWindows: () => runPrefixAction('open:windows'),
+            explorer: () => runPrefixAction('open:explorer'),
+            newTab: () => newTab(panes.getActive()),
+            closeTab: () => closeTab(panes.getActive()),
+            remote: openRemoteView,
+            workspaces: () => workspacesView.open(),
+            addFavorite: addCurrentToFavorites,
+            toggleMode: () => safemode.toggle(),
+            quit: () => window.close(),
+          },
+        ),
     },
     {
       label: '編集(E)',
@@ -1221,19 +1255,63 @@ function buildMenuDefinition() {
       items: () => {
         const fp = activeFilePane();
         const targets = fp ? fp.getTargetEntries() : [];
-        return buildEditMenuItems(
+        return [
+          ...buildEditMenuItems(
+            {
+              targetCount: targets.length,
+              hasDest: !!filePanes[panes.getInactive()]?.getCurrentDir(),
+              hasCursor: !!(fp && fp.getCursorEntry()),
+            },
+            {
+              copy: opCopy,
+              move: opMove,
+              rename: opRename,
+              trash: opTrash,
+              deletePermanent: opDeletePermanent,
+              makeFolder: opMakeFolder,
+            },
+          ),
+          { separator: true },
+          ...buildEditExtraItems(
+            {
+              targetCount: targets.length,
+              canPaste: !fileClipboard.isEmpty() && !!fp?.getCurrentDir(),
+              hasSelection: !!fp && fp.getSelectedCount() > 0,
+              hasEntry: !!fp?.getCursorEntry(),
+            },
+            {
+              copy: clipboardCopy,
+              cut: clipboardCut,
+              paste: clipboardPaste,
+              selectAll: () => fp?.selectAllEntries(),
+              clearSelection: () => fp?.clearSelection(),
+              copyPath: () => runPrefixAction('copy:path'),
+              copyName: () => runPrefixAction('copy:name'),
+              copyDir: () => runPrefixAction('copy:dir'),
+            },
+          ),
+        ];
+      },
+    },
+    {
+      label: '移動(G)',
+      accessKey: 'G',
+      items: () => {
+        const hist = navHistory[panes.getActive()];
+        return buildGoMenuItems(
+          { canBack: !!hist?.canBack(), canForward: !!hist?.canForward() },
           {
-            targetCount: targets.length,
-            hasDest: !!filePanes[panes.getInactive()]?.getCurrentDir(),
-            hasCursor: !!(fp && fp.getCursorEntry()),
-          },
-          {
-            copy: opCopy,
-            move: opMove,
-            rename: opRename,
-            trash: opTrash,
-            deletePermanent: opDeletePermanent,
-            makeFolder: opMakeFolder,
+            parent: () => activeFilePane()?.goParent(),
+            back: () => navGo(-1),
+            forward: () => navGo(1),
+            pathInput: () => activeFilePane()?.beginPathEdit(),
+            search: openSearch,
+            otherPane: () => panes.toggle(),
+            nextTab: () => switchTab(panes.getActive(), 1),
+            prevTab: () => switchTab(panes.getActive(), -1),
+            tabLeft: () => runPrefixAction('tab:left'),
+            tabRight: () => runPrefixAction('tab:right'),
+            sidebar: toggleSidebarFocus,
           },
         );
       },
@@ -1265,6 +1343,9 @@ function buildMenuDefinition() {
           shortcut: k === 'ext' ? 's e' : `s ${k[0]}`,
           action: () => sortState.applyKey(k),
         })),
+        { label: '　並び順を反転', shortcut: 's r', action: () => sortState.reverse() },
+        { separator: true },
+        { label: '再読込', shortcut: 'Ctrl+R', action: reloadActivePane },
         { separator: true },
         ...THEMES.map((t) => ({
           label: `${theme.get() === t ? '✓ ' : ''}${THEME_LABELS[t]}`,
@@ -1622,11 +1703,7 @@ function onKeydown(e) {
     (!e.ctrlKey && !e.altKey && !e.metaKey && e.key === '/' && !isEditableTarget(e.target))
   ) {
     e.preventDefault();
-    if (isRemote(activeFilePane()?.getCurrentDir())) {
-      toast('リモートの場所では検索は使えません');
-      return;
-    }
-    search.open();
+    openSearch();
     return;
   }
 

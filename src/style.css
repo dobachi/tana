@@ -1149,25 +1149,40 @@ body[data-mode='operation'] .modal {
 
 /* Help（ショートカット一覧） */
 .help-box {
-  min-width: 420px;
-  max-width: 90vw;
-  max-height: 84vh;
-  overflow-y: auto;
+  width: min(960px, 92vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
 }
 .help-title {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 1.15em;
 }
-.help-version {
-  margin: 0 0 8px;
-  font-size: 0.82em;
-  color: var(--fg-dim);
+.help-filter {
+  margin: 8px 0 4px;
+  padding: 5px 8px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.help-filter:focus {
+  outline: 1px solid var(--accent);
+}
+.help-body {
+  overflow-y: auto;
+  /* 幅があれば節を2段に組む（節の途中では割らない） */
+  columns: 2 380px;
+  column-gap: 28px;
+}
+.help-block {
+  break-inside: avoid;
 }
 .help-section {
   margin: 14px 0 6px;
-  font-size: 0.8em;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: 0.85em;
+  font-weight: 600;
   color: var(--fg-dim);
   border-bottom: 1px solid var(--border);
   padding-bottom: 2px;
@@ -1189,8 +1204,11 @@ body[data-mode='operation'] .help-list dt {
 .help-list dd {
   margin: 0;
 }
+.help-empty {
+  color: var(--fg-dim);
+}
 .help-hint {
-  margin: 16px 0 0;
+  margin: 10px 0 0;
   color: var(--fg-dim);
   font-size: 0.85em;
   text-align: right;
