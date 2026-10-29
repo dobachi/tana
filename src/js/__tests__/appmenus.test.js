@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildFileMenuItems, buildEditExtraItems, buildGoMenuItems } from '../core/appmenus.js';
+import {
+  buildFileMenuItems,
+  buildEditExtraItems,
+  buildGoMenuItems,
+  buildFilterMenuItems,
+} from '../core/appmenus.js';
 import { SHORTCUTS } from '../core/help.js';
 
 const byLabel = (items, label) => items.find((i) => i.label === label);
@@ -78,6 +83,47 @@ describe('buildGoMenuItems', () => {
     const item = byLabel(buildGoMenuItems({}, { pathInput }), 'パスを入力して移動…');
     expect(item.shortcut).toBe('Ctrl+L');
     expect(item.action).toBe(pathInput);
+  });
+});
+
+describe('buildFilterMenuItems', () => {
+  const labels = (items) => items.map((i) => i.label);
+
+  it('絞り込み無し: ✓ は付かず、解除は無効', () => {
+    const items = buildFilterMenuItems({ type: 'all', exts: [] });
+    expect(labels(items)).toEqual([
+      '　フォルダだけ',
+      '　ファイルだけ',
+      '　拡張子を指定…',
+      '　絞り込みを解除',
+    ]);
+    expect(items[3].disabled).toBe(true);
+  });
+
+  it('今の状態に ✓ を付け、指定中の拡張子を見せる', () => {
+    const items = buildFilterMenuItems({ type: 'files', exts: ['md', 'txt'] });
+    expect(labels(items)).toEqual([
+      '　フォルダだけ',
+      '✓ ファイルだけ',
+      '✓ 拡張子を指定…（.md .txt）',
+      '　絞り込みを解除',
+    ]);
+    expect(items[3].disabled).toBe(false);
+  });
+
+  it('キー表記と action を割り当てる', () => {
+    const a = { dirs: vi.fn(), files: vi.fn(), ext: vi.fn(), clear: vi.fn() };
+    const items = buildFilterMenuItems({ type: 'dirs', exts: [] }, a);
+    expect(items.map((i) => i.shortcut)).toEqual(['f → d', 'f → f', 'f → e', 'f → a']);
+    expect(items.map((i) => i.action)).toEqual([a.dirs, a.files, a.ext, a.clear]);
+  });
+
+  it('ヘルプの絞り込みキーは全部このメニューにある', () => {
+    const keys = new Set(shortcuts(buildFilterMenuItems(null)).flatMap(expand));
+    const view = SHORTCUTS.find((s) => s.section === '表示');
+    const filterRows = view.items.filter(([k]) => k.startsWith('f →'));
+    expect(filterRows.length).toBeGreaterThan(0);
+    for (const [k] of filterRows) for (const p of expand(k)) expect(keys).toContain(p);
   });
 });
 

@@ -7,8 +7,8 @@ import {
 } from '../core/keyprefix.js';
 
 describe('isPrefixLeader', () => {
-  it('s/t/y/o がリーダー（大小無視）', () => {
-    for (const k of ['s', 't', 'y', 'o', 'S', 'T']) expect(isPrefixLeader(k)).toBe(true);
+  it('s/t/y/o/f がリーダー（大小無視）', () => {
+    for (const k of ['s', 't', 'y', 'o', 'f', 'S', 'T', 'F']) expect(isPrefixLeader(k)).toBe(true);
   });
   it('それ以外や非文字列は false', () => {
     expect(isPrefixLeader('a')).toBe(false);
@@ -43,6 +43,13 @@ describe('resolvePrefixAction', () => {
     }
     expect(resolvePrefixAction('o', 'a')).toBe('open:with:ask');
     expect(resolvePrefixAction('o', '0')).toBeNull();
+  });
+  it('f は絞り込み', () => {
+    expect(resolvePrefixAction('f', 'd')).toBe('filter:dirs');
+    expect(resolvePrefixAction('f', 'f')).toBe('filter:files');
+    expect(resolvePrefixAction('f', 'e')).toBe('filter:ext');
+    expect(resolvePrefixAction('f', 'a')).toBe('filter:clear');
+    expect(resolvePrefixAction('f', 'x')).toBeNull();
   });
   it('大文字キーも解決する', () => {
     expect(resolvePrefixAction('t', 'H')).toBe('tab:left');

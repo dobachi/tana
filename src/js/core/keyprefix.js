@@ -10,6 +10,7 @@ export const PREFIX_LEADERS = {
   t: 'tab', // タブ操作
   y: 'copy', // ヤンク（コピー）
   o: 'open', // 開く/表示
+  f: 'filter', // 絞り込み
 };
 
 // (prefix)(key) → アクションID。key は小文字で引く。
@@ -17,6 +18,7 @@ const MAP = {
   s: { n: 'sort:name', s: 'sort:size', m: 'sort:modified', e: 'sort:ext', r: 'sort:reverse' },
   t: { h: 'tab:left', l: 'tab:right' },
   y: { p: 'copy:path', n: 'copy:name', d: 'copy:dir' },
+  f: { d: 'filter:dirs', f: 'filter:files', e: 'filter:ext', a: 'filter:clear' },
   // o は「開く」。1..9 は設定に登録した外部アプリのスロット (extapps.js)、
   // a は都度入力。三打鍵は既存の二打鍵モデルに無いので、登録アプリへは数字で直行する。
   o: {
@@ -45,6 +47,7 @@ export const PREFIX_HINTS = {
   s: '並び替え: n=名前 / s=サイズ / m=更新日時 / e=拡張子 / r=反転',
   t: 'タブ: h=左へ / l=右へ',
   y: 'コピー: p=パス / n=名前 / d=現在地のパス',
+  f: '絞り込み: d=フォルダだけ / f=ファイルだけ / e=拡張子を指定 / a=解除',
   o: '開く: o=既定アプリ / r=ファイルマネージャ / 1-9=登録した外部アプリ / a=別のアプリ… / s=リモート接続',
 };
 

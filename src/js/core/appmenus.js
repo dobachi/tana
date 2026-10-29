@@ -1,4 +1,4 @@
-// appmenus.js — メニューバーの「ファイル」「編集（後半）」「移動」の項目を組み立てる純粋ロジック。
+// appmenus.js — メニューバーの「ファイル」「編集（後半）」「移動」と、絞り込みの項目を組み立てる純粋ロジック。
 //
 // ヘルプ（help.js）に載っているキー操作は、キーを覚えていなくてもメニューから辿れるようにする。
 // ここは項目の並び・ラベル・ショートカット表記・無効化判定だけを持ち、実行は app.js が
@@ -115,5 +115,25 @@ export function buildGoMenuItems(state, a = {}) {
     { label: 'タブを右へ移動', shortcut: 't → l', action: a.tabRight },
     { separator: true },
     { label: 'サイドバーへ（場所 → お気に入り）', shortcut: 'Ctrl+B', action: a.sidebar },
+  ];
+}
+
+/**
+ * 絞り込み（表示メニュー・一覧の空き所の右クリック）。今の状態に ✓ を付ける。
+ * @param {{type: string, exts: string[]}} filter 今の絞り込み（entryfilter.normalizeFilter 済み）
+ * @param {object} a actions（dirs / files / ext / clear）
+ */
+export function buildFilterMenuItems(filter, a = {}) {
+  const { type = 'all', exts = [] } = filter || {};
+  const active = type !== 'all' || exts.length > 0;
+  const mark = (on) => (on ? '✓ ' : '　');
+  const extLabel = exts.length
+    ? `拡張子を指定…（${exts.map((e) => '.' + e).join(' ')}）`
+    : '拡張子を指定…';
+  return [
+    { label: `${mark(type === 'dirs')}フォルダだけ`, shortcut: 'f → d', action: a.dirs },
+    { label: `${mark(type === 'files')}ファイルだけ`, shortcut: 'f → f', action: a.files },
+    { label: `${mark(exts.length > 0)}${extLabel}`, shortcut: 'f → e', action: a.ext },
+    { label: '　絞り込みを解除', shortcut: 'f → a', disabled: !active, action: a.clear },
   ];
 }

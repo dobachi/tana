@@ -6,6 +6,12 @@ import { pathSegments } from './pathnav.js';
 import { applyClick, toggleAt, selectAll, pruneSelection, targetEntries } from './selection.js';
 import { sortEntries, defaultCollator, DEFAULT_SORT } from './sort.js';
 import { exceededThreshold } from './dnd.js';
+import {
+  applyEntryFilter,
+  describeFilter,
+  isFilterActive,
+  normalizeFilter,
+} from './entryfilter.js';
 
 /** バイト数を人間可読なサイズ文字列にする */
 export function formatSize(bytes) {
@@ -77,6 +83,8 @@ export function restoreSelection(entries, selection) {
  * @param {() => void} [opts.onActivate] このペインがクリックされたとき
  * @param {(info: {dir: string, entry: object|null, count: number}) => void} [opts.onChange]
  * @param {boolean} [opts.showHidden] 隠しファイルを表示するか（初期値）
+ * @param {(filter: {type: string, exts: string[]}) => void} [opts.onFilterChange]
+ *   絞り込みが変わったとき（帯の × で外したときも）
  */
 export function createFilePane(rootEl, opts = {}) {
   const listEl = rootEl.querySelector('.pane-list');
@@ -93,13 +101,19 @@ export function createFilePane(rootEl, opts = {}) {
   let entries = []; // 表示対象（フィルタ+ソート後）
   let cursor = 0;
   let showHidden = opts.showHidden === true;
+  // 簡易絞り込み（フォルダだけ / ファイルだけ / 拡張子）。フォルダを移っても掛けたまま
+  let filter = normalizeFilter(null);
+  let unfilteredCount = 0; // 絞り込み前（隠しファイルの扱いは反映後）の件数
+  const filterBar = createFilterBar();
   let selected = new Set(); // 選択されたパス（FR-11）
   let anchor = -1; // Shift+クリックの起点
   // 複数選択したままドラッグできるようにするための保留（下の mousedown を参照）
   let pendingCollapse = null;
 
   function recompute(keepPath) {
-    entries = sortEntries(filterEntries(allEntries, showHidden), getSort(), collator);
+    const visible = filterEntries(allEntries, showHidden);
+    unfilteredCount = visible.length;
+    entries = sortEntries(applyEntryFilter(visible, filter), getSort(), collator);
     // 表示から消えたものを選択に残さない（隠しファイル切替・再読込・外部削除）
     selected = pruneSelection(
       selected,
@@ -157,8 +171,45 @@ export function createFilePane(rootEl, opts = {}) {
     });
   }
 
+  /** 絞り込み中を示す帯（見出しの下）。× で外せる */
+  function createFilterBar() {
+    const doc = rootEl.ownerDocument;
+    if (!doc || !listEl) return null;
+    const bar = doc.createElement('div');
+    bar.className = 'pane-filter';
+    bar.hidden = true;
+    const text = doc.createElement('span');
+    text.className = 'pane-filter-text';
+    const clear = doc.createElement('button');
+    clear.type = 'button';
+    clear.className = 'pane-filter-clear';
+    clear.textContent = '×';
+    clear.title = '絞り込みを解除（f a）';
+    clear.setAttribute('aria-label', '絞り込みを解除');
+    clear.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      setFilter(null);
+    });
+    bar.append(text, clear);
+    rootEl.insertBefore(bar, columnsEl || listEl);
+    return bar;
+  }
+
+  function renderFilterBar() {
+    const active = isFilterActive(filter);
+    if (listEl) listEl.classList.toggle('filtered-empty', active && entries.length === 0);
+    if (!filterBar) return;
+    filterBar.hidden = !active;
+    if (active) {
+      filterBar.firstChild.textContent = `絞り込み: ${describeFilter(filter)}（${
+        entries.length
+      } / ${unfilteredCount} 件）`;
+    }
+  }
+
   function notify() {
     renderBreadcrumb();
+    renderFilterBar();
     if (onChange) {
       onChange({
         dir: currentDir,
@@ -339,6 +390,18 @@ export function createFilePane(rootEl, opts = {}) {
     notify();
   }
 
+  /** 絞り込みを設定（null で解除）。カーソル行が残れば位置を保つ */
+  function setFilter(next) {
+    const n = normalizeFilter(next);
+    if (n.type === filter.type && n.exts.join() === filter.exts.join()) return;
+    filter = n;
+    const keep = entries[cursor] ? entries[cursor].path : null;
+    recompute(keep);
+    render();
+    notify();
+    if (opts.onFilterChange) opts.onFilterChange({ ...filter, exts: [...filter.exts] });
+  }
+
   function moveCursor(delta) {
     const next = clampCursor(cursor + delta, entries.length);
     if (next !== cursor) {
@@ -485,6 +548,8 @@ export function createFilePane(rootEl, opts = {}) {
     selectAllEntries,
     clearSelection,
     isShowingHidden: () => showHidden,
+    setFilter,
+    getFilter: () => ({ ...filter, exts: [...filter.exts] }),
     getSelectedCount: () => selected.size,
     /** 操作（コピー/移動/削除）の対象。選択が無ければカーソル位置の1件 */
     getTargetEntries: () => targetEntries(entries, selected, cursor),

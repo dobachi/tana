@@ -114,3 +114,56 @@ describe('getCursorPoint', () => {
     el.remove();
   });
 });
+
+describe('絞り込み（setFilter / 帯）', () => {
+  const bar = () => root.querySelector('.pane-filter');
+  const shown = () => [...root.querySelectorAll('.entry')].map((li) => li.textContent);
+
+  it('既定では帯を出さず全件', () => {
+    expect(bar().hidden).toBe(true);
+    expect(root.querySelectorAll('.entry').length).toBe(2);
+    expect(pane.getFilter()).toEqual({ type: 'all', exts: [] });
+  });
+
+  it('フォルダだけにすると帯に件数つきで出て、× で外れる', () => {
+    const onFilterChange = vi.fn();
+    root.remove();
+    root = buildPaneDom();
+    pane = createFilePane(root, { onFilterChange });
+    return pane.load('/base').then(() => {
+      pane.setFilter({ type: 'dirs' });
+      expect(root.querySelectorAll('.entry').length).toBe(1);
+      expect(shown()[0]).toContain('docs');
+      expect(bar().hidden).toBe(false);
+      expect(bar().textContent).toContain('フォルダだけ（1 / 2 件）');
+      expect(onFilterChange).toHaveBeenLastCalledWith({ type: 'dirs', exts: [] });
+
+      bar().querySelector('.pane-filter-clear').click();
+      expect(bar().hidden).toBe(true);
+      expect(root.querySelectorAll('.entry').length).toBe(2);
+      expect(onFilterChange).toHaveBeenLastCalledWith({ type: 'all', exts: [] });
+    });
+  });
+
+  it('一致が無ければ一覧に「一致なし」を出す（帯は残す）', () => {
+    pane.setFilter({ type: 'files', exts: ['pdf'] });
+    expect(root.querySelectorAll('.entry').length).toBe(0);
+    expect(root.querySelector('.pane-list').classList.contains('filtered-empty')).toBe(true);
+    expect(bar().hidden).toBe(false);
+    pane.setFilter(null);
+    expect(root.querySelector('.pane-list').classList.contains('filtered-empty')).toBe(false);
+  });
+
+  it('フォルダを移っても絞り込みは掛けたまま', async () => {
+    pane.setFilter({ type: 'files' });
+    await pane.load('/base');
+    expect(pane.getFilter().type).toBe('files');
+    expect(shown().every((t) => !t.includes('docs'))).toBe(true);
+  });
+
+  it('カーソル行が残る絞り込みなら位置を保つ', () => {
+    pane.moveCursor(1); // a.txt
+    pane.setFilter({ type: 'files', exts: ['txt'] });
+    expect(pane.getCursorEntry().name).toBe('a.txt');
+  });
+});

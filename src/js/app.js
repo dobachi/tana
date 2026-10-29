@@ -51,7 +51,13 @@ import { createFileClipboard } from './core/clipboard.js';
 import { createDragSession } from './core/dragdrop.js';
 import { buildEditMenuItems } from './core/editmenu.js';
 import { PDF_EXT_ID, loadPdfPreview, storePdfPreview } from './core/pdfpreview.js';
-import { buildFileMenuItems, buildEditExtraItems, buildGoMenuItems } from './core/appmenus.js';
+import {
+  buildFileMenuItems,
+  buildEditExtraItems,
+  buildGoMenuItems,
+  buildFilterMenuItems,
+} from './core/appmenus.js';
+import { extOf, isFilterActive, parseExtList } from './core/entryfilter.js';
 import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
 import { createNavHistory } from './core/navhistory.js';
@@ -431,6 +437,12 @@ function runPrefixAction(action) {
       break;
     case 'sort:reverse':
       activeSort().reverse();
+      break;
+    case 'filter:dirs':
+    case 'filter:files':
+    case 'filter:ext':
+    case 'filter:clear':
+      if (fp) filterActions(fp)[action.slice('filter:'.length)]();
       break;
     case 'tab:left':
       moveActiveTab(panes.getActive(), -1);
@@ -1208,6 +1220,18 @@ function showEntryMenu(pane, info) {
       items.push({ label: 'Windows パスをコピー', action: () => copyWindowsPath(entry.path) });
     }
     items.push({ separator: true });
+    // マウスでも絞り込めるように: このファイルの拡張子だけ / 解除
+    const ext = entry.is_dir ? '' : extOf(entry.name);
+    if (ext) {
+      items.push({
+        label: `「.${ext}」のファイルだけ表示`,
+        action: () => fp.setFilter({ type: 'files', exts: [ext] }),
+      });
+    }
+    if (isFilterActive(fp.getFilter())) {
+      items.push({ label: '絞り込みを解除', shortcut: 'f → a', action: () => fp.setFilter(null) });
+    }
+    if (ext || isFilterActive(fp.getFilter())) items.push({ separator: true });
   }
 
   items.push(
@@ -1226,6 +1250,10 @@ function showEntryMenu(pane, info) {
     { label: '現在地のパスをコピー', action: () => copyText(fp.getCurrentDir()) },
     ...revealMenuItems(fp.getCurrentDir(), { currentDir: true }),
   );
+  // 空いている所の右クリックには絞り込みも並べる（行の上ではメニューが長くなるので出さない）
+  if (!entry) {
+    items.push({ separator: true }, ...buildFilterMenuItems(fp.getFilter(), filterActions(fp)));
+  }
 
   showMenu(x, y, items, { focusFirst: !!info.fromKeyboard });
 }
@@ -1415,6 +1443,17 @@ function buildMenuDefinition() {
           action: () => activeSort().applyKey(k),
         })),
         { label: '　並び順を反転', shortcut: 's r', action: () => activeSort().reverse() },
+        { separator: true },
+        {
+          label: `絞り込み${
+            activeFilePane() && isFilterActive(activeFilePane().getFilter()) ? '（中）' : ''
+          }`,
+          disabled: true,
+        },
+        ...buildFilterMenuItems(
+          activeFilePane() ? activeFilePane().getFilter() : null,
+          filterActions(activeFilePane()),
+        ),
         { separator: true },
         { label: '再読込', shortcut: 'Ctrl+R', action: reloadActivePane },
         { separator: true },
@@ -1638,6 +1677,36 @@ async function makeNewIn(fp, kind) {
     kind === 'file' ? await fileOps.makeNewFile(dir) : await fileOps.makeNewFolder(dir);
   // 作成中に別の場所へ移っていたら、カーソルは動かさない
   if (created && fp.getCurrentDir() === dir) fp.applyViewState({ cursorPath: created });
+}
+/**
+ * 絞り込みの操作（キー f → … / 表示メニュー / 右クリック共通）。fp はそのペイン。
+ * フォルダだけ・ファイルだけは、もう一度選ぶと解除（切替）。
+ */
+function filterActions(fp) {
+  const cur = () => (fp ? fp.getFilter() : { type: 'all', exts: [] });
+  const set = (f) => fp && fp.setFilter(f);
+  return {
+    dirs: () => set(cur().type === 'dirs' ? null : { type: 'dirs' }),
+    files: () =>
+      set(cur().type === 'files' ? { type: 'all', exts: cur().exts } : { ...cur(), type: 'files' }),
+    ext: async () => {
+      if (!fp) return;
+      const now = cur();
+      const entry = fp.getCursorEntry();
+      // 既定: 指定中の拡張子、無ければカーソル行のファイルの拡張子
+      const def = now.exts.length
+        ? now.exts.join(' ')
+        : entry && !entry.is_dir
+          ? extOf(entry.name)
+          : '';
+      const text = await promptName('表示する拡張子（空白・カンマ区切り。例: md txt）', def);
+      if (text == null) return;
+      const exts = parseExtList(text);
+      // フォルダだけ表示中に拡張子を指定したら、そのファイルが見えるように戻す
+      set({ type: now.type === 'dirs' ? 'all' : now.type, exts });
+    },
+    clear: () => set(null),
+  };
 }
 function opMakeFolder() {
   makeNewIn(activeFilePane(), 'folder');
@@ -2140,6 +2209,8 @@ async function init() {
       showHidden,
       getSort: () => sortStates[p].get(),
       onSort: (key) => sortStates[p].applyKey(key),
+      // 件数（ステータスバー）は絞り込み後の数なので更新する
+      onFilterChange: () => updateStatus(),
       onActivate: () => panes.setActive(p),
       onNavigate: (value, o) => navigatePane(p, value, o),
       onContextMenu: (info) => showEntryMenu(p, info),
