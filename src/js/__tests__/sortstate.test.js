@@ -52,6 +52,35 @@ describe('loadStoredSort / storeSort', () => {
     expect(loadStoredSort(s)).toEqual({ key: 'size', dir: 'desc', foldersFirst: true });
   });
 
+  it('ペインごとに別々に保存し、互いに影響しない', () => {
+    const s = mem();
+    storeSort({ key: 'size', dir: 'desc', foldersFirst: true }, s, 'left');
+    storeSort({ key: 'modified', dir: 'asc', foldersFirst: false }, s, 'right');
+    expect(loadStoredSort(s, 'left')).toEqual({ key: 'size', dir: 'desc', foldersFirst: true });
+    expect(loadStoredSort(s, 'right')).toEqual({
+      key: 'modified',
+      dir: 'asc',
+      foldersFirst: false,
+    });
+  });
+
+  it('ペインの保存が無ければ、共通だった頃の設定を引き継ぐ', () => {
+    const s = mem({ 'tana.sort': JSON.stringify({ key: 'ext', dir: 'desc' }) });
+    expect(loadStoredSort(s, 'left')).toMatchObject({ key: 'ext', dir: 'desc' });
+    storeSort({ key: 'name', dir: 'asc' }, s, 'left');
+    expect(loadStoredSort(s, 'left')).toMatchObject({ key: 'name', dir: 'asc' });
+    // 片方を保存しても、もう片方は引き継いだまま
+    expect(loadStoredSort(s, 'right')).toMatchObject({ key: 'ext', dir: 'desc' });
+  });
+
+  it('ペインごとの状態は独立して変わる', () => {
+    const left = createSortState();
+    const right = createSortState();
+    left.applyKey('size');
+    expect(left.get().key).toBe('size');
+    expect(right.get()).toEqual(DEFAULT_SORT);
+  });
+
   it('tolerates throwing storage', () => {
     const bad = {
       getItem: () => {

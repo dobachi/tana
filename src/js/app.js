@@ -418,19 +418,19 @@ function runPrefixAction(action) {
   const entry = fp ? fp.getCursorEntry() : null;
   switch (action) {
     case 'sort:name':
-      sortState.applyKey('name');
+      activeSort().applyKey('name');
       break;
     case 'sort:size':
-      sortState.applyKey('size');
+      activeSort().applyKey('size');
       break;
     case 'sort:modified':
-      sortState.applyKey('modified');
+      activeSort().applyKey('modified');
       break;
     case 'sort:ext':
-      sortState.applyKey('ext');
+      activeSort().applyKey('ext');
       break;
     case 'sort:reverse':
-      sortState.reverse();
+      activeSort().reverse();
       break;
     case 'tab:left':
       moveActiveTab(panes.getActive(), -1);
@@ -879,13 +879,20 @@ const sessionSaver = createSessionSaver({
   store: storeSession,
 });
 
-// ソート状態（両ペイン共通, 詳細表示の並べ替え）
-const sortState = createSortState(loadStoredSort());
-sortState.subscribe((s) => {
-  storeSort(s);
-  for (const p of [PANE.LEFT, PANE.RIGHT]) filePanes[p] && filePanes[p].refresh();
-  updateStatus();
-});
+// ソート状態（ペインごと, 詳細表示の並べ替え）。片方を並べ替えても、もう片方はそのまま
+const sortStates = {};
+for (const p of [PANE.LEFT, PANE.RIGHT]) {
+  sortStates[p] = createSortState(loadStoredSort(undefined, p));
+  sortStates[p].subscribe((s) => {
+    storeSort(s, undefined, p);
+    if (filePanes[p]) filePanes[p].refresh();
+    updateStatus();
+  });
+}
+/** メニュー・キー操作の並べ替えはアクティブペインに効かせる */
+function activeSort() {
+  return sortStates[panes.getActive()];
+}
 
 function paneEl(pane) {
   return document.getElementById(pane === PANE.LEFT ? 'pane-left' : 'pane-right');
@@ -1397,17 +1404,17 @@ function buildMenuDefinition() {
         },
         { separator: true },
         {
-          label: `並び替え（${SORT_LABELS[sortState.get().key]} ${
-            sortState.get().dir === 'asc' ? '▲' : '▼'
+          label: `並び替え（${SORT_LABELS[activeSort().get().key]} ${
+            activeSort().get().dir === 'asc' ? '▲' : '▼'
           }）`,
           disabled: true,
         },
         ...SORT_KEYS.map((k) => ({
-          label: `${sortState.get().key === k ? '✓ ' : '　'}${SORT_LABELS[k]}`,
+          label: `${activeSort().get().key === k ? '✓ ' : '　'}${SORT_LABELS[k]}`,
           shortcut: k === 'ext' ? 's e' : `s ${k[0]}`,
-          action: () => sortState.applyKey(k),
+          action: () => activeSort().applyKey(k),
         })),
-        { label: '　並び順を反転', shortcut: 's r', action: () => sortState.reverse() },
+        { label: '　並び順を反転', shortcut: 's r', action: () => activeSort().reverse() },
         { separator: true },
         { label: '再読込', shortcut: 'Ctrl+R', action: reloadActivePane },
         { separator: true },
@@ -2131,8 +2138,8 @@ async function init() {
     if (!el) continue;
     filePanes[p] = createFilePane(el, {
       showHidden,
-      getSort: () => sortState.get(),
-      onSort: (key) => sortState.applyKey(key),
+      getSort: () => sortStates[p].get(),
+      onSort: (key) => sortStates[p].applyKey(key),
       onActivate: () => panes.setActive(p),
       onNavigate: (value, o) => navigatePane(p, value, o),
       onContextMenu: (info) => showEntryMenu(p, info),

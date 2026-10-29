@@ -1,5 +1,5 @@
 // sortstate.js — ソート状態（key/dir/foldersFirst）の真実源 + localStorage 永続化。
-// theme.js / previewplacement.js と同型。両ペイン共通（DV-Q2 は当面「共通」）。
+// theme.js / previewplacement.js と同型。ペインごとに 1 つずつ持つ（DV-Q2: 個別）。
 
 import { SORT_KEYS, DEFAULT_SORT, nextSort } from './sort.js';
 
@@ -56,20 +56,29 @@ export function createSortState(initial) {
   };
 }
 
-/** 保存済みソート設定を読む（無ければ既定）。 */
-export function loadStoredSort(storage = safeStorage()) {
+/** ペイン別の保存キー（pane 省略時は旧来の共通キー）。 */
+function storageKey(pane) {
+  return pane ? `${STORAGE_KEY}.${pane}` : STORAGE_KEY;
+}
+
+/**
+ * 保存済みソート設定を読む（無ければ既定）。pane 指定時、そのペインの保存が無ければ
+ * 両ペイン共通だった頃の設定を引き継ぐ。
+ */
+export function loadStoredSort(storage = safeStorage(), pane) {
   try {
-    const raw = storage && storage.getItem(STORAGE_KEY);
+    const raw =
+      storage && ((pane && storage.getItem(storageKey(pane))) || storage.getItem(STORAGE_KEY));
     return raw ? normalize(JSON.parse(raw)) : { ...DEFAULT_SORT };
   } catch {
     return { ...DEFAULT_SORT };
   }
 }
 
-/** ソート設定を永続化する。 */
-export function storeSort(state, storage = safeStorage()) {
+/** ソート設定を永続化する（pane 指定時はそのペインの分だけ）。 */
+export function storeSort(state, storage = safeStorage(), pane) {
   try {
-    if (storage) storage.setItem(STORAGE_KEY, JSON.stringify(normalize(state)));
+    if (storage) storage.setItem(storageKey(pane), JSON.stringify(normalize(state)));
   } catch {
     // プライベートモード等は無視
   }
