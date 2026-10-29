@@ -322,6 +322,11 @@ fn make_file(parent: String, name: String) -> Result<String, String> {
         return Err("名前が不正です".into());
     }
     let target = Path::new(&parent).join(&name);
+    // Windows は同名フォルダがあると AlreadyExists ではなく「アクセス拒否」になるので先に見る
+    // （壊れたリンクも既存扱い）。下の create_new は確認後に作られた場合の保険
+    if target.symlink_metadata().is_ok() {
+        return Err("EXISTS".into());
+    }
     std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
