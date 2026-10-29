@@ -242,6 +242,12 @@ export async function makeDir(parent, name) {
   return invoke('make_dir', { parent, name });
 }
 
+/** parent 配下に空のファイルを作成。既存なら "EXISTS" で reject */
+export async function makeFile(parent, name) {
+  if (isRemote(parent)) return remoteInvoke('remote_make_file', { parent, name });
+  return invoke('make_file', { parent, name });
+}
+
 /** 確認ダイアログ。Tauri 不在時は window.confirm にフォールバック */
 export async function confirmDialog(message) {
   try {

@@ -8,6 +8,7 @@ const actions = {
   trash: vi.fn(),
   deletePermanent: vi.fn(),
   makeFolder: vi.fn(),
+  makeFile: vi.fn(),
 };
 
 /** ラベル前方一致で項目を引く（suffix 付きでも拾えるように） */
@@ -23,6 +24,7 @@ describe('buildEditMenuItems', () => {
       '名前を変更…',
       'ゴミ箱へ',
       '完全に削除',
+      '新しいファイル…',
       '新しいフォルダ…',
     ]);
   });
@@ -35,6 +37,7 @@ describe('buildEditMenuItems', () => {
     expect(find(items, 'ゴミ箱へ').action).toBe(actions.trash);
     expect(find(items, '完全に削除').action).toBe(actions.deletePermanent);
     expect(find(items, '新しいフォルダ…').action).toBe(actions.makeFolder);
+    expect(find(items, '新しいファイル…').action).toBe(actions.makeFile);
   });
 
   it('キーボードショートカットを表示する（メニューが学習の入口になる）', () => {
@@ -45,6 +48,7 @@ describe('buildEditMenuItems', () => {
     expect(find(items, 'ゴミ箱へ').shortcut).toBe('Delete');
     expect(find(items, '完全に削除').shortcut).toBe('Shift+Delete');
     expect(find(items, '新しいフォルダ…').shortcut).toBe('F7');
+    expect(find(items, '新しいファイル…').shortcut).toBe('Shift+F4');
   });
 
   describe('無効化', () => {
@@ -83,12 +87,13 @@ describe('buildEditMenuItems', () => {
       expect(find(items, '名前を変更…').disabled).toBe(true);
     });
 
-    it('新しいフォルダは対象に依らず常に有効', () => {
+    it('新しいフォルダ / ファイルは対象に依らず常に有効', () => {
       const items = buildEditMenuItems(
         { targetCount: 0, hasDest: false, hasCursor: false },
         actions,
       );
       expect(find(items, '新しいフォルダ…').disabled).toBeFalsy();
+      expect(find(items, '新しいファイル…').disabled).toBeFalsy();
     });
   });
 

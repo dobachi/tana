@@ -617,6 +617,27 @@ impl RemoteState {
         })?;
         Ok(format_uri(&rp.host, &target))
     }
+
+    /// 空のファイルを作る。既存なら "EXISTS"（排他的に開くので上書きしない）。
+    pub fn make_file(&self, parent: &str, name: &str) -> Result<String, String> {
+        let rp = parse_uri(parent).ok_or("リモートの場所ではありません")?;
+        self.ensure_writable(&rp.host)?;
+        if !valid_name(name) {
+            return Err("名前が不正です".into());
+        }
+        let target = sftp::join(&rp.path, name);
+        self.with(&rp.host, false, |c| {
+            if c.exists(&target)? {
+                return Err(sftp::Error {
+                    code: Some(4),
+                    message: "EXISTS".into(),
+                });
+            }
+            c.write_from(&target, true, &mut std::io::empty())
+                .map(|_| ())
+        })?;
+        Ok(format_uri(&rp.host, &target))
+    }
 }
 
 /// ローカルかリモートかの場所。
@@ -995,6 +1016,16 @@ pub async fn remote_make_dir(
     blocking(move || s.make_dir(&parent, &name)).await
 }
 
+#[tauri::command]
+pub async fn remote_make_file(
+    state: St<'_>,
+    parent: String,
+    name: String,
+) -> Result<String, String> {
+    let s = state.inner().clone();
+    blocking(move || s.make_file(&parent, &name)).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1222,6 +1253,8 @@ Host \"quoted\"
         std::fs::write(dir.path().join("a.txt"), "x").unwrap();
         let ro = |r: Result<String, String>| r.unwrap_err().starts_with("READ_ONLY:");
         assert!(ro(st.make_dir(&uri(&dir, ""), "n")));
+        assert!(ro(st.make_file(&uri(&dir, ""), "n.txt")));
+        assert!(!dir.path().join("n.txt").exists());
         assert!(ro(st.rename(&uri(&dir, "a.txt"), "b.txt")));
         assert!(st
             .delete(&uri(&dir, "a.txt"))
@@ -1333,6 +1366,27 @@ Host \"quoted\"
         assert!(st.rename(&uri(&remote, "three.txt"), "../x").is_err());
         st.make_dir(&uri(&remote, ""), "nd").unwrap();
         assert_eq!(st.make_dir(&uri(&remote, ""), "nd").unwrap_err(), "EXISTS");
+        // 空ファイルの作成。既存なら EXISTS で中身は残る
+        assert_eq!(
+            st.make_file(&uri(&remote, ""), "new.md").unwrap(),
+            uri(&remote, "new.md")
+        );
+        assert_eq!(
+            std::fs::metadata(remote.path().join("new.md"))
+                .unwrap()
+                .len(),
+            0
+        );
+        std::fs::write(remote.path().join("new.md"), "keep").unwrap();
+        assert_eq!(
+            st.make_file(&uri(&remote, ""), "new.md").unwrap_err(),
+            "EXISTS"
+        );
+        assert_eq!(
+            std::fs::read_to_string(remote.path().join("new.md")).unwrap(),
+            "keep"
+        );
+        assert!(st.make_file(&uri(&remote, ""), "a/b").is_err());
         st.delete(&uri(&remote, "tree")).unwrap();
         assert!(!remote.path().join("tree").exists());
         assert!(st.delete("sftp://h/").is_err());

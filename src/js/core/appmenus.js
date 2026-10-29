@@ -67,7 +67,7 @@ export function buildFileMenuItems(state, a = {}) {
 
 /**
  * 編集(E) の後半: ファイルのクリップボード・選択・パス/名前のコピー。
- * 前半（F5/F6/F2/Delete/F7）は editmenu.js。
+ * 前半（F5/F6/F2/Delete/Shift+F4/F7）は editmenu.js。
  * @param {object} state
  * @param {number} state.targetCount 操作対象の件数
  * @param {boolean} state.canPaste 貼り付けられるものがあるか

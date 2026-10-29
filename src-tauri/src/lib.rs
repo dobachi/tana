@@ -315,6 +315,27 @@ fn make_dir(parent: String, name: String) -> Result<String, String> {
     Ok(target.to_string_lossy().to_string())
 }
 
+/// parent 配下に空のファイルを作る。既存なら "EXISTS"（作成は排他的なので競合しても上書きしない）。
+#[tauri::command]
+fn make_file(parent: String, name: String) -> Result<String, String> {
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\', '\0']) {
+        return Err("名前が不正です".into());
+    }
+    let target = Path::new(&parent).join(&name);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&target)
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                "EXISTS".to_string()
+            } else {
+                e.to_string()
+            }
+        })?;
+    Ok(target.to_string_lossy().to_string())
+}
+
 // ── プレビュー用データ取得 (FR-09) ─────────────────────────
 
 /// プレビュー可能な最大読み取りバイト数の絶対上限（フロント指定値も再クランプ）。
@@ -511,6 +532,7 @@ pub fn run() {
             remote::remote_delete,
             remote::remote_rename,
             remote::remote_make_dir,
+            remote::remote_make_file,
             home_dir,
             current_dir,
             parent_dir,
@@ -521,6 +543,7 @@ pub fn run() {
             delete_permanent,
             rename_path,
             make_dir,
+            make_file,
             read_preview,
             read_file_bytes,
             extensions::extension_status,
@@ -830,6 +853,30 @@ mod tests {
         // 既存なら EXISTS
         let err = make_dir(dir, "newdir".into()).unwrap_err();
         assert_eq!(err, "EXISTS");
+    }
+
+    #[test]
+    fn make_file_creates_empty_and_blocks_existing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_string_lossy().to_string();
+        make_file(dir.clone(), "memo.md".into()).unwrap();
+        let f = tmp.path().join("memo.md");
+        assert!(f.is_file());
+        assert_eq!(fs::metadata(&f).unwrap().len(), 0);
+        // 既存（ファイルでもフォルダでも）なら EXISTS で、中身は触らない
+        fs::write(&f, b"keep").unwrap();
+        assert_eq!(
+            make_file(dir.clone(), "memo.md".into()).unwrap_err(),
+            "EXISTS"
+        );
+        assert_eq!(fs::read(&f).unwrap(), b"keep");
+        fs::create_dir(tmp.path().join("d")).unwrap();
+        assert_eq!(make_file(dir.clone(), "d".into()).unwrap_err(), "EXISTS");
+        // 区切りや . / .. は名前として受け付けない
+        for bad in ["", ".", "..", "a/b", "a\\b"] {
+            assert!(make_file(dir.clone(), bad.into()).is_err(), "{bad}");
+        }
+        assert!(!tmp.path().join("a").exists());
     }
 
     #[test]

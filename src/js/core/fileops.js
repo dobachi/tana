@@ -11,7 +11,7 @@ function isExists(e) {
 /**
  * @param {object} deps
  * @param {() => boolean} deps.canMutate 破壊的操作が許可されるか（safemode.canMutate）
- * @param {object} deps.backend { copyPath, movePath, deleteToTrash, deletePermanent, uniqueName, renamePath, makeDir }
+ * @param {object} deps.backend { copyPath, movePath, deleteToTrash, deletePermanent, uniqueName, renamePath, makeDir, makeFile }
  * @param {(name: string, suggested: string) => Promise<{action: string, name?: string}>} deps.resolveConflict 衝突時の3択
  * @param {(title: string, def?: string) => Promise<string|null>} deps.promptName 名前入力
  * @param {(msg: string) => Promise<boolean>|boolean} deps.confirm 完全削除の確認
@@ -85,6 +85,25 @@ export function createFileOps(deps) {
         if (!isExists(e)) throw e;
         conflictName = name; // 入力名も衝突 → その名前を基準に再提案
       }
+    }
+  }
+
+  /** 名前を聞いて dir 配下に作る（フォルダ / 空ファイル共通）。既存名なら作らずに知らせる */
+  async function makeNew(dir, title, defaultName, make, message) {
+    if (!dir) return null;
+    if (!(await gate([dir]))) return null;
+    const name = await promptName(title, defaultName);
+    if (name == null) return null;
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    try {
+      const created = await make(dir, trimmed);
+      await done(message);
+      return created || null;
+    } catch (e) {
+      if (isExists(e)) toast('その名前は既に存在します');
+      else toast('作成失敗: ' + (e && e.message ? e.message : e));
+      return null;
     }
   }
 
@@ -193,21 +212,26 @@ export function createFileOps(deps) {
       }
     },
 
-    /** dir 配下に新規フォルダを作成（FR-03） */
-    async makeNewFolder(dir) {
-      if (!dir) return;
-      if (!(await gate([dir]))) return;
-      const name = await promptName('新しいフォルダ', '新しいフォルダ');
-      if (name == null) return;
-      const trimmed = name.trim();
-      if (!trimmed) return;
-      try {
-        await backend.makeDir(dir, trimmed);
-        await done('フォルダを作成しました');
-      } catch (e) {
-        if (isExists(e)) toast('その名前は既に存在します');
-        else toast('作成失敗: ' + (e && e.message ? e.message : e));
-      }
+    /** dir 配下に新規フォルダを作成（FR-03）。作ったパスを返す（作らなければ null） */
+    makeNewFolder(dir) {
+      return makeNew(
+        dir,
+        '新しいフォルダ',
+        '新しいフォルダ',
+        backend.makeDir,
+        'フォルダを作成しました',
+      );
+    },
+
+    /** dir 配下に空のファイルを作成する。作ったパスを返す（作らなければ null） */
+    makeNewFile(dir) {
+      return makeNew(
+        dir,
+        '新しいファイル',
+        '新しいファイル.txt',
+        backend.makeFile,
+        'ファイルを作成しました',
+      );
     },
 
     /** entry（単体または配列）を完全削除（確認必須, NFR-R3） */

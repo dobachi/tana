@@ -17,6 +17,7 @@ function setup({
     uniqueName: vi.fn(async () => 'f (1).txt'),
     renamePath: vi.fn(async () => '/src/newname.txt'),
     makeDir: vi.fn(async () => '/dir/newdir'),
+    makeFile: vi.fn(async () => '/dir/new.txt'),
   };
   const toast = vi.fn();
   const resolveConflict = vi.fn(async () => conflictResult);
@@ -221,6 +222,61 @@ describe('fileops 新規フォルダ', () => {
   });
 });
 
+describe('fileops 新規ファイル', () => {
+  it('安全モードではブロック', async () => {
+    const { ops, backend, promptName } = setup({ canMutate: false });
+    expect(await ops.makeNewFile('/dir')).toBeNull();
+    expect(promptName).not.toHaveBeenCalled();
+    expect(backend.makeFile).not.toHaveBeenCalled();
+  });
+
+  it('既定名を拡張子つきで出し、入力名（前後の空白は除く）で makeFile を呼ぶ', async () => {
+    const { ops, backend, promptName, refresh, toast } = setup({ promptReturn: ' memo.md ' });
+    const created = await ops.makeNewFile('/dir');
+    expect(promptName).toHaveBeenCalledWith('新しいファイル', '新しいファイル.txt');
+    expect(backend.makeFile).toHaveBeenCalledWith('/dir', 'memo.md');
+    expect(backend.makeDir).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith('ファイルを作成しました');
+    // カーソルを合わせられるよう、作ったパスを返す
+    expect(created).toBe('/dir/new.txt');
+  });
+
+  it('キャンセル・空の名前なら作成しない', async () => {
+    for (const promptReturn of [null, '', '   ']) {
+      const { ops, backend } = setup({ promptReturn });
+      expect(await ops.makeNewFile('/dir')).toBeNull();
+      expect(backend.makeFile).not.toHaveBeenCalled();
+    }
+  });
+
+  it('場所が無ければ何もしない', async () => {
+    const { ops, promptName } = setup();
+    expect(await ops.makeNewFile(null)).toBeNull();
+    expect(promptName).not.toHaveBeenCalled();
+  });
+
+  it('既存の名前なら上書きせず知らせる', async () => {
+    const { ops, backend, toast, refresh } = setup({ promptReturn: 'taken.txt' });
+    backend.makeFile.mockRejectedValueOnce(new Error('EXISTS'));
+    expect(await ops.makeNewFile('/dir')).toBeNull();
+    expect(toast).toHaveBeenCalledWith('その名前は既に存在します');
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('その他の失敗は理由を出す', async () => {
+    const { ops, backend, toast } = setup({ promptReturn: 'x.txt' });
+    backend.makeFile.mockRejectedValueOnce('名前が不正です');
+    expect(await ops.makeNewFile('/dir')).toBeNull();
+    expect(toast).toHaveBeenCalledWith('作成失敗: 名前が不正です');
+  });
+
+  it('新規フォルダも作ったパスを返す', async () => {
+    const { ops } = setup({ promptReturn: 'work' });
+    expect(await ops.makeNewFolder('/dir')).toBe('/dir/newdir');
+  });
+});
+
 describe('fileops 完全削除', () => {
   it('確認OKで削除、キャンセルで何もしない', async () => {
     const yes = setup({ confirmReturn: true });
@@ -379,9 +435,11 @@ describe('fileops リモート接続の書き込み許可 (FR-20)', () => {
     const { ops, backend } = setup({ writeBlocked });
     await ops.rename(remote);
     await ops.makeNewFolder('sftp://ro/d');
+    await ops.makeNewFile('sftp://ro/d');
     await ops.deletePermanent(remote);
     expect(backend.renamePath).not.toHaveBeenCalled();
     expect(backend.makeDir).not.toHaveBeenCalled();
+    expect(backend.makeFile).not.toHaveBeenCalled();
     expect(backend.deletePermanent).not.toHaveBeenCalled();
   });
 

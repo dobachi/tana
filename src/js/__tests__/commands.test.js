@@ -73,6 +73,7 @@ describe('backend.js と Rust コマンド登録の整合', () => {
       'remote_delete',
       'remote_rename',
       'remote_make_dir',
+      'remote_make_file',
       'remote_resolve',
       'remote_disconnect',
       'remote_sessions',

@@ -115,6 +115,7 @@ import {
   uniqueName,
   renamePath,
   makeDir,
+  makeFile,
   confirmDialog,
   isDesktop,
   readPreview,
@@ -166,7 +167,16 @@ remotes.subscribe(() => {
 });
 const fileOps = createFileOps({
   canMutate: () => safemode.canMutate(),
-  backend: { copyPath, movePath, deleteToTrash, deletePermanent, uniqueName, renamePath, makeDir },
+  backend: {
+    copyPath,
+    movePath,
+    deleteToTrash,
+    deletePermanent,
+    uniqueName,
+    renamePath,
+    makeDir,
+    makeFile,
+  },
   resolveConflict,
   promptName,
   confirm: confirmDialog,
@@ -1195,9 +1205,14 @@ function showEntryMenu(pane, info) {
 
   items.push(
     {
+      label: '新しいファイル…',
+      shortcut: 'Shift+F4',
+      action: () => makeNewIn(fp, 'file'),
+    },
+    {
       label: '新しいフォルダ…',
       shortcut: 'F7',
-      action: () => fileOps.makeNewFolder(fp.getCurrentDir()),
+      action: () => makeNewIn(fp, 'folder'),
     },
     { label: 'ここをお気に入りに追加', shortcut: 'Ctrl+D', action: addCurrentToFavorites },
     { separator: true },
@@ -1317,6 +1332,7 @@ function buildMenuDefinition() {
               trash: opTrash,
               deletePermanent: opDeletePermanent,
               makeFolder: opMakeFolder,
+              makeFile: opMakeFile,
             },
           ),
           { separator: true },
@@ -1607,9 +1623,20 @@ function opRename() {
   const fp = activeFilePane();
   if (fp) fileOps.rename(fp.getCursorEntry());
 }
+/** fp の今の場所に新しいフォルダ / 空ファイルを作り、できたらカーソルをそこへ合わせる */
+async function makeNewIn(fp, kind) {
+  if (!fp) return;
+  const dir = fp.getCurrentDir();
+  const created =
+    kind === 'file' ? await fileOps.makeNewFile(dir) : await fileOps.makeNewFolder(dir);
+  // 作成中に別の場所へ移っていたら、カーソルは動かさない
+  if (created && fp.getCurrentDir() === dir) fp.applyViewState({ cursorPath: created });
+}
 function opMakeFolder() {
-  const fp = activeFilePane();
-  if (fp) fileOps.makeNewFolder(fp.getCurrentDir());
+  makeNewIn(activeFilePane(), 'folder');
+}
+function opMakeFile() {
+  makeNewIn(activeFilePane(), 'file');
 }
 // ファイルクリップボード操作 (FR-02)。登録（コピー/切り取り）は非破壊なので
 // 安全モードでも可。貼り付けの実操作は fileOps 側で安全モードのゲートに掛かる。
@@ -2005,6 +2032,12 @@ function onKeydown(e) {
     case 'F7':
       e.preventDefault();
       opMakeFolder();
+      break;
+    case 'F4':
+      // Shift+F4 = 新しいファイル（Total Commander と同じ）
+      if (!e.shiftKey) break;
+      e.preventDefault();
+      opMakeFile();
       break;
     default:
       break;

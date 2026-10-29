@@ -10,7 +10,7 @@
  * @param {number} state.targetCount 操作対象の件数（選択 or カーソル1件）
  * @param {boolean} state.hasDest 反対のペインに宛先ディレクトリがあるか
  * @param {boolean} state.hasCursor カーソル行があるか（リネームの可否）
- * @param {object} actions 各項目の実行関数（copy/move/rename/trash/deletePermanent/makeFolder）
+ * @param {object} actions 各項目の実行関数（copy/move/rename/trash/deletePermanent/makeFile/makeFolder）
  * @returns {object[]} showMenu / menubar が解釈する項目配列
  */
 export function buildEditMenuItems(state, actions) {
@@ -49,6 +49,7 @@ export function buildEditMenuItems(state, actions) {
       action: a.deletePermanent,
     },
     { separator: true },
+    { label: '新しいファイル…', shortcut: 'Shift+F4', action: a.makeFile },
     { label: '新しいフォルダ…', shortcut: 'F7', action: a.makeFolder },
   ];
 }
