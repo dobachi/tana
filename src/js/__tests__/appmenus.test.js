@@ -154,7 +154,18 @@ describe('ヘルプに載っている操作はメニューからも辿れる', (
   const covered = ['移動', 'ペイン・タブ・サイドバー', '開く', 'パス・名前のコピー', 'モード'];
 
   // カーソル移動そのもの（j/k/g/G/l/Enter）と右クリックメニュー自体はメニューに置かない
-  const SKIP = new Set(['j', 'k', 'g', 'G', 'l', 'Enter', 'Shift+F10', '≣', '右クリック']);
+  const SKIP = new Set([
+    'j',
+    'k',
+    'g',
+    'G',
+    'l',
+    'Enter',
+    'Shift+F10',
+    '≣',
+    '右クリック',
+    '..（一覧の先頭）',
+  ]);
 
   it.each(covered)('「%s」の各キーがメニューにある', (name) => {
     const sec = SHORTCUTS.find((s) => s.section === name);

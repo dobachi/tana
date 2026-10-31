@@ -31,7 +31,7 @@ function buildPaneDom() {
   return el;
 }
 
-const rows = () => [...root.querySelectorAll('.entry')];
+const rows = () => [...root.querySelectorAll('.entry:not(.is-parent)')];
 const mousedown = (el, init = {}) =>
   el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, ...init }));
 

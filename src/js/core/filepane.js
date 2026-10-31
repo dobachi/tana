@@ -55,6 +55,28 @@ export function filterEntries(entries, showHidden) {
   return showHidden ? entries : entries.filter((e) => !isHidden(e));
 }
 
+/** 一覧の先頭に置く「..」の行（親フォルダへ戻る）。選択・操作の対象にはしない */
+export function upEntry(parentPath) {
+  return { name: '..', path: parentPath, is_dir: true, is_parent: true, size: 0, modified: null };
+}
+
+/** 選択に使うパスの並び。「..」は選べないよう、どのパスとも重ならない印にする */
+const UP_KEY = '\u0000..';
+function selectionPaths(list) {
+  return list.map((e) => (e.is_parent ? UP_KEY : e.path));
+}
+function withoutUp(set) {
+  if (!set.has(UP_KEY)) return set;
+  const next = new Set(set);
+  next.delete(UP_KEY);
+  return next;
+}
+
+/** 「..」を除いた件数（ステータスバー・絞り込みの帯に出す数） */
+export function realCount(list) {
+  return list.length && list[0].is_parent ? list.length - 1 : list.length;
+}
+
 /** パス比較用に区切りを "/" に正規化する（Windows の \ と検索の / の差を吸収）。 */
 function normPath(p) {
   return String(p == null ? '' : p).replace(/\\/g, '/');
@@ -109,11 +131,21 @@ export function createFilePane(rootEl, opts = {}) {
   let anchor = -1; // Shift+クリックの起点
   // 複数選択したままドラッグできるようにするための保留（下の mousedown を参照）
   let pendingCollapse = null;
+  // 一覧の先頭の「..」（親フォルダへ戻る行）。親が無い（ルート）なら null
+  let parentPath = null;
+
+  /** カーソル行のエントリ（「..」は操作の対象にしないので null） */
+  function cursorEntry() {
+    const e = entries[cursor];
+    return e && !e.is_parent ? e : null;
+  }
 
   function recompute(keepPath) {
     const visible = filterEntries(allEntries, showHidden);
     unfilteredCount = visible.length;
-    entries = sortEntries(applyEntryFilter(visible, filter), getSort(), collator);
+    const shown = sortEntries(applyEntryFilter(visible, filter), getSort(), collator);
+    // 「..」は並び順・絞り込みに関係なく常に先頭
+    entries = parentPath ? [upEntry(parentPath), ...shown] : shown;
     // 表示から消えたものを選択に残さない（隠しファイル切替・再読込・外部削除）
     selected = pruneSelection(
       selected,
@@ -198,13 +230,13 @@ export function createFilePane(rootEl, opts = {}) {
 
   function renderFilterBar() {
     const active = isFilterActive(filter);
-    if (listEl) listEl.classList.toggle('filtered-empty', active && entries.length === 0);
+    if (listEl) listEl.classList.toggle('filtered-empty', active && realCount(entries) === 0);
     if (!filterBar) return;
     filterBar.hidden = !active;
     if (active) {
-      filterBar.firstChild.textContent = `絞り込み: ${describeFilter(filter)}（${
-        entries.length
-      } / ${unfilteredCount} 件）`;
+      filterBar.firstChild.textContent = `絞り込み: ${describeFilter(filter)}（${realCount(
+        entries,
+      )} / ${unfilteredCount} 件）`;
     }
   }
 
@@ -214,8 +246,8 @@ export function createFilePane(rootEl, opts = {}) {
     if (onChange) {
       onChange({
         dir: currentDir,
-        entry: entries[cursor] || null,
-        count: entries.length,
+        entry: cursorEntry(),
+        count: realCount(entries),
         selectedCount: selected.size,
       });
     }
@@ -251,12 +283,14 @@ export function createFilePane(rootEl, opts = {}) {
       li.className =
         'entry' +
         (e.is_dir ? ' is-dir' : '') +
+        (e.is_parent ? ' is-parent' : '') +
         hiddenCls +
         (i === cursor ? ' cursor' : '') +
         (selected.has(e.path) ? ' selected' : '');
       const name = document.createElement('span');
       name.className = 'entry-name';
-      name.textContent = e.is_dir ? e.name + '/' : e.name;
+      name.textContent = e.is_parent ? '..' : e.is_dir ? e.name + '/' : e.name;
+      if (e.is_parent) li.title = `親フォルダへ: ${e.path}`;
       const size = document.createElement('span');
       size.className = 'entry-size';
       size.textContent = e.is_dir ? '' : formatSize(e.size);
@@ -276,6 +310,17 @@ export function createFilePane(rootEl, opts = {}) {
         // 「選択済みの行を右クリックしたら選択を保つ」が成立しなくなる。
         if (ev.button !== 0 && ev.button !== undefined) return;
 
+        // 「..」は選択もドラッグもしない（カーソルを置くだけ。開くとひとつ上へ）
+        if (e.is_parent) {
+          cursor = i;
+          selected = new Set();
+          anchor = -1;
+          pendingCollapse = null;
+          syncRowStates();
+          notify();
+          return;
+        }
+
         const plain = !ev.ctrlKey && !ev.metaKey && !ev.shiftKey;
         // 複数選択済みの行を無修飾で掴んだ場合、ここで選択を1件に畳むと
         // 「複数選択したままドラッグ」ができなくなる。畳むのは mouseup まで
@@ -285,11 +330,11 @@ export function createFilePane(rootEl, opts = {}) {
           cursor = i;
         } else {
           pendingCollapse = null;
-          const next = applyClick({ paths: entries.map((x) => x.path), selected, anchor }, i, {
+          const next = applyClick({ paths: selectionPaths(entries), selected, anchor }, i, {
             ctrl: ev.ctrlKey || ev.metaKey,
             shift: ev.shiftKey,
           });
-          selected = next.selected;
+          selected = withoutUp(next.selected);
           anchor = next.anchor;
           cursor = i;
         }
@@ -297,7 +342,13 @@ export function createFilePane(rootEl, opts = {}) {
         notify();
 
         if (onDragStart) {
-          onDragStart({ entries, selected, path: e.path, x: ev.clientX, y: ev.clientY });
+          onDragStart({
+            entries: entries.filter((x) => !x.is_parent),
+            selected,
+            path: e.path,
+            x: ev.clientX,
+            y: ev.clientY,
+          });
         }
       });
       li.addEventListener('mouseup', (ev) => {
@@ -331,7 +382,9 @@ export function createFilePane(rootEl, opts = {}) {
         }
         syncRowStates();
         notify();
-        if (onContextMenu) onContextMenu({ entry: entries[i], x: ev.clientX, y: ev.clientY });
+        // 「..」の上は空き所と同じメニュー（今いるフォルダへの操作）
+        const target = entries[i].is_parent ? null : entries[i];
+        if (onContextMenu) onContextMenu({ entry: target, x: ev.clientX, y: ev.clientY });
       });
       listEl.appendChild(li);
     });
@@ -352,6 +405,7 @@ export function createFilePane(rootEl, opts = {}) {
   /** ディレクトリを読み込んで表示する */
   async function load(dir, cursorTo = 0) {
     allEntries = await listDir(dir);
+    parentPath = await parentOf(dir);
     // ディレクトリを移ったら選択は持ち越さない（別フォルダのパスが残るため）
     if (dir !== currentDir) {
       selected = new Set();
@@ -360,7 +414,9 @@ export function createFilePane(rootEl, opts = {}) {
     }
     currentDir = dir;
     recompute();
-    cursor = clampCursor(cursorTo, entries.length);
+    // 既定のカーソルは「..」ではなく最初の項目（あれば）
+    const first = cursorTo === 0 && parentPath && entries.length > 1 ? 1 : cursorTo;
+    cursor = clampCursor(first, entries.length);
     render();
     notify();
   }
@@ -420,11 +476,13 @@ export function createFilePane(rootEl, opts = {}) {
 
   /** カーソル位置の選択をトグルしてカーソルを1つ下へ (Space) */
   function toggleSelection() {
-    selected = toggleAt(
-      selected,
-      entries.map((e) => e.path),
-      cursor,
-    );
+    if (entries[cursor] && entries[cursor].is_parent) {
+      if (cursor < entries.length - 1) cursor += 1;
+      syncRowStates();
+      notify();
+      return;
+    }
+    selected = toggleAt(selected, selectionPaths(entries), cursor);
     anchor = cursor;
     if (cursor < entries.length - 1) cursor += 1;
     syncRowStates();
@@ -433,7 +491,7 @@ export function createFilePane(rootEl, opts = {}) {
 
   /** 表示中の全件を選択 (Ctrl+A) */
   function selectAllEntries() {
-    selected = selectAll(entries.map((e) => e.path));
+    selected = withoutUp(selectAll(selectionPaths(entries)));
     anchor = cursor;
     syncRowStates();
     notify();
@@ -457,8 +515,19 @@ export function createFilePane(rootEl, opts = {}) {
   async function enter() {
     const e = entries[cursor];
     if (!e) return;
-    if (e.is_dir) await load(e.path);
+    if (e.is_parent) await goParent();
+    else if (e.is_dir) await load(e.path);
     else if (onOpenFile) onOpenFile(e);
+  }
+
+  /** dir の親（ルートや取得できないときは null）。「..」の行に使う */
+  async function parentOf(dir) {
+    try {
+      const p = await parentDir(dir);
+      return p && p !== dir ? p : null;
+    } catch {
+      return null;
+    }
   }
 
   /** 親ディレクトリへ戻る (h / Backspace)。元いたフォルダにカーソルを合わせる */
@@ -554,16 +623,16 @@ export function createFilePane(rootEl, opts = {}) {
     getFilter: () => ({ ...filter, exts: [...filter.exts] }),
     getSelectedCount: () => selected.size,
     /** 操作（コピー/移動/削除）の対象。選択が無ければカーソル位置の1件 */
-    getTargetEntries: () => targetEntries(entries, selected, cursor),
+    getTargetEntries: () => targetEntries(entries, selected, cursor).filter((e) => !e.is_parent),
     getCurrentDir: () => currentDir,
-    getCursorEntry: () => entries[cursor] || null,
+    getCursorEntry: cursorEntry,
     /** カーソル行の画面座標。キーボード（Shift+F10）からメニューを出すのに使う */
     getCursorPoint: () => {
       const el = listEl && listEl.children[cursor];
       const box = (el || listEl || rootEl).getBoundingClientRect();
       return { x: box.left + 24, y: box.bottom };
     },
-    getCount: () => entries.length,
+    getCount: () => realCount(entries),
     /** タブ切替などで保存する表示状態（カーソル位置・選択）。パスで持つ。 */
     getViewState: () => ({
       cursorPath: entries[cursor] ? entries[cursor].path : null,

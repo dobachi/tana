@@ -33,7 +33,7 @@ function buildPaneDom() {
   return el;
 }
 
-const rows = () => [...root.querySelectorAll('.entry')];
+const rows = () => [...root.querySelectorAll('.entry:not(.is-parent)')];
 const at = (path) => root.querySelector(`.entry[data-path="${path}"]`);
 const mouse = (el, type, init = {}) =>
   el.dispatchEvent(

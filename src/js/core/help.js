@@ -8,6 +8,7 @@ export const SHORTCUTS = [
   {
     section: '移動',
     items: [
+      ['..（一覧の先頭）', 'ダブルクリック / Enter でひとつ上のフォルダへ（h / Backspace と同じ）'],
       ['j / k', 'カーソル 下 / 上'],
       ['g / G', '先頭 / 末尾へ'],
       ['l / Enter', 'フォルダの中へ（ファイルは既定アプリで開く）'],

@@ -54,7 +54,7 @@ afterEach(() => {
 
 describe('一覧の右クリック', () => {
   it('行を右クリックするとその entry を渡して呼ばれる', () => {
-    const rows = root.querySelectorAll('.entry');
+    const rows = root.querySelectorAll('.entry:not(.is-parent)');
     rightClick(rows[1]);
     expect(onContextMenu).toHaveBeenCalledTimes(1);
     const info = onContextMenu.mock.calls[0][0];
@@ -65,14 +65,16 @@ describe('一覧の右クリック', () => {
   // 右クリックした行が対象になっていないと、メニューの操作対象が
   // 見えているものとずれて事故になる
   it('右クリックした行へカーソルが移る', () => {
-    const rows = root.querySelectorAll('.entry');
+    const rows = root.querySelectorAll('.entry:not(.is-parent)');
     rightClick(rows[1]);
     expect(pane.getCursorEntry().name).toBe('a.txt');
-    expect(root.querySelectorAll('.entry')[1].classList.contains('cursor')).toBe(true);
+    expect(root.querySelectorAll('.entry:not(.is-parent)')[1].classList.contains('cursor')).toBe(
+      true,
+    );
   });
 
   it('ブラウザ既定のメニューを抑止する', () => {
-    const ev = rightClick(root.querySelectorAll('.entry')[0]);
+    const ev = rightClick(root.querySelectorAll('.entry:not(.is-parent)')[0]);
     expect(ev.defaultPrevented).toBe(true);
   });
 
@@ -83,7 +85,7 @@ describe('一覧の右クリック', () => {
   });
 
   it('行の右クリックが一覧へ二重に伝播しない', () => {
-    rightClick(root.querySelectorAll('.entry')[0]);
+    rightClick(root.querySelectorAll('.entry:not(.is-parent)')[0]);
     expect(onContextMenu).toHaveBeenCalledTimes(1);
   });
 
@@ -91,7 +93,7 @@ describe('一覧の右クリック', () => {
     const el = buildPaneDom();
     const p = createFilePane(el, {});
     await p.load('/base');
-    expect(() => rightClick(el.querySelectorAll('.entry')[0])).not.toThrow();
+    expect(() => rightClick(el.querySelectorAll('.entry:not(.is-parent)')[0])).not.toThrow();
     el.remove();
   });
 });
@@ -117,11 +119,12 @@ describe('getCursorPoint', () => {
 
 describe('絞り込み（setFilter / 帯）', () => {
   const bar = () => root.querySelector('.pane-filter');
-  const shown = () => [...root.querySelectorAll('.entry')].map((li) => li.textContent);
+  const shown = () =>
+    [...root.querySelectorAll('.entry:not(.is-parent)')].map((li) => li.textContent);
 
   it('既定では帯を出さず全件', () => {
     expect(bar().hidden).toBe(true);
-    expect(root.querySelectorAll('.entry').length).toBe(2);
+    expect(root.querySelectorAll('.entry:not(.is-parent)').length).toBe(2);
     expect(pane.getFilter()).toEqual({ type: 'all', exts: [] });
   });
 
@@ -132,7 +135,7 @@ describe('絞り込み（setFilter / 帯）', () => {
     pane = createFilePane(root, { onFilterChange });
     return pane.load('/base').then(() => {
       pane.setFilter({ type: 'dirs' });
-      expect(root.querySelectorAll('.entry').length).toBe(1);
+      expect(root.querySelectorAll('.entry:not(.is-parent)').length).toBe(1);
       expect(shown()[0]).toContain('docs');
       expect(bar().hidden).toBe(false);
       expect(bar().textContent).toContain('フォルダだけ（1 / 2 件）');
@@ -140,14 +143,14 @@ describe('絞り込み（setFilter / 帯）', () => {
 
       bar().querySelector('.pane-filter-clear').click();
       expect(bar().hidden).toBe(true);
-      expect(root.querySelectorAll('.entry').length).toBe(2);
+      expect(root.querySelectorAll('.entry:not(.is-parent)').length).toBe(2);
       expect(onFilterChange).toHaveBeenLastCalledWith({ type: 'all', exts: [] });
     });
   });
 
   it('一致が無ければ一覧に「一致なし」を出す（帯は残す）', () => {
     pane.setFilter({ type: 'files', exts: ['pdf'] });
-    expect(root.querySelectorAll('.entry').length).toBe(0);
+    expect(root.querySelectorAll('.entry:not(.is-parent)').length).toBe(0);
     expect(root.querySelector('.pane-list').classList.contains('filtered-empty')).toBe(true);
     expect(bar().hidden).toBe(false);
     pane.setFilter(null);
