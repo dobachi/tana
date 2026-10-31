@@ -187,6 +187,7 @@ export function createFavoritesView(deps) {
     const row = document.createElement('div');
     row.className = 'fav-row fav-group-row';
     row.tabIndex = -1;
+    row.dataset.key = group.key;
     const caret = document.createElement('span');
     caret.className = 'fav-caret';
     row.appendChild(caret);
@@ -253,6 +254,7 @@ export function createFavoritesView(deps) {
       if (on) chip.classList.add('active');
       chip.setAttribute('aria-pressed', on ? 'true' : 'false');
       chip.textContent = `#${t}`;
+      chip.dataset.tag = t;
       chip.title = on ? '絞り込みを外す' : `#${t} で絞り込む`;
       chip.addEventListener('click', () => viewState.update({ tag: on ? null : t }));
       tagsEl.appendChild(chip);
@@ -308,6 +310,9 @@ export function createFavoritesView(deps) {
     }
     return true;
   }
+
+  /** 上へ・下へで並べ替えられる状態か（案内は出さない。右クリックメニューの有効/無効用） */
+  const reorderAllowed = () => isManual() && !isFiltered();
 
   const MOVES = {
     ArrowUp: (id) => favorites.moveBy(id, -1),
@@ -531,6 +536,13 @@ export function createFavoritesView(deps) {
     render,
     focusFirst,
     optionItems,
+    reorderAllowed,
+    editTags: (id) => {
+      const node = favorites.find(id);
+      if (node) editTags(node);
+    },
+    /** 表示中のまとめ見出しのキー（すべてたたむ / 開く 用） */
+    groupKeys: () => navRows.filter((r) => r.kind === 'group').map((r) => r.node.key),
     isFocused: () => hasFocus,
     destroy: () => {
       unsubscribe();

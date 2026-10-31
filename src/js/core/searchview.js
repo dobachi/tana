@@ -79,6 +79,7 @@ export function createSearch(deps) {
     row.appendChild(main);
 
     row.title = hit.path;
+    row.dataset.path = hit.path;
     row.addEventListener('click', () => choose(hit));
     li.appendChild(row);
     rows.push({ el: row, hit });
@@ -249,5 +250,11 @@ export function createSearch(deps) {
     rows = [];
   }
 
-  return { open, close, toggle: () => (isOpen() ? close() : open()), isOpen };
+  /** 表示中のヒットを path で選ぶ（右クリックメニューの「その場所を開く」） */
+  function chooseByPath(path) {
+    const r = rows.find((x) => x.hit.path === path);
+    if (r) choose(r.hit);
+  }
+
+  return { open, close, toggle: () => (isOpen() ? close() : open()), isOpen, chooseByPath };
 }

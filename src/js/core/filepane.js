@@ -162,6 +162,7 @@ export function createFilePane(rootEl, opts = {}) {
       btn.className = 'crumb' + (i === segs.length - 1 ? ' current' : '');
       btn.textContent = seg.name;
       btn.title = seg.path;
+      btn.dataset.path = seg.path;
       btn.addEventListener('click', () => {
         if (onActivate) onActivate();
         // 現在地そのものを押しても再読込だけで済むので特別扱いしない

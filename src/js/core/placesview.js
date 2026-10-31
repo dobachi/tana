@@ -22,6 +22,7 @@ export function createPlacesView(deps) {
     row.className = 'place-row';
     row.tabIndex = -1;
     row.title = place.path;
+    row.dataset.path = place.path;
 
     const name = document.createElement('span');
     name.className = 'place-name';

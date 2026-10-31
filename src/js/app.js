@@ -58,6 +58,22 @@ import {
   buildFilterMenuItems,
 } from './core/appmenus.js';
 import { extOf, isFilterActive, parseExtList } from './core/entryfilter.js';
+import {
+  contextTargetOf,
+  buildPlaceMenu,
+  buildCrumbMenu,
+  buildHeaderMenu,
+  buildTabMenu,
+  buildTabStripMenu,
+  buildColumnsMenu,
+  buildFavBookmarkMenu,
+  buildFavFolderMenu,
+  buildFavGroupMenu,
+  buildTagMenu,
+  buildFavBlankMenu,
+  buildSearchHitMenu,
+  buildPreviewMenu,
+} from './core/contextmenus.js';
 import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
 import { createNavHistory } from './core/navhistory.js';
@@ -339,6 +355,7 @@ function renderTabs(p) {
     const tab = document.createElement('div');
     tab.className = 'pane-tab' + (i === activeIdx ? ' active' : '');
     tab.title = t.dir;
+    tab.dataset.index = String(i);
     tab.setAttribute('role', 'tab');
     const label = document.createElement('span');
     label.className = 'pane-tab-label';
@@ -1754,6 +1771,280 @@ function opRename() {
   const fp = activeFilePane();
   if (fp) fileOps.rename(fp.getCursorEntry());
 }
+// ===== 右クリックメニュー（ファイル一覧以外の部品）=====
+// 画面全体の contextmenu をここで受け、部品ごとのメニューを出す。ブラウザ既定のメニューは
+// 出さない（文字入力欄だけは残す）。ファイル一覧は filepane が先に受けて止める。
+
+/** 場所に共通の操作（反対のペイン・新しいタブ・新しいウィンドウ・コピー・お気に入り） */
+function locationActions(p = panes.getActive()) {
+  return {
+    open: (path) => navigatePane(p, path),
+    openOther: (path) => navigatePane(p === PANE.LEFT ? PANE.RIGHT : PANE.LEFT, path),
+    openNewTab: async (path) => {
+      await newTab(p);
+      await navigatePane(p, path);
+    },
+    openNewWindow: (path) => openNewWindow(path),
+    copyPath: (path) => copyText(path),
+    addFavorite: (path) => addFavoriteFor(path),
+    reveal: (path) => (isRemote(path) ? [] : revealMenuItems(path)),
+  };
+}
+
+async function addFavoriteFor(path) {
+  if (!path) return;
+  const base = defaultBookmarkName(path);
+  const name = await promptName('お気に入りに追加', base);
+  if (name == null) return;
+  favorites.addBookmark(name.trim() || base, path);
+  toast('お気に入りに追加しました');
+}
+
+/** お気に入りのノードの親フォルダ（最上位なら null）と、全フォルダの一覧 */
+function favTreeInfo(id) {
+  let parent = null;
+  const folders = [];
+  const walk = (nodes, par, trail) => {
+    for (const n of nodes) {
+      if (n.id === id) parent = par;
+      if (n.type === 'folder') {
+        folders.push({ node: n, trail: [...trail, n.name] });
+        walk(n.children, n, [...trail, n.name]);
+      }
+    }
+  };
+  walk(favorites.getRoot(), null, []);
+  return { parent, folders };
+}
+
+/** フォルダへ移動…: 移せるフォルダ（自分と自分の配下は除く）を同じ位置に並べる */
+function showMoveToFolderMenu(x, y, id) {
+  const self = favorites.find(id);
+  const { parent, folders } = favTreeInfo(id);
+  const inside = (folder) => {
+    const has = (n) => n.id === folder.id || (n.children || []).some(has);
+    return self && self.type === 'folder' && has(self);
+  };
+  const items = folders
+    .filter((f) => !inside(f.node) && (!parent || f.node.id !== parent.id))
+    .map((f) => ({
+      label: f.trail.join(' / '),
+      action: () => favorites.move(id, f.node.id, 'into'),
+    }));
+  if (parent) {
+    items.unshift(
+      { label: '（最上位）', action: () => moveFavToTop(id) },
+      ...(items.length ? [{ separator: true }] : []),
+    );
+  }
+  if (!items.length) {
+    toast('移せるフォルダがありません');
+    return;
+  }
+  showMenu(x, y, items);
+}
+
+function moveFavToTop(id) {
+  // 1 段ずつ外へ出す（最上位に着くまで）
+  for (let i = 0; i < 100 && favTreeInfo(id).parent; i++) {
+    if (!favorites.outdent(id)) break;
+  }
+}
+
+function favMenuItems(id, x, y) {
+  const node = favorites.find(id);
+  if (!node) return [];
+  const { parent, folders } = favTreeInfo(id);
+  const reorder = !!(favView && favView.reorderAllowed());
+  const state = {
+    reorder,
+    inFolder: !!parent,
+    hasFolders: folders.some((f) => f.node.id !== id),
+  };
+  const common = {
+    rename: async () => {
+      const title = node.type === 'folder' ? 'フォルダ名' : 'お気に入りの名前';
+      const n = await promptName(title, node.name);
+      if (n && n.trim()) favorites.rename(id, n.trim());
+    },
+    moveUp: () => favorites.moveBy(id, -1),
+    moveDown: () => favorites.moveBy(id, 1),
+    moveToFolder: () => showMoveToFolderMenu(x, y, id),
+    outdent: () => favorites.outdent(id),
+  };
+  if (node.type === 'folder') {
+    const childCount = node.children.length;
+    return buildFavFolderMenu(
+      { ...state, open: node.open, childCount },
+      {
+        ...common,
+        toggle: () => favorites.toggleOpen(id),
+        addFolderInside: async () => {
+          const name = await promptName('フォルダ名', '新しいフォルダ');
+          if (name && name.trim()) favorites.addFolder(name.trim(), id);
+        },
+        remove: async () => {
+          if (
+            childCount &&
+            !(await confirmDialog(
+              `フォルダ「${node.name}」を中の ${childCount} 件ごと削除します。よろしいですか？`,
+            ))
+          ) {
+            return;
+          }
+          favorites.remove(id);
+        },
+      },
+    );
+  }
+  return buildFavBookmarkMenu(
+    { ...state, path: node.path },
+    {
+      ...locationActions(),
+      ...common,
+      editTags: () => favView && favView.editTags(id),
+      remove: () => favorites.remove(id),
+    },
+  );
+}
+
+function tabMenuItems(p, index) {
+  const tl = paneTabs[p];
+  if (!tl) return [];
+  const list = tl.list();
+  const dir = list[index] ? list[index].dir : '';
+  return buildTabMenu(
+    { index, count: list.length, dir },
+    {
+      ...locationActions(p),
+      close: (i) => closeTab(p, i),
+      closeOthers: (i) => {
+        saveActiveTabState(p);
+        for (let j = tl.count() - 1; j >= 0; j--) if (j !== i) tl.close(j);
+        tl.activate(0);
+        switchToActiveTab(p);
+        sessionSaver.schedule();
+      },
+      closeRight: (i) => {
+        saveActiveTabState(p);
+        const wasActive = tl.activeIndex();
+        for (let j = tl.count() - 1; j > i; j--) tl.close(j);
+        if (wasActive > i) {
+          tl.activate(i);
+          switchToActiveTab(p);
+        } else renderTabs(p);
+        sessionSaver.schedule();
+      },
+      duplicate: (i) => {
+        selectTab(p, i);
+        newTab(p);
+      },
+      moveLeft: (i) => reorderTab(p, i, i - 1),
+      moveRight: (i) => reorderTab(p, i, i + 2),
+    },
+  );
+}
+
+function contextItemsFor(t, x, y) {
+  const p = t.pane || panes.getActive();
+  const fp = filePanes[p];
+  switch (t.kind) {
+    case 'tab':
+      return tabMenuItems(p, t.index);
+    case 'tabstrip':
+      return buildTabStripMenu({ newTab: () => newTab(p) });
+    case 'crumb':
+      return buildCrumbMenu(t.path, locationActions(p));
+    case 'header':
+      return buildHeaderMenu(fp && fp.getCurrentDir(), {
+        ...locationActions(p),
+        pathInput: () => {
+          panes.setActive(p);
+          beginPathInput();
+        },
+        parent: () => fp && fp.goParent(),
+        addCurrent: () => addFavoriteFor(fp && fp.getCurrentDir()),
+      });
+    case 'columns':
+      return buildColumnsMenu(
+        sortStates[p].get(),
+        SORT_KEYS.map((k) => [k, SORT_LABELS[k]]),
+        buildFilterMenuItems(fp ? fp.getFilter() : null, filterActions(fp)),
+        { sortBy: (k) => sortStates[p].applyKey(k), reverse: () => sortStates[p].reverse() },
+      );
+    case 'place':
+      return buildPlaceMenu(t.path, locationActions());
+    case 'fav':
+      return favMenuItems(t.id, x, y);
+    case 'favgroup':
+      return buildFavGroupMenu(
+        { collapsed: favViewState.isCollapsed(t.key) },
+        {
+          toggle: () => favViewState.toggleCollapsed(t.key),
+          collapseAll: () => setAllGroups(true),
+          expandAll: () => setAllGroups(false),
+          ungroup: () => favViewState.update({ group: 'none' }),
+        },
+      );
+    case 'tag': {
+      const cur = favViewState.get().tag;
+      return buildTagMenu(
+        { tag: t.tag, active: !!cur && cur.toLowerCase() === t.tag.toLowerCase() },
+        {
+          filterTag: (tag) => favViewState.update({ tag }),
+          clearTag: () => favViewState.update({ tag: null }),
+          groupByTag: () => favViewState.update({ group: 'tag' }),
+        },
+      );
+    }
+    case 'favblank':
+      return buildFavBlankMenu(favView ? favView.optionItems() : [], {
+        addCurrent: addCurrentToFavorites,
+        addFolder: async () => {
+          const name = await promptName('フォルダ名', '新しいフォルダ');
+          if (name && name.trim()) favorites.addFolder(name.trim());
+        },
+      });
+    case 'searchhit':
+      return buildSearchHitMenu(t.path, {
+        open: (path) => search.chooseByPath(path),
+        copyPath: (path) => copyText(path),
+      });
+    case 'preview': {
+      const sel = typeof window.getSelection === 'function' ? String(window.getSelection()) : '';
+      const entry = activeFilePane() && activeFilePane().getCursorEntry();
+      return buildPreviewMenu(
+        { hasSelection: !!sel, path: entry && !entry.is_dir ? entry.path : null },
+        {
+          copySelection: () => copyText(sel),
+          openApp: (path) => openWith('open', path),
+          copyPath: (path) => copyText(path),
+          closePreview: () => previewPlacement.close(),
+        },
+      );
+    }
+    default:
+      return [];
+  }
+}
+
+/** まとめ見出しを全部たたむ / 開く */
+function setAllGroups(collapse) {
+  const keys = favView ? favView.groupKeys() : [];
+  for (const k of keys) {
+    if (favViewState.isCollapsed(k) !== collapse) favViewState.toggleCollapsed(k);
+  }
+}
+
+function onDocumentContextMenu(e) {
+  if (e.defaultPrevented) return; // ファイル一覧など、部品が自分で出したもの
+  const t = contextTargetOf(e.target);
+  if (t.kind === 'native') return;
+  e.preventDefault();
+  const items = contextItemsFor(t, e.clientX, e.clientY);
+  if (items.length) showMenu(e.clientX, e.clientY, items);
+}
+
 /** 新しいウィンドウを開く。場所を省くとアクティブペインの今のフォルダ */
 function openNewWindow(path) {
   const fp = activeFilePane();
@@ -2274,6 +2565,9 @@ async function init() {
     'tana.fontScale': (v) => v != null && fontScale.set(Number(v)),
   });
   window.addEventListener('storage', (e) => onStorage(e));
+
+  // 右クリック: 部品ごとのメニュー（ブラウザ既定のメニューは出さない）
+  document.addEventListener('contextmenu', onDocumentContextMenu);
   safemode.subscribe(syncMode);
   panes.subscribe(syncActivePane);
   previewPlacement.subscribe(syncPreviewPlacement);
