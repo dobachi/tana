@@ -511,7 +511,15 @@ fn read_file_bytes(path: String, max_bytes: u64) -> Result<tauri::ipc::Response,
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // 最初に登録する（2 つ目の起動を最初の Tana へ回すため）
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            windows::on_second_launch(app, argv, cwd);
+        }));
+    }
+    builder
         .manage(search::SearchState::default())
         .manage(windows::PendingOpens::default())
         .manage(remote::RemoteState::default())

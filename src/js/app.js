@@ -124,6 +124,7 @@ import {
   makeDir,
   makeFile,
   windowLabel,
+  listenEvent,
   newWindow,
   takeOpenRequest,
   confirmDialog,
@@ -267,7 +268,7 @@ async function switchToActiveTab(p) {
   if (p === panes.getActive()) updateStatus();
 }
 
-/** 新しいタブ（現在地を複製）。 */
+/** 新しいタブ（現在地を複製）。読み込みが終わると解決する Promise を返す。 */
 function newTab(p) {
   const fp = filePanes[p];
   const tl = paneTabs[p];
@@ -275,7 +276,7 @@ function newTab(p) {
   panes.setActive(p);
   saveActiveTabState(p);
   tl.add(fp.getCurrentDir()); // 状態はまっさら（先頭から）
-  switchToActiveTab(p);
+  return switchToActiveTab(p);
 }
 
 /** タブを閉じる（省略時はアクティブ）。最後の1枚は残す。 */
@@ -1698,6 +1699,18 @@ function openNewWindow(path) {
   );
 }
 
+/**
+ * 起動中に「tana DIR」などで場所を指定して起動されたとき（最初のウィンドウだけが受ける）。
+ * 今の表示を残すため、アクティブペインの新しいタブで開く。
+ */
+async function openPathFromLaunch(path) {
+  if (typeof path !== 'string' || !path) return;
+  const p = panes.getActive();
+  // 新しいタブの読み込みが済んでから移る（先に移ると、後から終わる読み込みで元の場所に戻る）
+  await newTab(p);
+  await navigatePane(p, path);
+}
+
 /** 終了（すべてのウィンドウを閉じる）。プロセス終了が使えなければこのウィンドウだけ閉じる */
 async function quitApp() {
   sessionSaver.flush();
@@ -2401,6 +2414,9 @@ async function init() {
 
   // PDF プレビューを有効にしているなら拡張の導入状態を調べ、表示中なら描き直す（待たない）
   if (pdfEnabled) refreshPdfInstalled().then(() => preview.refresh());
+
+  // 起動中に場所を指定して起動されたら、このウィンドウで開く（Rust の single-instance から）
+  if (isMainWindow) listenEvent('open-path', (e) => openPathFromLaunch(e && e.payload));
 
   // 起動時の更新検知。待たない・失敗しても黙る（起動を妨げないため）。追加ウィンドウではしない
   if (plan.checkUpdates) checkForUpdates();

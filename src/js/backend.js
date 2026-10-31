@@ -206,6 +206,16 @@ export function windowLabel() {
   }
 }
 
+/** Rust からのイベントを受ける（Tauri 外では何もしない） */
+export function listenEvent(name, handler) {
+  try {
+    const ev = typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.event;
+    if (ev && typeof ev.listen === 'function') ev.listen(name, handler);
+  } catch {
+    // 受けられなくても起動は続ける
+  }
+}
+
 /** 新しいウィンドウを開く（path を省くとホーム） */
 export async function newWindow(path = null) {
   return invoke('new_window', { path: path || null });

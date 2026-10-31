@@ -3,12 +3,17 @@
 //! 最初のウィンドウは "main"、追加分は "win-1", "win-2" … 。追加ウィンドウは同じ
 //! index.html を読み、開く場所は起動後に `take_open_request` で受け取る
 //! （URL に載せるとエスケープや長さを気にすることになるため）。
+//!
+//! Tana は 1 つだけ起動する（single-instance）。起動中にもう一度起動されたら（スタート
+//! メニュー・`tana DIR`・「プログラムから開く」）、場所の指定が無ければ新しいウィンドウを開き、
+//! 指定があれば最初のウィンドウの新しいタブで開く（Fude と同じ規則）。
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
-use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 /// 追加ウィンドウのラベルの通し番号。
 static WINDOW_SEQ: AtomicUsize = AtomicUsize::new(1);
@@ -36,18 +41,13 @@ impl PendingOpens {
 
 /// 新しいウィンドウを開く。path があればそこを開く（無ければホーム）。
 ///
-/// `build()` を呼び出し元のスレッドでやると Windows で固まる（同期コマンドはイベント
-/// ループのスレッドで動き、build() もそのスレッドを要るため）。開く場所だけ先に預け、
-/// 作るのは別スレッドに任せる（Fude と同じ）。
-#[tauri::command]
-pub fn new_window(
-    app: tauri::AppHandle,
-    pending: State<'_, PendingOpens>,
-    path: Option<String>,
-) -> Result<(), String> {
+/// `build()` を呼び出し元のスレッドでやると Windows で固まる（同期コマンドや single-instance
+/// の処理はイベントループのスレッドで動き、build() もそのスレッドを要るため）。開く場所だけ
+/// 先に預け、作るのは別スレッドに任せる（Fude と同じ）。
+pub fn spawn_window(app: &tauri::AppHandle, path: Option<String>) {
     let label = window_label(WINDOW_SEQ.fetch_add(1, Ordering::SeqCst));
     if let Some(p) = path.filter(|p| !p.is_empty()) {
-        pending.put(&label, p);
+        app.state::<PendingOpens>().put(&label, p);
     }
     let app = app.clone();
     std::thread::spawn(move || {
@@ -62,7 +62,63 @@ pub fn new_window(
             eprintln!("ウィンドウ {label} を開けません: {e}");
         }
     });
+}
+
+#[tauri::command]
+pub fn new_window(app: tauri::AppHandle, path: Option<String>) -> Result<(), String> {
+    spawn_window(&app, path);
     Ok(())
+}
+
+/// 起動引数から開く場所を取り出す（argv[0] は実行ファイル。`-` で始まるものは飛ばす）。
+pub fn path_arg(argv: &[String]) -> Option<String> {
+    argv.iter()
+        .skip(1)
+        .find(|a| !a.starts_with('-') && !a.is_empty())
+        .cloned()
+}
+
+/// 相対パスを、もう一度起動されたときのカレントディレクトリで絶対にする（リモートはそのまま）。
+pub fn resolve_open_path(arg: &str, cwd: &str) -> String {
+    if arg.starts_with("sftp://") || Path::new(arg).is_absolute() || cwd.is_empty() {
+        return arg.to_string();
+    }
+    Path::new(cwd).join(arg).to_string_lossy().to_string()
+}
+
+/// もう一度起動されたときにすること。
+#[derive(Debug, PartialEq)]
+pub enum SecondLaunch {
+    /// 新しいウィンドウを開く（場所の指定があればそこ）
+    NewWindow(Option<String>),
+    /// 最初のウィンドウを前に出し、その場所を新しいタブで開く
+    OpenInMain(String),
+}
+
+/// 場所の指定が無ければ新しいウィンドウ、あれば最初のウィンドウで開く
+/// （最初のウィンドウが閉じられていれば、その場所で新しいウィンドウ）。
+pub fn second_launch(argv: &[String], cwd: &str, has_main: bool) -> SecondLaunch {
+    match path_arg(argv).map(|p| resolve_open_path(&p, cwd)) {
+        Some(p) if has_main => SecondLaunch::OpenInMain(p),
+        other => SecondLaunch::NewWindow(other),
+    }
+}
+
+/// single-instance から呼ばれる。
+pub fn on_second_launch(app: &tauri::AppHandle, argv: Vec<String>, cwd: String) {
+    let main = app.get_webview_window("main");
+    match second_launch(&argv, &cwd, main.is_some()) {
+        SecondLaunch::NewWindow(path) => spawn_window(app, path),
+        SecondLaunch::OpenInMain(path) => {
+            if let Some(w) = main {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+                // 最初のウィンドウだけに送る（他のウィンドウは今の表示のまま）
+                let _ = app.emit_to("main", "open-path", path);
+            }
+        }
+    }
 }
 
 /// 呼び出したウィンドウに預けられた「開く場所」を取り出す（無ければ None）。
@@ -85,6 +141,49 @@ mod tests {
         // capabilities/default.json の "win-*" に掛かる形
         let caps = include_str!("../capabilities/default.json");
         assert!(caps.contains("\"win-*\""));
+    }
+
+    fn argv(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn launch_without_path_opens_a_new_window() {
+        // スタートメニューからの起動（引数なし）
+        assert_eq!(
+            second_launch(&argv(&["tana.exe"]), "C:\\Users\\me", true),
+            SecondLaunch::NewWindow(None)
+        );
+        // フラグだけでも同じ
+        assert_eq!(
+            second_launch(&argv(&["tana", "--verbose"]), "/home/me", true),
+            SecondLaunch::NewWindow(None)
+        );
+    }
+
+    #[test]
+    fn launch_with_path_opens_it_in_the_main_window() {
+        assert_eq!(
+            second_launch(&argv(&["tana", "/srv/data"]), "/home/me", true),
+            SecondLaunch::OpenInMain("/srv/data".into())
+        );
+        assert_eq!(
+            second_launch(&argv(&["tana", "sftp://k16/tmp"]), "/home/me", true),
+            SecondLaunch::OpenInMain("sftp://k16/tmp".into())
+        );
+        // 最初のウィンドウが閉じられていれば、その場所で新しいウィンドウ
+        assert_eq!(
+            second_launch(&argv(&["tana", "/srv"]), "/home/me", false),
+            SecondLaunch::NewWindow(Some("/srv".into()))
+        );
+    }
+
+    #[test]
+    fn relative_path_is_resolved_against_the_launch_cwd() {
+        let got = resolve_open_path("work", "/home/me");
+        assert_eq!(Path::new(&got), Path::new("/home/me").join("work"));
+        assert_eq!(resolve_open_path("sftp://h/x", "/home/me"), "sftp://h/x");
+        assert_eq!(resolve_open_path("x", ""), "x");
     }
 
     #[test]
