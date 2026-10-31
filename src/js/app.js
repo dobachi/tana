@@ -101,7 +101,8 @@ import {
   unknownHostKeyHost,
   hostKeyConfirmMessage,
 } from './core/remotepath.js';
-import { createRemotes, loadStoredRemotes, storeRemotes } from './core/remotes.js';
+import { createRemotes, loadStoredRemotes, storeRemotes, targetUri } from './core/remotes.js';
+import { parseRemoteSpec, prefillFromClipboard } from './core/remotespec.js';
 import { createStorageSync, startupPlan } from './core/windowsync.js';
 import { createRemoteView } from './core/remoteview.js';
 import { createPlacesView } from './core/placesview.js';
@@ -109,6 +110,7 @@ import { createHelp } from './core/help.js';
 import {
   homeDir,
   currentDir,
+  parentDir,
   appVersion,
   getCliPath,
   listPlaces,
@@ -953,9 +955,17 @@ function syncTheme(t) {
 async function navigatePane(pane, value, o = {}) {
   const fp = filePanes[pane];
   if (!fp) return;
-  let target = o.raw
-    ? resolveInputPath(value, { home: await homeDir(), cwd: fp.getCurrentDir() })
-    : value;
+  // 1 行のリモート指定（ssh://host/path・host:/path、AI の出力の貼り付けなど）
+  const spec = o.raw ? parseRemoteSpec(value) : null;
+  if (spec && spec.error) {
+    toast(spec.error);
+    return;
+  }
+  let target = spec
+    ? targetUri(spec.host, spec.path)
+    : o.raw
+      ? resolveInputPath(value, { home: await homeDir(), cwd: fp.getCurrentDir() })
+      : value;
   if (!target) {
     toast('パスを解釈できませんでした');
     return;
@@ -972,10 +982,64 @@ async function navigatePane(pane, value, o = {}) {
     focusActivePane();
     updateStatus();
   } catch (e) {
+    // ファイルを指したなら、その親を開いてファイルにカーソルを合わせる
+    if (o.raw && (await revealInParent(fp, target))) {
+      if (isRemote(target)) remotes.touch(remoteHost(target), target);
+      panes.setActive(pane);
+      focusActivePane();
+      updateStatus();
+      return;
+    }
     // 存在しない・ディレクトリでない・権限が無い等。OS の理由を添えて、
     // 特にドライブルート（存在しないドライブレター）を分かりやすく示す。
     toast(describeOpenError(target, e));
   }
+}
+
+/**
+ * target の親フォルダを開き、target にカーソルを合わせる。親に target が無ければ元の場所へ
+ * 戻して false（＝ただの「開けない」）。
+ */
+async function revealInParent(fp, target) {
+  const before = fp.getCurrentDir();
+  try {
+    const parent = await parentDir(target);
+    if (!parent || parent === target) return false;
+    await fp.load(parent);
+    fp.applyViewState({ cursorPath: target });
+    const cur = fp.getCursorEntry();
+    if (cur && !cur.is_dir && samePath(cur.path, target)) return true;
+    if (before && before !== fp.getCurrentDir()) await fp.load(before).catch(() => {});
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** 区切り（\ と /）と末尾の / を無視して同じ場所か */
+function samePath(a, b) {
+  const n = (s) =>
+    String(s || '')
+      .replace(/\\/g, '/')
+      .replace(/\/+$/, '');
+  return n(a) === n(b);
+}
+
+/**
+ * パス入力（Ctrl+L）を始める。クリップボードにリモートの 1 行指定（AI の出力など）があれば、
+ * それを入れておく（Enter で開く）。読めない・指定でなければ今の場所。
+ */
+async function beginPathInput() {
+  const fp = activeFilePane();
+  if (!fp) return;
+  // 権限の確認などで返ってこない・読めない環境でも入力欄は出す
+  const clip = await Promise.race([
+    Promise.resolve()
+      .then(() => navigator.clipboard.readText())
+      .catch(() => ''),
+    new Promise((resolve) => setTimeout(() => resolve(''), 300)),
+  ]);
+  fp.beginPathEdit(prefillFromClipboard(clip) || undefined);
 }
 
 /** パスや名前をクリップボードへ（Tauri でもブラウザでも動くようフォールバック付き） */
@@ -1424,7 +1488,7 @@ function buildMenuDefinition() {
             parent: () => activeFilePane()?.goParent(),
             back: () => navGo(-1),
             forward: () => navGo(1),
-            pathInput: () => activeFilePane()?.beginPathEdit(),
+            pathInput: () => beginPathInput(),
             search: openSearch,
             otherPane: () => panes.toggle(),
             nextTab: () => switchTab(panes.getActive(), 1),
@@ -2006,8 +2070,7 @@ function onKeydown(e) {
   // パス入力: Ctrl+L（ブラウザ/ファイラの慣習に合わせる）(FR-12)
   if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === 'KeyL' || e.key.toLowerCase() === 'l')) {
     e.preventDefault();
-    const fp = filePanes[panes.getActive()];
-    if (fp) fp.beginPathEdit();
+    beginPathInput();
     return;
   }
   // 設定: Ctrl+,（Fude と同じ）

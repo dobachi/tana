@@ -480,9 +480,10 @@ export function createFilePane(rootEl, opts = {}) {
    * パス入力欄を開いてフォーカスする (FR-12)。Enter で移動、Escape で取り消し。
    * 実際の移動は onNavigate に委ねる（存在確認は listDir の成否で判定する）。
    */
-  function beginPathEdit() {
+  /** パス入力を始める。initial を渡すとそれを入れておく（省略時は今の場所） */
+  function beginPathEdit(initial) {
     if (!inputEl || !pathEl) return;
-    inputEl.value = currentDir || '';
+    inputEl.value = typeof initial === 'string' && initial ? initial : currentDir || '';
     inputEl.hidden = false;
     pathEl.hidden = true;
     inputEl.focus();
