@@ -66,6 +66,10 @@ AI への頼み方の例: 「開く場所は `ssh://ホスト名/絶対パス` �
 
 - **開く**は相手のファイルを手元の一時フォルダ（`<temp>/tana-remote/<接続先>/…`）へ取得して、その写しを開く。
   **写しを編集・保存しても相手には戻らない**。相手を編集するなら Fude のリモート接続を使う
+- **例外: Markdown は Fude にリモートのまま渡す**。Fude が入っていれば、リモートの `.md` / `.markdown` / `.qmd` などを開く（ダブルクリック・Enter）と、一時コピーではなく `fude ssh://接続先/パス` で Fude を起動する。Fude は ssh 越しに直接編集するので、**保存はホストへ戻る**。「別のアプリで開く」で Fude を選んだときは Markdown 以外でも同じ。
+  - Fude の探し場所: Windows は `%LOCALAPPDATA%\Fude\` と `%ProgramFiles%\Fude\`、macOS は `/Applications/Fude.app`、Linux は `PATH` の `fude`。見つからなければ従来どおり一時コピーを開く
+  - 一時コピーを Fude で開いて保存しても戻らず、Tana が写しを取り直すと Fude が「外部で変更されています」と上書きの確認を出していた（実機の報告）。これを避けるための扱い
+  - Fude 側の要件はリモート接続と同じ（ホストに `fude-cli`）。Fude の [REMOTE.md](https://github.com/dobachi/fude/blob/main/docs/REMOTE.md) を参照
 - Markdown プレビュー中の画像（`![](img/a.png)` など）は、相手側から手元の一時フォルダへ取り寄せて表示する（1 つの md につき最大 30 枚）
 - **削除**: リモートにゴミ箱は無い。`Delete` でも完全削除の確認が出る
 - **検索**（`Ctrl+F` / `/`）とファイルマネージャでの表示（`o → r`）はリモートでは使えない

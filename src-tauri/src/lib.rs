@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 mod extensions;
+mod fude;
 mod places;
 mod remote;
 mod search;
@@ -565,6 +566,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_dir,
             path_kinds,
+            fude::fude_available,
+            fude::open_remote_in_fude,
             windows::new_window,
             windows::take_open_request,
             remote::remote_connect,

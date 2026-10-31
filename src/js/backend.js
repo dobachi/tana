@@ -419,3 +419,15 @@ export async function startOsDrag(paths, icon) {
     onEvent,
   });
 }
+
+// ===== リモートのファイルを Fude にリモートのまま渡す (fude.rs) =====
+
+/** Fude が入っているか。Tauri 不在時は false */
+export async function fudeAvailable() {
+  return (await invoke('fude_available')) === true;
+}
+
+/** `fude ssh://host/path` で Fude を起動する（起動中ならそちらで開く） */
+export async function openRemoteInFude(uri) {
+  return invoke('open_remote_in_fude', { uri });
+}

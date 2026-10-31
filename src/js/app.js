@@ -171,7 +171,10 @@ import {
   pathKinds,
   onOsDragDrop,
   startOsDrag,
+  fudeAvailable,
+  openRemoteInFude,
 } from './backend.js';
+import { fudeHandoffUri } from './core/fudehandoff.js';
 
 const safemode = createSafeMode(MODE.SAFE);
 const panes = createPanes(PANE.LEFT);
@@ -1141,6 +1144,23 @@ async function openWith(kind, path, app, forceTarget) {
   if (!isDesktop()) {
     toast('デスクトップ版でのみ利用できます');
     return;
+  }
+  // リモートの Markdown（または Fude 指定）は、入っていれば Fude にリモートのまま渡す。
+  // 一時コピーを Fude で編集すると、保存してもホストへ戻らないため（fudehandoff.js）。
+  const fudeUri = fudeHandoffUri({
+    kind,
+    path,
+    spec: typeof app === 'string' ? { command: app } : app || null,
+  });
+  if (fudeUri && (await fudeAvailable())) {
+    try {
+      await openRemoteInFude(fudeUri);
+      toast('Fude でリモートのまま開きました（保存するとホストへ戻ります）');
+      return;
+    } catch (e) {
+      // 起動できなければ従来の一時コピーで開く
+      toast('Fude を起動できませんでした: ' + (e && e.message ? e.message : e));
+    }
   }
   // リモート (FR-20): 手元の一時フォルダへ取得して、その写しを開く。
   // 書き戻しはしないので、その旨を知らせる。
