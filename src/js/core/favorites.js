@@ -300,6 +300,13 @@ export function createFavorites(initial, opts = {}) {
     },
     search: (query) => searchTree(root, query),
     toJSON: () => serialize(root),
+    /** 丸ごと置き換える（別ウィンドウで変わった保存内容を取り込む）。同じ内容なら何もしない */
+    replace(nodes) {
+      const next = hydrate(nodes);
+      if (JSON.stringify(serialize(next)) === JSON.stringify(serialize(root))) return;
+      root = next;
+      emit();
+    },
     subscribe(fn) {
       listeners.add(fn);
       fn(root);

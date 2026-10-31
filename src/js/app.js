@@ -102,6 +102,7 @@ import {
   hostKeyConfirmMessage,
 } from './core/remotepath.js';
 import { createRemotes, loadStoredRemotes, storeRemotes } from './core/remotes.js';
+import { createStorageSync, startupPlan } from './core/windowsync.js';
 import { createRemoteView } from './core/remoteview.js';
 import { createPlacesView } from './core/placesview.js';
 import { createHelp } from './core/help.js';
@@ -122,6 +123,9 @@ import {
   renamePath,
   makeDir,
   makeFile,
+  windowLabel,
+  newWindow,
+  takeOpenRequest,
   confirmDialog,
   isDesktop,
   readPreview,
@@ -867,6 +871,9 @@ let showHidden = false;
 // アプリのバージョン（起動時に取得。ヘルプ表示・更新チェックのメッセージで使う）
 let appVer = '';
 
+// 最初のウィンドウ（"main"）か。追加ウィンドウ（"win-N"）はセッションの保存・起動時の更新確認をしない
+let isMainWindow = true;
+
 // 二打鍵プレフィックス待ち（s=並替 / t=タブ / y=コピー / o=開く）。null なら待機なし。
 let pendingPrefix = null;
 
@@ -888,7 +895,10 @@ const sessionSaver = createSessionSaver({
       right: paneTabs[PANE.RIGHT] ? paneTabs[PANE.RIGHT].activeIndex() : 0,
     },
   }),
-  store: storeSession,
+  // 前回のタブ構成は最初のウィンドウ（main）だけが持つ（追加ウィンドウが上書きしない）
+  store: (state) => {
+    if (isMainWindow) storeSession(state);
+  },
 });
 
 // ソート状態（ペインごと, 詳細表示の並べ替え）。片方を並べ替えても、もう片方はそのまま
@@ -1157,7 +1167,10 @@ function showEntryMenu(pane, info) {
 
   if (entry) {
     if (entry.is_dir) {
-      items.push({ label: '開く', shortcut: 'Enter', action: () => navigateActive(entry.path) });
+      items.push(
+        { label: '開く', shortcut: 'Enter', action: () => navigateActive(entry.path) },
+        { label: '新しいウィンドウで開く', action: () => openNewWindow(entry.path) },
+      );
     } else {
       // WSL では「Linux 側 / Windows 側」の両方を並べる。既定（Enter と同じ動き）が
       // どちらかはラベルで分かるようにし、もう一方も 1 項目だけ添える。
@@ -1246,6 +1259,11 @@ function showEntryMenu(pane, info) {
       action: () => makeNewIn(fp, 'folder'),
     },
     { label: 'ここをお気に入りに追加', shortcut: 'Ctrl+D', action: addCurrentToFavorites },
+    {
+      label: 'ここを新しいウィンドウで開く',
+      shortcut: 'Ctrl+Shift+N',
+      action: () => openNewWindow(fp.getCurrentDir()),
+    },
     { separator: true },
     { label: '現在地のパスをコピー', action: () => copyText(fp.getCurrentDir()) },
     ...revealMenuItems(fp.getCurrentDir(), { currentDir: true }),
@@ -1335,13 +1353,15 @@ function buildMenuDefinition() {
             openWith: openWithFromMenu,
             openWindows: () => runPrefixAction('open:windows'),
             explorer: () => runPrefixAction('open:explorer'),
+            newWindow: () => openNewWindow(),
+            closeWindow: () => window.close(),
             newTab: () => newTab(panes.getActive()),
             closeTab: () => closeTab(panes.getActive()),
             remote: openRemoteView,
             workspaces: () => workspacesView.open(),
             addFavorite: addCurrentToFavorites,
             toggleMode: () => safemode.toggle(),
-            quit: () => window.close(),
+            quit: quitApp,
           },
         ),
     },
@@ -1669,6 +1689,26 @@ function opRename() {
   const fp = activeFilePane();
   if (fp) fileOps.rename(fp.getCursorEntry());
 }
+/** 新しいウィンドウを開く。場所を省くとアクティブペインの今のフォルダ */
+function openNewWindow(path) {
+  const fp = activeFilePane();
+  const dir = path || (fp && fp.getCurrentDir()) || null;
+  newWindow(dir).catch((e) =>
+    toast('新しいウィンドウを開けません: ' + (e && e.message ? e.message : e)),
+  );
+}
+
+/** 終了（すべてのウィンドウを閉じる）。プロセス終了が使えなければこのウィンドウだけ閉じる */
+async function quitApp() {
+  sessionSaver.flush();
+  try {
+    const { exit } = await import('@tauri-apps/plugin-process');
+    await exit(0);
+  } catch {
+    window.close();
+  }
+}
+
 /** fp の今の場所に新しいフォルダ / 空ファイルを作り、できたらカーソルをそこへ合わせる */
 async function makeNewIn(fp, kind) {
   if (!fp) return;
@@ -1922,6 +1962,19 @@ function onKeydown(e) {
     closeTab(panes.getActive());
     return;
   }
+  // ウィンドウ: Ctrl+Shift+N で新しいウィンドウ（今のフォルダ）、Ctrl+Shift+W で閉じる
+  if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && !isEditableTarget(e.target)) {
+    if (e.code === 'KeyN' || e.key.toLowerCase() === 'n') {
+      e.preventDefault();
+      openNewWindow();
+      return;
+    }
+    if (e.code === 'KeyW' || e.key.toLowerCase() === 'w') {
+      e.preventDefault();
+      window.close();
+      return;
+    }
+  }
   // コンテキストメニュー: Shift+F10 / メニューキー（キーボードからも到達可能に）
   if ((e.shiftKey && e.key === 'F10') || e.key === 'ContextMenu') {
     e.preventDefault();
@@ -2133,6 +2186,18 @@ async function init() {
   if (verEl) verEl.textContent = appVer ? `v${appVer}` : '';
   theme.subscribe(syncTheme);
   fontScale.subscribe(syncFontScale);
+
+  // 別のウィンドウが書いた保存内容を取り込む（古い内容で上書きし合わないように）
+  const onStorage = createStorageSync({
+    'tana.favorites': (v) => favorites.replace(v),
+    'tana.favorites.view': (v) => favViewState.replace(v),
+    'tana.workspaces': (v) => workspaces.replace(v),
+    'tana.extapps': (v) => extApps.replace(v),
+    'tana.remotes': (v) => remotes.replace(v),
+    'tana.theme': (v) => v && theme.set(String(v)),
+    'tana.fontScale': (v) => v != null && fontScale.set(Number(v)),
+  });
+  window.addEventListener('storage', (e) => onStorage(e));
   safemode.subscribe(syncMode);
   panes.subscribe(syncActivePane);
   previewPlacement.subscribe(syncPreviewPlacement);
@@ -2262,7 +2327,14 @@ async function init() {
   // 起動ディレクトリ: CLI 引数 > セッション復元(FR-14) > ホーム
   // `tana .` のような相対パスは cwd で解決してから読む。相対のまま読むと
   // エントリのパスも相対になり、Windows 連携（FR-13）等が開けなくなる。
-  const cli = await getCliPath();
+  isMainWindow = windowLabel() === 'main';
+  // 起動引数（tana DIR）はプロセス全体のものなので、追加ウィンドウでは見ない
+  const plan = startupPlan({
+    isMain: isMainWindow,
+    cliPath: isMainWindow ? await getCliPath() : null,
+    openRequest: isMainWindow ? null : await takeOpenRequest(),
+  });
+  const cli = plan.startPath;
   const home = (await homeDir()) || '.';
   const cwd = (await currentDir()) || '';
   const startDir = (dir) => resolveStartDir(dir, { home, cwd });
@@ -2287,7 +2359,7 @@ async function init() {
     }
   };
   let session = null;
-  if (cli) {
+  if (!plan.useSession) {
     await Promise.all([loadOr(filePanes.left, cli), loadOr(filePanes.right, cli)]);
   } else {
     session = loadSession();
@@ -2330,8 +2402,8 @@ async function init() {
   // PDF プレビューを有効にしているなら拡張の導入状態を調べ、表示中なら描き直す（待たない）
   if (pdfEnabled) refreshPdfInstalled().then(() => preview.refresh());
 
-  // 起動時の更新検知。待たない・失敗しても黙る（起動を妨げないため）。
-  checkForUpdates();
+  // 起動時の更新検知。待たない・失敗しても黙る（起動を妨げないため）。追加ウィンドウではしない
+  if (plan.checkUpdates) checkForUpdates();
 }
 
 if (typeof document !== 'undefined') {

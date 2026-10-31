@@ -28,6 +28,20 @@ describe('buildFileMenuItems', () => {
     expect(byLabel(items, 'エクスプローラーで表示').disabled).toBe(false);
   });
 
+  it('ウィンドウの開閉と終了がある', () => {
+    const a = { newWindow: vi.fn(), closeWindow: vi.fn(), quit: vi.fn() };
+    const items = buildFileMenuItems({}, a);
+    expect(byLabel(items, '新しいウィンドウ')).toMatchObject({
+      shortcut: 'Ctrl+Shift+N',
+      action: a.newWindow,
+    });
+    expect(byLabel(items, 'ウィンドウを閉じる')).toMatchObject({
+      shortcut: 'Ctrl+Shift+W',
+      action: a.closeWindow,
+    });
+    expect(byLabel(items, '終了（すべてのウィンドウ）').action).toBe(a.quit);
+  });
+
   it('モード切替のラベルは今のモードの逆を言う', () => {
     const toggleMode = vi.fn();
     const safe = buildFileMenuItems({ safe: true }, { toggleMode });

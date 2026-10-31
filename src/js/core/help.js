@@ -26,6 +26,8 @@ export const SHORTCUTS = [
     items: [
       ['Tab', 'ペイン切替（左 ⇄ 右）'],
       ['Ctrl + T / W', 'タブを開く / 閉じる'],
+      ['Ctrl + Shift + N', '新しいウィンドウ（今のフォルダ。フォルダの右クリックからも）'],
+      ['Ctrl + Shift + W', 'ウィンドウを閉じる'],
       ['Ctrl + Tab / Ctrl + Shift + Tab', '次 / 前のタブ'],
       ['t → h / l', 'タブを左 / 右へ移動'],
       ['Ctrl + B', 'サイドバーへ: ペイン → 場所 → お気に入り → ペイン'],

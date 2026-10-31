@@ -63,6 +63,13 @@ export function createFavViewState(initial) {
       return () => subs.delete(fn);
     },
     toJSON: () => ({ ...view, collapsed: view.collapsed.slice() }),
+    /** 丸ごと置き換える（別ウィンドウの変更を取り込む）。同じ内容なら何もしない */
+    replace(next) {
+      const v = sanitizeView(next);
+      if (JSON.stringify(v) === JSON.stringify(view)) return;
+      view = v;
+      emit();
+    },
   };
 }
 

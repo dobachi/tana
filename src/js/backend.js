@@ -193,6 +193,33 @@ export async function getCliPath() {
   }
 }
 
+// ===== 複数ウィンドウ =====
+
+/** このウィンドウのラベル（最初のウィンドウは "main"、追加分は "win-N"）。Tauri 外は "main" */
+export function windowLabel() {
+  try {
+    const w = typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.window;
+    const cur = w && typeof w.getCurrentWindow === 'function' ? w.getCurrentWindow() : null;
+    return (cur && cur.label) || 'main';
+  } catch {
+    return 'main';
+  }
+}
+
+/** 新しいウィンドウを開く（path を省くとホーム） */
+export async function newWindow(path = null) {
+  return invoke('new_window', { path: path || null });
+}
+
+/** このウィンドウに預けられた「開く場所」を受け取る（追加ウィンドウの起動時に 1 回） */
+export async function takeOpenRequest() {
+  try {
+    return (await invoke('take_open_request')) || null;
+  } catch {
+    return null;
+  }
+}
+
 // ===== ファイル操作 (FR-02, FR-03) =====
 // Rust が Err を返すと invoke は reject する。呼び出し側で捕捉する。
 

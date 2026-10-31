@@ -47,6 +47,7 @@ export function buildFileMenuItems(state, a = {}) {
   }
   items.push(
     { separator: true },
+    { label: '新しいウィンドウ', shortcut: 'Ctrl+Shift+N', action: a.newWindow },
     { label: '新しいタブ', shortcut: 'Ctrl+T', action: a.newTab },
     { label: 'タブを閉じる', shortcut: 'Ctrl+W', action: a.closeTab },
     { separator: true },
@@ -60,7 +61,8 @@ export function buildFileMenuItems(state, a = {}) {
       action: a.toggleMode,
     },
     { separator: true },
-    { label: '終了', action: a.quit },
+    { label: 'ウィンドウを閉じる', shortcut: 'Ctrl+Shift+W', action: a.closeWindow },
+    { label: '終了（すべてのウィンドウ）', action: a.quit },
   );
   return items;
 }

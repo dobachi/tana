@@ -8,6 +8,7 @@ mod remote;
 mod search;
 mod sftp;
 mod updater_env;
+mod windows;
 mod wsl;
 
 /// ディレクトリ内の 1 エントリ（ファイル/フォルダ）
@@ -493,7 +494,6 @@ fn read_preview(path: String, max_bytes: usize) -> Result<PreviewData, String> {
     read_preview_impl(Path::new(&path), max_bytes)
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// ファイルの中身をそのまま返す（PDF プレビュー用）。上限を超えるものは読まない。
 /// JSON の数値配列にせず、生のバイト列（JS 側では ArrayBuffer）で渡す。
 fn read_file_bytes_impl(path: &Path, max_bytes: u64) -> Result<Vec<u8>, String> {
@@ -509,9 +509,11 @@ fn read_file_bytes(path: String, max_bytes: u64) -> Result<tauri::ipc::Response,
     read_file_bytes_impl(Path::new(&path), max_bytes).map(tauri::ipc::Response::new)
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(search::SearchState::default())
+        .manage(windows::PendingOpens::default())
         .manage(remote::RemoteState::default())
         .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_dialog::init())
@@ -520,6 +522,8 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             list_dir,
+            windows::new_window,
+            windows::take_open_request,
             remote::remote_connect,
             remote::remote_disconnect,
             remote::remote_sessions,

@@ -170,6 +170,13 @@ export function createExtApps(initial) {
     },
     /** 保存用の配列 */
     serialize: () => serialize(list),
+    /** 丸ごと置き換える（別ウィンドウの変更を取り込む）。同じ内容なら何もしない */
+    replace(raw) {
+      const next = hydrate(raw);
+      if (JSON.stringify(serialize(next)) === JSON.stringify(serialize(list))) return;
+      list = next.map((a) => ({ id: makeId(), ...a }));
+      emit();
+    },
   };
 }
 

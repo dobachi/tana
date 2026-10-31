@@ -87,7 +87,18 @@ export function createWorkspaces(initial = []) {
     return () => listeners.delete(fn);
   }
 
-  return { list, save, remove, get, subscribe, toJSON: () => list() };
+  /** 丸ごと置き換える（別ウィンドウの変更を取り込む）。同じ内容なら何もしない */
+  function replace(next) {
+    const strip = (l) => JSON.stringify(l.map(({ id: _id, ...w }) => w));
+    const clean = normalize(next);
+    if (strip(clean) === strip(items)) return;
+    // 相手の id をそのまま使う（振り直すと保存内容が変わり、ウィンドウ間で書き合いになる）
+    items = clean.map((w) => ({ ...w, id: w.id > 0 ? w.id : nextId++ }));
+    nextId = items.reduce((m, w) => Math.max(m, w.id), nextId - 1) + 1;
+    emit();
+  }
+
+  return { list, save, remove, get, subscribe, replace, toJSON: () => list() };
 }
 
 function safeStorage() {

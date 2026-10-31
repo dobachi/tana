@@ -47,6 +47,19 @@ export function createRemotes(initial = {}) {
       return () => subs.delete(fn);
     },
     toJSON: () => ({ recent: recent.slice(), lastPath: { ...lastPath } }),
+    /**
+     * 最近の接続先を置き換える（別ウィンドウの変更を取り込む）。書き込み許可は
+     * ウィンドウごとの同意なので引き継がない。同じ内容なら何もしない
+     */
+    replace(data) {
+      const o = data || {};
+      const r = sanitizeRecent(o.recent);
+      const lp = sanitizeLastPath(o.lastPath);
+      if (JSON.stringify([r, lp]) === JSON.stringify([recent, lastPath])) return;
+      recent = r;
+      lastPath = lp;
+      emit();
+    },
   };
 }
 
