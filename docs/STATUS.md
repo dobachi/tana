@@ -107,7 +107,9 @@ make docker-check  # CI相当チェック
 | `core/workspaces.js` | **ワークスペース（タブ構成の保存/復元）の純粋な状態**。両ペインのタブ dir 一覧＋アクティブに名前を付けて保存/上書き/削除、localStorage 永続化。UI は workspacesview.js |
 | `core/workspacesview.js` | **ワークスペースのオーバーレイUI**。ファイルメニューから開く。現在構成を名前保存＋保存済み一覧の開く/削除（j/k/Enter/Del/Esc） |
 | `core/dnd.js` | **D&D の判定（純粋）**。掴んだ対象・効果(copy/move)・不正ドロップの拒否。詳細: [DRAG-AND-DROP.md](DRAG-AND-DROP.md) |
-| `core/dragdrop.js` | **D&D の追跡（DOM）**。ポインタイベントで自作。`resolveDropTarget` は将来の OS ドロップでも再利用する。安全モードは拒否ゴースト＋トーストで示す |
+| `core/dragdrop.js` | **D&D の追跡（DOM）**。ポインタイベントで自作。`resolveDropTarget` は OS ドロップでも再利用する。安全モードは拒否ゴースト＋トーストで示す。ウィンドウの外へ出たら `onLeaveWindow` で OS のドラッグへ引き継ぐ |
+| `core/osdnd.js` | **OS との D&D の判定（純粋）**。物理→CSS 座標・ウィンドウ外判定・外へ出すものの計画（リモートは取り寄せ / リモートのフォルダは断る）・戻ってきたドロップの読み替え。詳細: [DRAG-AND-DROP.md](DRAG-AND-DROP.md) §10 |
+| `core/osdragdrop.js` | **OS との D&D の配線**。外 → Tana（`onDragDropEvent`、常にコピー）と Tana → 外（`tauri-plugin-drag`、常にコピー） |
 | `core/editmenu.js` | **メニューバー「編集」の項目（純粋）**。対象・宛先の有無で無効化を判定。app.js が状態と action を注入 |
 | `core/wsl.js` | **WSL から Windows 側で開く判断（純粋, FR-13 拡張）**。既定オープン先（設定・WSL では既定 Windows）／外部アプリの起動先 auto 判定（`.exe`・`C:\…`）／メニューのラベル／localStorage。起動そのものは Rust `wsl.rs`。詳細: [WSL.md](WSL.md) |
 | `core/remotepath.js` | **リモートの場所 `sftp://HOST/path` の純粋な扱い (FR-20)**。判定/分解/親/ブレッドクラム/表示名/READ_ONLY の言い換え/閲覧のみ判定 |
@@ -140,7 +142,7 @@ make docker-check  # CI相当チェック
 | ID | 要求 | 優先 | 状態 | 備考 |
 |----|------|:----:|:----:|------|
 | FR-01 | 2ペイン表示 | M | ✅ | 実ファイル一覧・hjkl ナビ |
-| FR-02 | ペイン間コピー/移動 | M | ✅ | F5/F6（複数選択対応）＋ D&D。既定コピー / Shift で移動。加えて Ctrl+C/Ctrl+X→Ctrl+V のファイルクリップボードで任意の現在地へ貼り付け可（core/clipboard.js） |
+| FR-02 | ペイン間コピー/移動 | M | ✅ | F5/F6（複数選択対応）＋ D&D。既定コピー / Shift で移動。他のアプリとの D&D（外からのドロップ・外へのドラッグ, いずれもコピー）にも対応。加えて Ctrl+C/Ctrl+X→Ctrl+V のファイルクリップボードで任意の現在地へ貼り付け可（core/clipboard.js） |
 | FR-03 | 削除・リネーム・新規フォルダ・新規ファイル | M | ✅ | Delete/Shift+Delete・F2・F7・Shift+F4（空ファイル、リモートも可）。安全モードゲート |
 | —     | 一覧の簡易絞り込み（フォルダだけ / ファイルだけ / 拡張子） | — | ✅ | ペインごと。`f`→`d`/`f`/`e`/`a`、表示メニュー、右クリック。帯に件数と × |
 | —     | 複数ウィンドウ | — | ✅ | Ctrl+Shift+N（今のフォルダ）/ フォルダの右クリック、Ctrl+Shift+W で閉じる。前回のタブ構成は最初のウィンドウだけが保存・復元。お気に入り・ワークスペース・外部アプリ・最近の接続先・テーマ・文字サイズはウィンドウ間で同期（storage イベント）。リモートの書き込み許可はウィンドウごと。Tana は 1 つだけ起動し、起動中にもう一度起動すると: 場所の指定なし → 新しいウィンドウ、指定あり → 最初のウィンドウの新しいタブ |
@@ -194,7 +196,7 @@ make docker-check  # CI相当チェック
 - ~~**D&D の `Shift`+ドロップ（移動）が実機未確認**~~ ✅ **ネイティブ実機で確認済み（2026-07-27）**。noVNC 越しでは修飾キーが届かず検証できなかったが、`make dev` 起動での目視で `Shift`+ドロップが移動になること・フォルダ行への吸い込み・複数選択のドラッグを確認した（判定ロジックは単体テスト済み）。
 - **ファイルクリップボード Ctrl+C / Ctrl+X → Ctrl+V を実装（2026-07-27）**。F5/F6 が「反対ペイン固定」なのに対し、任意の現在地（同ペイン内サブフォルダ・お気に入り先を含む）へ貼り付けられる汎用経路。これにより「同ペイン内フォルダへのドロップ」相当をキーボードでも汎用的にカバー。登録（コピー/切り取り）は非破壊なので安全モードでも可、貼り付けの実操作のみ fileOps 側で安全モードにゲートされる。状態は純粋モジュール `core/clipboard.js`。
 - **お気に入りサイドバーへのドロップは未対応**（D&D 段階2）。当たり判定が `favoritesview.js` 側で別物になるため分離した。
-- **OS → Tana のネイティブドロップは未実装**。`dragDropEnabled` を既定 `true` のままにしたので道は開いている。`core/dragdrop.js` の `resolveDropTarget` に `onDragDropEvent` を繋ぐだけで足せる見込み。
+- ~~**OS → Tana のネイティブドロップは未実装**~~ ✅ 外 → Tana / Tana → 外 の両方を実装（[DRAG-AND-DROP.md](DRAG-AND-DROP.md) §10）。**Windows / macOS の実機確認は未了**（WSLg は Windows アプリとの D&D を中継しないため WSL では確かめられない）。
 - **セッション復元**（FR-14）: ディレクトリ・アクティブペインは復元対応済み（core/session.js）。タブ構成の復元はタブ(FR-08)実装時に対応。
 - WSLg 等での日本語入力・GUI は Fude 同様に注意が必要 → Docker GUI で確認するのが安全。
 

@@ -153,6 +153,39 @@ fn parent_dir(path: String) -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+/// OS からドロップされたパスの種類（D&D の外部ドロップ用）。
+#[derive(Serialize)]
+struct PathKind {
+    path: String,
+    name: String,
+    is_dir: bool,
+    exists: bool,
+}
+
+/// 各パスが存在するか・フォルダかを返す Tauri コマンド。
+/// 外部からのドロップは種類が分からないまま届くので、自分の子孫へのコピー
+/// （無限再帰）を弾く前にここで確かめる（docs/DRAG-AND-DROP.md §10）。
+#[tauri::command]
+fn path_kinds(paths: Vec<String>) -> Vec<PathKind> {
+    paths
+        .into_iter()
+        .map(|path| {
+            let p = Path::new(&path);
+            let meta = std::fs::metadata(p).ok();
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.clone());
+            PathKind {
+                is_dir: meta.as_ref().map(|m| m.is_dir()).unwrap_or(false),
+                exists: meta.is_some(),
+                name,
+                path,
+            }
+        })
+        .collect()
+}
+
 // ===== ファイル操作 (FR-02, FR-03) =====
 // 破壊的操作の許可（安全モードのゲート）はフロント側で行う。ここは実行のみ。
 
@@ -528,8 +561,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_drag::init())
         .invoke_handler(tauri::generate_handler![
             list_dir,
+            path_kinds,
             windows::new_window,
             windows::take_open_request,
             remote::remote_connect,
@@ -657,6 +692,27 @@ mod tests {
         // 文言の先頭は呼び出し側が渡した綴りのまま（describeOpenError の前提）。
         let err = read_dir_entries(Path::new("./no-such-dir-tana")).unwrap_err();
         assert!(err.starts_with("./no-such-dir-tana: "), "{err}");
+    }
+
+    #[test]
+    fn path_kinds_reports_dirs_files_and_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("d");
+        let file = tmp.path().join("f.txt");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(&file, b"x").unwrap();
+        let missing = tmp.path().join("nope");
+        let got = path_kinds(vec![
+            dir.to_string_lossy().into(),
+            file.to_string_lossy().into(),
+            missing.to_string_lossy().into(),
+        ]);
+        assert_eq!(got.len(), 3);
+        assert!(got[0].is_dir && got[0].exists);
+        assert_eq!(got[0].name, "d");
+        assert!(!got[1].is_dir && got[1].exists);
+        assert_eq!(got[1].name, "f.txt");
+        assert!(!got[2].exists && !got[2].is_dir);
     }
 
     #[test]

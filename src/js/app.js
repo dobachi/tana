@@ -49,6 +49,8 @@ import { openSettings, closeSettings, isSettingsOpen } from './core/settings.js'
 import { createFileOps } from './core/fileops.js';
 import { createFileClipboard } from './core/clipboard.js';
 import { createDragSession } from './core/dragdrop.js';
+import { createOsDropTarget, createDragOut } from './core/osdragdrop.js';
+import { FALLBACK_DRAG_ICON, dragOutLabel } from './core/osdnd.js';
 import { buildEditMenuItems } from './core/editmenu.js';
 import { PDF_EXT_ID, loadPdfPreview, storePdfPreview } from './core/pdfpreview.js';
 import {
@@ -166,6 +168,9 @@ import {
   extensionStatus,
   installExtension,
   uninstallExtension,
+  pathKinds,
+  onOsDragDrop,
+  startOsDrag,
 } from './backend.js';
 
 const safemode = createSafeMode(MODE.SAFE);
@@ -549,14 +554,64 @@ function navGo(dir /* -1=戻る / +1=進む */) {
 
 // ドラッグ＆ドロップ (FR-02/FR-11)。既定はコピー、Shift 押下中は移動。
 // 実際のファイル操作・衝突解決・安全モードのゲートは fileOps 側が持つ。
-const dragSession = createDragSession({
-  getPaneDir: (pane) => (filePanes[pane] ? filePanes[pane].getCurrentDir() : null),
-  canMutate: () => safemode.canMutate(),
-  onDrop: ({ sources, destDir, effect }) => {
-    if (effect === 'move') fileOps.move(sources, destDir);
-    else fileOps.copy(sources, destDir);
-  },
+const paneDirOf = (pane) => (filePanes[pane] ? filePanes[pane].getCurrentDir() : null);
+function runDrop({ sources, destDir, effect }) {
+  if (effect === 'move') fileOps.move(sources, destDir);
+  else fileOps.copy(sources, destDir);
+}
+
+/**
+ * OS のドラッグ画像（PNG の data URL）。ゴーストと同じく名前か件数を出す。
+ * canvas が使えなければ透明の 1px（OS のカーソルだけが出る）。
+ */
+function makeDragIcon(sources) {
+  try {
+    const label = dragOutLabel(sources);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx || !label) return FALLBACK_DRAG_ICON;
+    const font = '13px system-ui, sans-serif';
+    ctx.font = font;
+    const w = Math.min(320, Math.ceil(ctx.measureText(label).width) + 20);
+    canvas.width = w;
+    canvas.height = 26;
+    ctx.font = font;
+    ctx.fillStyle = 'rgba(40, 44, 52, 0.9)';
+    ctx.fillRect(0, 0, w, 26);
+    ctx.fillStyle = '#ffffff';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 10, 13, w - 20);
+    return canvas.toDataURL('image/png');
+  } catch {
+    return FALLBACK_DRAG_ICON;
+  }
+}
+
+// Tana → 外。内部D&Dがウィンドウの外へ出たら OS のドラッグへ引き継ぐ（§10）
+const dragOut = createDragOut({
+  startDrag: startOsDrag,
+  fetchRemote: remoteFetch,
+  isRemote,
+  makeIcon: makeDragIcon,
   toast,
+});
+
+const dragSession = createDragSession({
+  getPaneDir: paneDirOf,
+  canMutate: () => safemode.canMutate(),
+  onDrop: runDrop,
+  onLeaveWindow: isDesktop() ? (sources, stillHeld) => dragOut.start(sources, stillHeld) : null,
+  toast,
+});
+
+// 外 → Tana。エクスプローラー等からのドロップは常にコピー（§10）
+const osDrop = createOsDropTarget({
+  getPaneDir: paneDirOf,
+  canMutate: () => safemode.canMutate(),
+  pathKinds,
+  onDrop: runDrop,
+  toast,
+  getOutbound: () => dragOut.getOutbound(),
 });
 let favView = null;
 let placesView = null;
@@ -2771,6 +2826,9 @@ async function init() {
 
   // PDF プレビューを有効にしているなら拡張の導入状態を調べ、表示中なら描き直す（待たない）
   if (pdfEnabled) refreshPdfInstalled().then(() => preview.refresh());
+
+  // 外（エクスプローラー等）からのドロップを受ける（§10）
+  onOsDragDrop((payload) => osDrop.handle(payload));
 
   // 起動中に場所を指定して起動されたら、このウィンドウで開く（Rust の single-instance から）
   if (isMainWindow) listenEvent('open-path', (e) => openPathFromLaunch(e && e.payload));

@@ -848,6 +848,12 @@ body[data-mode='operation'] .entry.selected.cursor {
 .entry.dragging {
   opacity: 0.45;
 }
+/* ドラッグ中（押している間）は画面全体で文字列選択を止める（core/dragdrop.js） */
+body.dnd-active,
+body.dnd-active * {
+  -webkit-user-select: none;
+  user-select: none;
+}
 .entry.drop-into {
   outline: 2px solid var(--accent-op);
   outline-offset: -2px;

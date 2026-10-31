@@ -284,3 +284,159 @@ describe('フィードバックとキャンセル', () => {
     expect(document.querySelector('.dragging')).toBeNull();
   });
 });
+
+// Tana → 外（docs/DRAG-AND-DROP.md §10）。ウィンドウの外へ出たら OS のドラッグへ引き継ぐ
+describe('ウィンドウの外へ出たときの引き継ぎ', () => {
+  let onLeaveWindow;
+  let out;
+
+  function makeSession() {
+    session.cancel();
+    onLeaveWindow = vi.fn(async () => {});
+    out = createDragSession({
+      getPaneDir: (pane) => DIRS[pane] || null,
+      canMutate: () => canMutate,
+      onDrop,
+      toast,
+      onLeaveWindow,
+      getViewport: () => ({ width: 100, height: 100 }),
+    });
+    return out;
+  }
+
+  afterEach(() => out && out.cancel());
+
+  it('外へ出たら onLeaveWindow に掴んだ対象を渡し、内部のドラッグは畳む', async () => {
+    const s = makeSession();
+    s.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 10, y: 10 });
+    hit = q('.pane[data-pane="right"] .pane-list');
+    mouse('mousemove', 30, 30);
+    expect(s.isDragging()).toBe(true);
+    mouse('mousemove', 130, 30);
+    expect(s.isDragging()).toBe(false);
+    expect(ghost()).toBeNull();
+    expect(document.querySelectorAll('.dragging').length).toBe(0);
+    await Promise.resolve();
+    expect(onLeaveWindow).toHaveBeenCalledTimes(1);
+    expect(onLeaveWindow.mock.calls[0][0].map((e) => e.path)).toEqual(['/base/a.txt']);
+  });
+
+  it('選択全体を掴んでいれば選択全体を渡す', async () => {
+    const s = makeSession();
+    const sel = new Set(['/base/a.txt', '/base/b.txt']);
+    s.begin({ entries: ENTRIES, selected: sel, path: '/base/b.txt', x: 10, y: 10 });
+    mouse('mousemove', 30, 30);
+    mouse('mousemove', 30, -5);
+    await Promise.resolve();
+    expect(onLeaveWindow.mock.calls[0][0].map((e) => e.path)).toEqual([
+      '/base/a.txt',
+      '/base/b.txt',
+    ]);
+  });
+
+  it('引き継ぎ後に離したら stillHeld() は false になる', async () => {
+    const s = makeSession();
+    let stillHeld;
+    let release;
+    onLeaveWindow.mockImplementation(
+      (_src, held) =>
+        new Promise((r) => {
+          stillHeld = held;
+          release = r;
+        }),
+    );
+    s.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 10, y: 10 });
+    mouse('mousemove', 30, 30);
+    mouse('mousemove', 200, 30);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(stillHeld()).toBe(true);
+    mouse('mouseup', 200, 30);
+    expect(stillHeld()).toBe(false);
+    expect(onDrop).not.toHaveBeenCalled();
+    release();
+  });
+
+  it('しきい値前（ドラッグ前）に外の座標が来ても引き継がない', async () => {
+    const s = makeSession();
+    s.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 99, y: 10 });
+    mouse('mousemove', 101, 10); // 2px: しきい値未満
+    await Promise.resolve();
+    expect(onLeaveWindow).not.toHaveBeenCalled();
+  });
+
+  it('縁での mouseout（relatedTarget なし）でも引き継ぐ', async () => {
+    const s = makeSession();
+    s.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 10, y: 10 });
+    mouse('mousemove', 50, 50);
+    mouse('mouseout', 99, 50);
+    await Promise.resolve();
+    expect(onLeaveWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('中央での mouseout（iframe へ入った等）では引き継がない', async () => {
+    const s = makeSession();
+    s.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 10, y: 10 });
+    mouse('mousemove', 50, 50);
+    mouse('mouseout', 50, 50);
+    await Promise.resolve();
+    expect(onLeaveWindow).not.toHaveBeenCalled();
+    expect(s.isDragging()).toBe(true);
+  });
+
+  it('onLeaveWindow が無ければ外へ出ても内部のドラッグを続ける（従来どおり）', () => {
+    session.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 0, y: 0 });
+    hit = null;
+    mouse('mousemove', 20, 20);
+    mouse('mousemove', 5000, 20);
+    expect(session.isDragging()).toBe(true);
+  });
+});
+
+describe('引き継ぎ後の文字選択の抑止', () => {
+  it('次に押されるまで selectstart を止め、押されたら戻す', async () => {
+    session.cancel();
+    const s = createDragSession({
+      getPaneDir: (pane) => DIRS[pane] || null,
+      canMutate: () => true,
+      onDrop,
+      toast,
+      onLeaveWindow: async () => {},
+      getViewport: () => ({ width: 100, height: 100 }),
+    });
+    s.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 10, y: 10 });
+    mouse('mousemove', 30, 30);
+    mouse('mousemove', 300, 30);
+    await Promise.resolve();
+    const ev1 = new Event('selectstart', { bubbles: true, cancelable: true });
+    document.body.dispatchEvent(ev1);
+    expect(ev1.defaultPrevented).toBe(true);
+    mouse('mousedown', 10, 10);
+    const ev2 = new Event('selectstart', { bubbles: true, cancelable: true });
+    document.body.dispatchEvent(ev2);
+    expect(ev2.defaultPrevented).toBe(false);
+    s.cancel();
+  });
+});
+
+describe('ドラッグ中の文字列選択の抑止', () => {
+  it('押している間は body に dnd-active を付け、離したら外す', () => {
+    session.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 0, y: 0 });
+    expect(document.body.classList.contains('dnd-active')).toBe(true);
+    hit = q('.pane[data-pane="right"] .pane-list');
+    mouse('mousemove', 20, 20);
+    expect(document.body.classList.contains('dnd-active')).toBe(true);
+    mouse('mouseup', 20, 20);
+    expect(document.body.classList.contains('dnd-active')).toBe(false);
+  });
+
+  it('ただのクリック・Escape でも外す', () => {
+    session.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 0, y: 0 });
+    mouse('mouseup', 1, 1);
+    expect(document.body.classList.contains('dnd-active')).toBe(false);
+    session.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 0, y: 0 });
+    mouse('mousemove', 20, 20);
+    key('keydown', 'Escape');
+    expect(document.body.classList.contains('dnd-active')).toBe(false);
+  });
+});

@@ -381,3 +381,41 @@ export async function readFileBytes(path, maxBytes) {
   if (!local) throw new Error('読めませんでした');
   return invoke('read_file_bytes', { path: local, maxBytes });
 }
+
+// ===== OS とのドラッグ＆ドロップ (docs/DRAG-AND-DROP.md §10) =====
+
+/** 各パスの種類（{path, name, is_dir, exists}）。外からドロップされたものを調べる */
+export async function pathKinds(paths) {
+  return (await invoke('path_kinds', { paths })) || [];
+}
+
+/**
+ * 外からのドロップ（onDragDropEvent）を購読する。handler には payload
+ * （{type, paths?, position?}）が届く。Tauri 不在時は何もしない。
+ */
+export async function onOsDragDrop(handler) {
+  if (!isDesktop()) return null;
+  try {
+    const { getCurrentWebview } = await import('@tauri-apps/api/webview');
+    return await getCurrentWebview().onDragDropEvent((e) => handler(e.payload));
+  } catch {
+    return null; // 受けられなくても起動は続ける
+  }
+}
+
+/**
+ * OS のドラッグを始める（tauri-plugin-drag）。paths は手元の絶対パス、icon は
+ * PNG の data URL。常にコピーとして渡す。ドラッグが終わると resolve する。
+ */
+export async function startOsDrag(paths, icon) {
+  const fn = getInvoke();
+  if (!fn) return null;
+  const { Channel } = await import('@tauri-apps/api/core');
+  const onEvent = new Channel();
+  return fn('plugin:drag|start_drag', {
+    item: paths,
+    image: icon,
+    options: { mode: 'copy' },
+    onEvent,
+  });
+}

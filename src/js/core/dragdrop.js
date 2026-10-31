@@ -11,6 +11,7 @@
 // 設計の詳細は docs/DRAG-AND-DROP.md。
 
 import { dragPayload, dropEffect, validateDrop, exceededThreshold, describeDrag } from './dnd.js';
+import { isOutsideViewport, isNearEdge } from './osdnd.js';
 
 /**
  * 画面座標からドロップ先を解決する。
@@ -58,11 +59,22 @@ export function resolveDropTarget(x, y, getPaneDir, doc = globalThis.document) {
  * @param {() => boolean} deps.canMutate 破壊的操作が許可されているか
  * @param {(info: {sources: object[], destDir: string, effect: string}) => void} deps.onDrop
  * @param {(msg: string) => void} [deps.toast] 安全モードでのドロップ拒否を伝える
+ * @param {(sources: object[], stillHeld: () => boolean) => (void|Promise<void>)} [deps.onLeaveWindow]
+ *   ドラッグ中のカーソルがウィンドウの外へ出たときに呼ぶ（OS のドラッグへ引き継ぐ, §10）。
+ *   stillHeld() はボタンがまだ押されているか。取り寄せを待つ間に離されたら OS の
+ *   ドラッグを始めてはいけない（離した位置に勝手に落ちる）。
+ * @param {() => {width: number, height: number}} [deps.getViewport]
  * @param {Document} [deps.doc]
  */
 export function createDragSession(deps) {
-  const { getPaneDir, canMutate, onDrop, toast } = deps;
+  const { getPaneDir, canMutate, onDrop, toast, onLeaveWindow } = deps;
   const doc = deps.doc || globalThis.document;
+  const getViewport =
+    deps.getViewport ||
+    (() => {
+      const w = doc.defaultView || globalThis;
+      return { width: w.innerWidth, height: w.innerHeight };
+    });
 
   let pending = null; // mousedown 済み・しきい値未満
   let active = null; // ドラッグ中
@@ -149,11 +161,49 @@ export function createDragSession(deps) {
     active = null;
     pending = null;
     shiftHeld = false;
+    if (doc.body) doc.body.classList.remove('dnd-active');
     doc.removeEventListener('mousemove', onMouseMove, true);
     doc.removeEventListener('mousemove', trackPoint, true);
     doc.removeEventListener('mouseup', onMouseUp, true);
     doc.removeEventListener('keydown', onKeyDown, true);
     doc.removeEventListener('keyup', onKeyUp, true);
+    doc.removeEventListener('mouseout', onMouseOut, true);
+  }
+
+  /**
+   * ウィンドウの外へ出た。内部のドラッグを畳み、OS のドラッグへ引き継ぐ。
+   * 引き継いだあとは OS がマウスを握るので、こちらの mouseup は来ない前提で片付ける。
+   */
+  function handOff() {
+    const sources = active.sources;
+    stop();
+    let released = false;
+    const onRelease = () => {
+      released = true;
+    };
+    doc.addEventListener('mouseup', onRelease, true);
+    const done = () => doc.removeEventListener('mouseup', onRelease, true);
+    suppressSelectionUntilNextPress();
+    Promise.resolve()
+      .then(() => onLeaveWindow(sources, () => !released))
+      .then(done, done);
+  }
+
+  /**
+   * 引き継いだあと、webview はボタンが押されたままだと思っていることがあり
+   * （OS のドラッグが mouseup を飲み込む）、Tana の上へ戻ると通り道の文字が
+   * 範囲選択されてしまう（実機で確認）。次に押されるまで選択を止める。
+   */
+  function suppressSelectionUntilNextPress() {
+    const block = (ev) => ev.preventDefault();
+    const release = () => {
+      doc.removeEventListener('selectstart', block, true);
+      doc.removeEventListener('mousedown', release, true);
+      doc.removeEventListener('mouseup', release, true);
+    };
+    doc.addEventListener('selectstart', block, true);
+    doc.addEventListener('mousedown', release, true);
+    doc.addEventListener('mouseup', release, true);
   }
 
   function onMouseMove(ev) {
@@ -167,7 +217,24 @@ export function createDragSession(deps) {
     if (!active) return;
     // ドラッグ中はテキスト選択が走らないようにする
     ev.preventDefault();
+    if (onLeaveWindow) {
+      const { width, height } = getViewport();
+      if (isOutsideViewport(point, width, height)) {
+        handOff();
+        return;
+      }
+    }
     paint(point.x, point.y);
+  }
+
+  // ボタンを押したままの移動はふつう外でも座標が届くが（暗黙のキャプチャ）、
+  // 届かない環境に備え、ウィンドウから出た mouseout（relatedTarget なし）でも引き継ぐ
+  // （プレビュー iframe へ入ったときなどの誤検知を避けるため、縁にいるときに限る）
+  function onMouseOut(ev) {
+    if (!active || !onLeaveWindow || ev.relatedTarget) return;
+    const { width, height } = getViewport();
+    if (!isNearEdge({ x: ev.clientX, y: ev.clientY }, width, height)) return;
+    handOff();
   }
 
   function onMouseUp(ev) {
@@ -229,12 +296,16 @@ export function createDragSession(deps) {
       if (!path) return;
       stop();
       pending = { entries, selected, path, start: { x, y } };
+      // 押している間は画面全体で文字列選択を止める。一覧の行は user-select: none だが、
+      // 相手ペインへ動かすと選択がヘッダ等へ広がっていた（実機で確認）
+      if (doc.body) doc.body.classList.add('dnd-active');
       lastPoint = { x, y };
       doc.addEventListener('mousemove', onMouseMove, true);
       doc.addEventListener('mousemove', trackPoint, true);
       doc.addEventListener('mouseup', onMouseUp, true);
       doc.addEventListener('keydown', onKeyDown, true);
       doc.addEventListener('keyup', onKeyUp, true);
+      doc.addEventListener('mouseout', onMouseOut, true);
     },
     /** ドラッグ中か（テスト・外部からの問い合わせ用） */
     isDragging: () => active !== null,
