@@ -107,6 +107,7 @@ export function restoreSelection(entries, selection) {
  * @param {boolean} [opts.showHidden] 隠しファイルを表示するか（初期値）
  * @param {(filter: {type: string, exts: string[]}) => void} [opts.onFilterChange]
  *   絞り込みが変わったとき（帯の × で外したときも）
+ * @param {() => void} [opts.onReload] 見出しの ↻ ボタンが押されたとき
  */
 export function createFilePane(rootEl, opts = {}) {
   const listEl = rootEl.querySelector('.pane-list');
@@ -583,6 +584,15 @@ export function createFilePane(rootEl, opts = {}) {
       ev.preventDefault();
       if (onActivate) onActivate();
       if (onContextMenu) onContextMenu({ entry: null, x: ev.clientX, y: ev.clientY });
+    });
+  }
+
+  // 見出しの ↻ ボタン。再読込そのもの（ポーリングの基準化し直し等）は呼び出し側が持つ
+  const reloadBtn = rootEl.querySelector('.pane-reload');
+  if (reloadBtn) {
+    reloadBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (opts.onReload) opts.onReload();
     });
   }
 

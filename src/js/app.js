@@ -1790,9 +1790,14 @@ function startAutoRefresh() {
 
 /** アクティブペインを手動で再読込する（Ctrl+R）。 */
 function reloadActivePane() {
-  const fp = activeFilePane();
+  reloadPane(panes.getActive());
+}
+
+/** 指定のペインを手動で再読込する（Ctrl+R・見出しの ↻ ボタン）。 */
+function reloadPane(p) {
+  const fp = filePanes[p];
   if (!fp || !fp.getCurrentDir()) return;
-  polledDir[panes.getActive()] = null; // 次のポーリングで基準化し直す
+  polledDir[p] = null; // 次のポーリングで基準化し直す
   fp.reload().then(() => {
     if (fp === activeFilePane()) {
       updateStatus();
@@ -2018,6 +2023,10 @@ function contextItemsFor(t, x, y) {
           beginPathInput();
         },
         parent: () => fp && fp.goParent(),
+        reload: () => {
+          panes.setActive(p);
+          reloadPane(p);
+        },
         addCurrent: () => addFavoriteFor(fp && fp.getCurrentDir()),
       });
     case 'columns':
@@ -2706,6 +2715,10 @@ async function init() {
       onContextMenu: (info) => showEntryMenu(p, info),
       onDragStart: (info) => dragSession.begin(info),
       onOpenFile: (entry) => openWith('open', entry.path),
+      onReload: () => {
+        panes.setActive(p);
+        reloadPane(p);
+      },
       onChange: (info) => {
         syncPaneRemote(p); // リモート表示の印 (FR-20)
         recordNav(p, info.dir); // 履歴へ (FR-17)。dir 変化時のみ積む

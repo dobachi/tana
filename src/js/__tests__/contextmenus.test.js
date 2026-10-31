@@ -93,6 +93,7 @@ function actions() {
     'addFavorite',
     'pathInput',
     'parent',
+    'reload',
     'addCurrent',
     'close',
     'closeOthers',
@@ -164,6 +165,16 @@ describe('ペイン見出し', () => {
     expect(byLabel(items, 'パスを入力して移動…').shortcut).toBe('Ctrl+L');
     expect(byLabel(items, '現在地のパスをコピー').disabled).toBe(true);
     expect(byLabel(buildHeaderMenu('/d', actions()), '現在地のパスをコピー').disabled).toBe(false);
+  });
+
+  it('再読込（Ctrl+R）。場所が無ければ無効', () => {
+    const a = actions();
+    expect(byLabel(buildHeaderMenu(null, a), '再読込').disabled).toBe(true);
+    const item = byLabel(buildHeaderMenu('/d', a), '再読込');
+    expect(item.shortcut).toBe('Ctrl+R');
+    expect(item.disabled).toBe(false);
+    item.action();
+    expect(a.reload).toHaveBeenCalled();
   });
 });
 

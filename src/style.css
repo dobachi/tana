@@ -622,14 +622,49 @@ body[data-mode='operation'] .pane.active {
   display: none;
 }
 .pane-header {
-  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 10px;
   border-bottom: 1px solid var(--border);
   color: var(--fg-dim);
   font-family: var(--mono);
   font-size: 0.92em;
   white-space: nowrap;
   overflow: hidden;
+}
+/* パスは残りの幅を使い、はみ出しは省略。右端のリロードボタンは常に見せる */
+.pane-header .pane-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
+}
+.pane-header .pane-path[hidden] {
+  display: none;
+}
+.pane-path-input {
+  flex: 1;
+  min-width: 0;
+}
+.pane-reload {
+  flex-shrink: 0;
+  font: inherit;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 1px 5px;
+  cursor: pointer;
+}
+.pane-reload:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.pane-reload:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
 /* タブ帯 (FR-08) */
