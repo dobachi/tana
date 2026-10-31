@@ -3673,7 +3673,7 @@ dependencies = [
 
 [[package]]
 name = "tana"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "dirs 5.0.1",
  "futures-util",
