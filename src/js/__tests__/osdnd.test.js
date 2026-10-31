@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   toClientPoint,
   isOutsideViewport,
-  isNearEdge,
   sourcesFromKinds,
   planDragOut,
   describeDragOutRefusal,
@@ -42,17 +41,6 @@ describe('isOutsideViewport', () => {
   });
   it('座標なしは false', () => {
     expect(isOutsideViewport(null, 100, 50)).toBe(false);
-  });
-});
-
-describe('isNearEdge', () => {
-  it('縁（2px 以内）と外は true、中央は false', () => {
-    expect(isNearEdge({ x: 1, y: 25 }, 100, 50)).toBe(true);
-    expect(isNearEdge({ x: 98, y: 25 }, 100, 50)).toBe(true);
-    expect(isNearEdge({ x: 50, y: 49 }, 100, 50)).toBe(true);
-    expect(isNearEdge({ x: -5, y: 25 }, 100, 50)).toBe(true);
-    expect(isNearEdge({ x: 50, y: 25 }, 100, 50)).toBe(false);
-    expect(isNearEdge({ x: 3, y: 3 }, 100, 50)).toBe(false);
   });
 });
 

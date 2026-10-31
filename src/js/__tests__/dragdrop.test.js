@@ -365,16 +365,42 @@ describe('ウィンドウの外へ出たときの引き継ぎ', () => {
     expect(onLeaveWindow).not.toHaveBeenCalled();
   });
 
-  it('縁での mouseout（relatedTarget なし）でも引き継ぐ', async () => {
+  // 回帰: Windows（WebView2）では外の座標が届かず、縁から離れた内側の座標で
+  // mouseout が来ていたため引き継がれなかった
+  const leaveDoc = () =>
+    document.documentElement.dispatchEvent(
+      new MouseEvent('mouseleave', { clientX: 50, clientY: 50 }),
+    );
+
+  it('文書から出たら（mouseleave）座標によらず引き継ぐ', async () => {
     const s = makeSession();
     s.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 10, y: 10 });
     mouse('mousemove', 50, 50);
-    mouse('mouseout', 99, 50);
+    leaveDoc();
     await Promise.resolve();
     expect(onLeaveWindow).toHaveBeenCalledTimes(1);
+    expect(s.isDragging()).toBe(false);
   });
 
-  it('中央での mouseout（iframe へ入った等）では引き継がない', async () => {
+  it('しきい値前に一気に外へ出ても引き継ぐ', async () => {
+    const s = makeSession();
+    s.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 10, y: 10 });
+    leaveDoc();
+    await Promise.resolve();
+    expect(onLeaveWindow).toHaveBeenCalledTimes(1);
+    expect(onLeaveWindow.mock.calls[0][0].map((e) => e.path)).toEqual(['/base/a.txt']);
+  });
+
+  it('押していないとき（ドラッグ後）の mouseleave では何もしない', async () => {
+    const s = makeSession();
+    s.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 10, y: 10 });
+    mouse('mouseup', 10, 10);
+    leaveDoc();
+    await Promise.resolve();
+    expect(onLeaveWindow).not.toHaveBeenCalled();
+  });
+
+  it('文書内での mouseout（iframe へ入った等）では引き継がない', async () => {
     const s = makeSession();
     s.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 10, y: 10 });
     mouse('mousemove', 50, 50);

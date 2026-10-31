@@ -23,12 +23,6 @@ export function isOutsideViewport(pt, width, height) {
   return pt.x < 0 || pt.y < 0 || pt.x >= width || pt.y >= height;
 }
 
-/** 座標がウィンドウの縁（margin 以内）か外か。mouseout の誤検知よけに使う */
-export function isNearEdge(pt, width, height, margin = 2) {
-  if (!pt) return false;
-  return pt.x <= margin || pt.y <= margin || pt.x >= width - margin || pt.y >= height - margin;
-}
-
 /**
  * path_kinds の結果をドラッグ対象（エントリ）に直す。消えていたものは外す。
  * @param {{path: string, name: string, is_dir: boolean, exists: boolean}[]} kinds

@@ -11,7 +11,7 @@
 // 設計の詳細は docs/DRAG-AND-DROP.md。
 
 import { dragPayload, dropEffect, validateDrop, exceededThreshold, describeDrag } from './dnd.js';
-import { isOutsideViewport, isNearEdge } from './osdnd.js';
+import { isOutsideViewport } from './osdnd.js';
 
 /**
  * 画面座標からドロップ先を解決する。
@@ -167,7 +167,7 @@ export function createDragSession(deps) {
     doc.removeEventListener('mouseup', onMouseUp, true);
     doc.removeEventListener('keydown', onKeyDown, true);
     doc.removeEventListener('keyup', onKeyUp, true);
-    doc.removeEventListener('mouseout', onMouseOut, true);
+    if (doc.documentElement) doc.documentElement.removeEventListener('mouseleave', onLeaveDocument);
   }
 
   /**
@@ -228,12 +228,14 @@ export function createDragSession(deps) {
   }
 
   // ボタンを押したままの移動はふつう外でも座標が届くが（暗黙のキャプチャ）、
-  // 届かない環境に備え、ウィンドウから出た mouseout（relatedTarget なし）でも引き継ぐ
-  // （プレビュー iframe へ入ったときなどの誤検知を避けるため、縁にいるときに限る）
-  function onMouseOut(ev) {
-    if (!active || !onLeaveWindow || ev.relatedTarget) return;
-    const { width, height } = getViewport();
-    if (!isNearEdge({ x: ev.clientX, y: ev.clientY }, width, height)) return;
+  // Windows の WebView2 では届かず、引き継ぎが起きなかった（実機で確認）。
+  // そこで文書から出たこと（<html> の mouseleave）でも引き継ぐ。座標は見ない:
+  // 速く動かすと最後に届く座標は縁から離れた内側になるため。
+  // プレビューの iframe へ入っても <html> の子孫の上にいるので mouseleave は起きない。
+  function onLeaveDocument() {
+    if (!onLeaveWindow) return;
+    if (pending) start(); // しきい値前に一気に外へ出た
+    if (!active) return;
     handOff();
   }
 
@@ -305,7 +307,7 @@ export function createDragSession(deps) {
       doc.addEventListener('mouseup', onMouseUp, true);
       doc.addEventListener('keydown', onKeyDown, true);
       doc.addEventListener('keyup', onKeyUp, true);
-      doc.addEventListener('mouseout', onMouseOut, true);
+      if (doc.documentElement) doc.documentElement.addEventListener('mouseleave', onLeaveDocument);
     },
     /** ドラッグ中か（テスト・外部からの問い合わせ用） */
     isDragging: () => active !== null,
