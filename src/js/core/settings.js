@@ -43,6 +43,8 @@ export function closeSettings() {
  *              move: (id: string, dir: number) => boolean,
  *              setTarget?: (id: string, target: string) => boolean},
  *   wsl?: {available: boolean, distro?: string},
+ *   getThumbnails?: () => boolean,
+ *   setThumbnails?: (v: boolean) => void,
  *   getDefaultOpen?: () => string,
  *   setDefaultOpen?: (v: string) => void,
  *   pdfExt?: {getEnabled: () => boolean, setEnabled: (v: boolean) => void,
@@ -91,6 +93,20 @@ export function openSettings(deps) {
           </label>
           <small class="setting-hint">Ctrl + H でも切り替えられます。</small>
         </div>
+        ${
+          deps.setThumbnails
+            ? `<div class="setting-group">
+          <label>
+            <input type="checkbox" id="setting-thumbnails"${deps.getThumbnails && deps.getThumbnails() ? ' checked' : ''} />
+            一覧に小さな写真を出す
+          </label>
+          <small class="setting-hint">
+            JPEG / PNG / GIF / WebP / BMP の名前の左に縮小画像を出します。見えている行の分だけ作り、
+            キャッシュに保存します（2 回目からはすぐ出ます）。リモートの場所では出しません。
+          </small>
+        </div>`
+            : ''
+        }
         ${
           wsl
             ? `<div class="setting-group" id="setting-wsl-group">
@@ -182,6 +198,11 @@ export function openSettings(deps) {
   panelEl.querySelector('#setting-show-hidden').addEventListener('change', (e) => {
     setShowHidden(e.target.checked);
   });
+
+  const thumbsEl = panelEl.querySelector('#setting-thumbnails');
+  if (thumbsEl) {
+    thumbsEl.addEventListener('change', (e) => deps.setThumbnails(e.target.checked));
+  }
 
   // WSL: 既定オープンの行き先（この group は wsl のときだけ存在する）
   const wslDefaultEl = panelEl.querySelector('#setting-wsl-default');

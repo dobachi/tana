@@ -8,6 +8,7 @@ mod places;
 mod remote;
 mod search;
 mod sftp;
+mod thumbs;
 mod updater_env;
 mod windows;
 mod wsl;
@@ -553,6 +554,7 @@ pub fn run() {
             windows::on_second_launch(app, argv, cwd);
         }));
     }
+    thumbs::prune_in_background();
     builder
         .manage(search::SearchState::default())
         .manage(windows::PendingOpens::default())
@@ -601,6 +603,7 @@ pub fn run() {
             make_file,
             read_preview,
             read_file_bytes,
+            thumbs::thumbnail,
             extensions::extension_status,
             extensions::read_extension_file,
             extensions::uninstall_extension,

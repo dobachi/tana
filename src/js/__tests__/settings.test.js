@@ -127,6 +127,28 @@ describe('変更が即座に反映される', () => {
   });
 });
 
+describe('一覧の小さな写真', () => {
+  it('現在値がチェックに出て、変えると setThumbnails に伝わる', () => {
+    const setThumbnails = vi.fn();
+    openSettings({ ...deps, getThumbnails: () => true, setThumbnails });
+    const cb = document.querySelector('#setting-thumbnails');
+    expect(cb.checked).toBe(true);
+    cb.checked = false;
+    cb.dispatchEvent(new Event('change'));
+    expect(setThumbnails).toHaveBeenCalledWith(false);
+  });
+
+  it('オフの現在値も出る', () => {
+    openSettings({ ...deps, getThumbnails: () => false, setThumbnails: vi.fn() });
+    expect(document.querySelector('#setting-thumbnails').checked).toBe(false);
+  });
+
+  it('setThumbnails を渡さなければ項目を出さない', () => {
+    openSettings(deps);
+    expect(document.querySelector('#setting-thumbnails')).toBeNull();
+  });
+});
+
 // --- 外部アプリ（別のアプリで開く / FR-13） ---
 describe('外部アプリ セクション', () => {
   const rows = () => document.querySelectorAll('.extapp-row');

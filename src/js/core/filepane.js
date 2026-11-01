@@ -108,6 +108,9 @@ export function restoreSelection(entries, selection) {
  * @param {(filter: {type: string, exts: string[]}) => void} [opts.onFilterChange]
  *   絞り込みが変わったとき（帯の × で外したときも）
  * @param {() => void} [opts.onReload] 見出しの ↻ ボタンが押されたとき
+ * @param {{enabled: () => boolean, isThumbable: (e: object) => boolean,
+ *          peek: (e: object) => (string|null|undefined), load: (e: object) => Promise<string|null>,
+ *          cancel: () => void}} [opts.thumbs] 名前の左の小さな写真（core/thumbs.js）
  */
 export function createFilePane(rootEl, opts = {}) {
   const listEl = rootEl.querySelector('.pane-list');
@@ -274,10 +277,79 @@ export function createFilePane(rootEl, opts = {}) {
     if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
   }
 
+  // ===== 名前の左の小さな写真（core/thumbs.js）=====
+  // 写真のあるフォルダだけ、全行に同じ幅の枠を出す（名前の頭を揃える）。読むのは画面に
+  // 見えた行の分だけで、描き直し・フォルダ移動のたびに順番待ちを取り消す。
+  const thumbs = opts.thumbs || null;
+  let thumbObserver = null;
+
+  function thumbsWanted() {
+    return !!thumbs && thumbs.enabled() && entries.some((e) => thumbs.isThumbable(e));
+  }
+
+  /** connected=false: 作ったばかりでまだ一覧に入っていない枠にも出す */
+  function showThumb(slot, url, connected = true) {
+    if (!url || (connected && !slot.isConnected)) return;
+    const img = document.createElement('img');
+    img.alt = '';
+    img.draggable = false;
+    img.decoding = 'async';
+    img.src = url;
+    slot.replaceChildren(img);
+    slot.classList.add('loaded');
+  }
+
+  function requestThumb(slot) {
+    const e = slot._entry;
+    if (!e) return;
+    slot._entry = null;
+    thumbs.load(e).then((url) => showThumb(slot, url));
+  }
+
+  function thumbSlot(e) {
+    const slot = document.createElement('span');
+    slot.className = 'entry-thumb';
+    slot.setAttribute('aria-hidden', 'true');
+    if (!thumbs.isThumbable(e)) return slot;
+    const known = thumbs.peek(e);
+    if (known !== undefined) {
+      // 前に読んだもの（描き直し・戻ってきたフォルダ）はすぐ出す
+      showThumb(slot, known, false);
+      return slot;
+    }
+    slot._entry = e;
+    if (thumbObserver) thumbObserver.observe(slot);
+    else Promise.resolve().then(() => requestThumb(slot)); // IntersectionObserver が無い環境
+    return slot;
+  }
+
+  function resetThumbs() {
+    if (!thumbs) return;
+    thumbs.cancel();
+    if (thumbObserver) thumbObserver.disconnect();
+    thumbObserver = null;
+    if (typeof globalThis.IntersectionObserver === 'function') {
+      thumbObserver = new globalThis.IntersectionObserver(
+        (records) => {
+          for (const r of records) {
+            if (!r.isIntersecting) continue;
+            thumbObserver.unobserve(r.target);
+            requestThumb(r.target);
+          }
+        },
+        // 少し先まで読んでおき、スクロールしたとき空の枠が見えにくいように
+        { root: listEl, rootMargin: '200px 0px' },
+      );
+    }
+  }
+
   function render() {
     // 描き直しても見ていた位置を保つ（作り直しの間に一覧が空になり先頭へ戻るため）
     const scrollTop = listEl.scrollTop;
     listEl.replaceChildren();
+    resetThumbs();
+    const showThumbs = thumbsWanted();
+    listEl.classList.toggle('has-thumbs', showThumbs);
     entries.forEach((e, i) => {
       const li = document.createElement('li');
       const hiddenCls = isHidden(e) ? ' is-hidden' : '';
@@ -291,6 +363,7 @@ export function createFilePane(rootEl, opts = {}) {
       const name = document.createElement('span');
       name.className = 'entry-name';
       name.textContent = e.is_parent ? '..' : e.is_dir ? e.name + '/' : e.name;
+      if (showThumbs) name.prepend(thumbSlot(e));
       if (e.is_parent) li.title = `親フォルダへ: ${e.path}`;
       const size = document.createElement('span');
       size.className = 'entry-size';

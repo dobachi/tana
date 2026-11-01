@@ -762,6 +762,24 @@ body[data-mode='operation'] .pane.active {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 名前の左の小さな写真（core/thumbs.js）。写真のあるフォルダ（.has-thumbs）だけ全行に枠を出す */
+.entry-thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8em;
+  height: 1.8em;
+  margin-right: 6px;
+  vertical-align: middle;
+  flex: none;
+}
+.entry-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 2px;
+  pointer-events: none;
+}
 .entry.is-dir .entry-name {
   color: var(--accent);
   font-weight: 600;

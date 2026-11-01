@@ -115,6 +115,7 @@ make docker-check  # CI相当チェック
 | `core/remotepath.js` | **リモートの場所 `sftp://HOST/path` の純粋な扱い (FR-20)**。判定/分解/親/ブレッドクラム/表示名/READ_ONLY の言い換え/閲覧のみ判定 |
 | `core/remotes.js` | **リモート接続の状態（純粋）**。最近の接続先・接続先ごとの最後の場所（localStorage）、書き込み許可の写し（保存しない）、候補の並べ方、入力→URI |
 | `core/remoteview.js` | **リモート接続のオーバーレイUI**。接続先＋パスで開く、書き込み許可、接続中の一覧（許可切替/開く/切断） |
+| `core/thumbs.js` | **一覧の名前の左の小さな写真**。対象の判断（ローカルの JPEG/PNG/GIF/WebP/BMP、50MB 以下）・設定（既定オン）・読み込みの順番待ち（同時 4 枚、取り消し可、結果は左右のペインで共有）。描画は filepane.js（写真のあるフォルダだけ枠、IntersectionObserver で見えた行だけ）。縮小とキャッシュは Rust `thumbs.rs`。詳細: [PREVIEW.md](PREVIEW.md) §16 |
 
 テストは `src/js/__tests__/<name>.test.js` に対応（47ファイル）。
 
@@ -122,6 +123,7 @@ make docker-check  # CI相当チェック
 `lib.rs` に集約（ファイル操作系）。`places.rs`（FR-07 の場所検出）を分離済み。`main.rs` は薄いエントリ。
 
 - Tauri コマンド: `list_dir` / `home_dir` / `parent_dir` / `unique_name` / `copy_path` / `move_path` / `delete_to_trash` / `delete_permanent` / `rename_path` / `make_dir` / `read_preview` / `app_version` / `dir_signature` / `places::list_places` / `search::search_dir` / `search::cancel_search` / `updater_env::update_env` / `wsl::wsl_info` / `wsl::windows_path` / `wsl::open_in_windows` / `wsl::reveal_in_windows`
+  - `thumbs::thumbnail`: 小さな写真を縮めて OS のキャッシュフォルダ（`tana/thumbs`）に PNG で置き、その場所を返す。起動時に合計 200MB を超えた分を古い順に消す
   - 登録漏れは `src/js/__tests__/commands.test.js` が検出する（backend.js の invoke 名 ⇄ `generate_handler!`）
 - テスト対象の純粋関数: `is_hidden_entry` / `read_dir_entries` / `target_path` / `unique_target_name` / `copy_recursive` / `remove_any`
 - **`search.rs`** (FR-18): `contains_match`/`snippet`/`build_matcher`（純粋・テスト済み）+ `search_dir_impl`（再帰走査: 名前一致＋本文一致(任意)、node_modules 等の除外、バイナリ/大サイズ/隠し除外、件数上限、`cancelled()` で中断）。`SearchState.epoch` によるキャンセル。コマンド `search_dir` / `cancel_search`

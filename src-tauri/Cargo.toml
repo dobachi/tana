@@ -34,6 +34,10 @@ rustls = { version = "0.23", default-features = false, features = ["ring"] }
 futures-util = "0.3"
 sha2 = "0.10"
 hex = "0.4"
+# 一覧の小さな写真（thumbs.rs）。軽量方針(NFR-P2)に合わせ、扱う形式だけを有効にする
+# （JPEG/PNG/GIF/WebP/BMP。HEIC や動画は扱わない）。
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp"] }
+jpeg-decoder = { version = "0.3", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"

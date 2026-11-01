@@ -173,7 +173,16 @@ import {
   startOsDrag,
   fudeAvailable,
   openRemoteInFude,
+  thumbnailUrl,
 } from './backend.js';
+import {
+  THUMBS_KEY,
+  THUMB_PX,
+  createThumbLoader,
+  isThumbable,
+  loadThumbnails,
+  storeThumbnails,
+} from './core/thumbs.js';
 import { fudeHandoffUri } from './core/fudehandoff.js';
 
 const safemode = createSafeMode(MODE.SAFE);
@@ -787,6 +796,20 @@ const previewZoom = createPreviewZoom();
 // PDF プレビュー（オプション）。エンジンはダウンロード型拡張 pdfjs。導入状態は起動時と
 // 設定で入れた/消したときに調べ直す（プレビューのたびに問い合わせない）。
 let pdfEnabled = loadPdfPreview();
+// 一覧の名前の左の小さな写真（既定オン）。結果は左右のペインで共有して二度読まない
+let thumbsEnabled = loadThumbnails();
+const thumbMemo = new Map();
+function paneThumbs() {
+  const loader = createThumbLoader({
+    fetch: (entry) => thumbnailUrl(entry.path, THUMB_PX),
+    memo: thumbMemo,
+  });
+  return { ...loader, enabled: () => thumbsEnabled, isThumbable };
+}
+function setThumbsEnabled(on) {
+  thumbsEnabled = !!on;
+  for (const fp of Object.values(filePanes)) if (fp) fp.refresh();
+}
 let pdfInstalled = false;
 async function refreshPdfInstalled() {
   try {
@@ -1447,6 +1470,11 @@ function openSettingsPanel() {
     setDefaultOpen: (v) => {
       wslDefaultOpen = v;
       storeDefaultOpen(v);
+    },
+    getThumbnails: () => thumbsEnabled,
+    setThumbnails: (v) => {
+      storeThumbnails(v);
+      setThumbsEnabled(v);
     },
     pdfExt: {
       getEnabled: () => pdfEnabled,
@@ -2647,6 +2675,7 @@ async function init() {
     'tana.remotes': (v) => remotes.replace(v),
     'tana.theme': (v) => v && theme.set(String(v)),
     'tana.fontScale': (v) => v != null && fontScale.set(Number(v)),
+    [THUMBS_KEY]: (v) => setThumbsEnabled(v !== 'off'),
   });
   window.addEventListener('storage', (e) => onStorage(e));
 
@@ -2726,6 +2755,7 @@ async function init() {
     if (!el) continue;
     filePanes[p] = createFilePane(el, {
       showHidden,
+      thumbs: paneThumbs(),
       getSort: () => sortStates[p].get(),
       onSort: (key) => sortStates[p].applyKey(key),
       // 件数（ステータスバー）は絞り込み後の数なので更新する

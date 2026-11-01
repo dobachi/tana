@@ -431,3 +431,15 @@ export async function fudeAvailable() {
 export async function openRemoteInFude(uri) {
   return invoke('open_remote_in_fude', { uri });
 }
+
+// ===== 一覧の小さな写真（src-tauri/src/thumbs.rs） =====
+
+/**
+ * 縮めた写真の asset URL。扱えない・読めないものは null。
+ * ローカルのファイルだけ（リモートは丸ごと取り寄せることになるので頼まない）。
+ */
+export async function thumbnailUrl(path, px) {
+  if (isRemote(path)) return null;
+  const file = await invoke('thumbnail', { path, px });
+  return file ? assetUrl(file) : null;
+}
