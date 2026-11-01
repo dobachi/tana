@@ -168,6 +168,7 @@ export function createDragSession(deps) {
     doc.removeEventListener('keydown', onKeyDown, true);
     doc.removeEventListener('keyup', onKeyUp, true);
     if (doc.documentElement) doc.documentElement.removeEventListener('mouseleave', onLeaveDocument);
+    if (doc.defaultView) doc.defaultView.removeEventListener('blur', onWindowBlur);
   }
 
   /**
@@ -235,6 +236,19 @@ export function createDragSession(deps) {
   function onLeaveDocument() {
     if (!onLeaveWindow) return;
     if (pending) start(); // しきい値前に一気に外へ出た
+    if (!active) return;
+    handOff();
+  }
+
+  // ドラッグ中に Alt+Tab 等で別のウィンドウを前に出した。マウスは画面上では Tana の範囲に
+  // いたままなので mouseleave も座標の判定も起きない（実機で確認）。前面でなくなった時点で
+  // OS のドラッグへ引き継ぐ。OS のドラッグなら、離した位置で前にあるウィンドウへ落ちる。
+  function onWindowBlur() {
+    if (!onLeaveWindow) {
+      stop(); // 引き継げないなら、見えていない Tana の上に落とさないよう取りやめる
+      return;
+    }
+    if (pending) start();
     if (!active) return;
     handOff();
   }
@@ -308,6 +322,7 @@ export function createDragSession(deps) {
       doc.addEventListener('keydown', onKeyDown, true);
       doc.addEventListener('keyup', onKeyUp, true);
       if (doc.documentElement) doc.documentElement.addEventListener('mouseleave', onLeaveDocument);
+      if (doc.defaultView) doc.defaultView.addEventListener('blur', onWindowBlur);
     },
     /** ドラッグ中か（テスト・外部からの問い合わせ用） */
     isDragging: () => active !== null,

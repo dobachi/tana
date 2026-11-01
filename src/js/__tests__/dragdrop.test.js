@@ -410,12 +410,57 @@ describe('ウィンドウの外へ出たときの引き継ぎ', () => {
     expect(s.isDragging()).toBe(true);
   });
 
+  // 回帰: Alt+Tab で別のウィンドウを前に出すと、マウスは Tana の範囲にいたままなので
+  // 引き継がれず、別のウィンドウへ落とせなかった
+  const blurWindow = () => window.dispatchEvent(new Event('blur'));
+
+  it('ドラッグ中に前面でなくなったら（Alt+Tab）引き継ぐ', async () => {
+    const s = makeSession();
+    s.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 10, y: 10 });
+    mouse('mousemove', 50, 50);
+    blurWindow();
+    await Promise.resolve();
+    expect(onLeaveWindow).toHaveBeenCalledTimes(1);
+    expect(onLeaveWindow.mock.calls[0][0].map((e) => e.path)).toEqual(['/base/a.txt']);
+    expect(s.isDragging()).toBe(false);
+  });
+
+  it('押したまま動かす前に前面でなくなっても引き継ぐ', async () => {
+    const s = makeSession();
+    s.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 10, y: 10 });
+    blurWindow();
+    await Promise.resolve();
+    expect(onLeaveWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('ドラッグしていないときの blur では何もしない', async () => {
+    const s = makeSession();
+    s.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 10, y: 10 });
+    mouse('mouseup', 10, 10);
+    blurWindow();
+    await Promise.resolve();
+    expect(onLeaveWindow).not.toHaveBeenCalled();
+  });
+
   it('onLeaveWindow が無ければ外へ出ても内部のドラッグを続ける（従来どおり）', () => {
     session.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 0, y: 0 });
     hit = null;
     mouse('mousemove', 20, 20);
     mouse('mousemove', 5000, 20);
     expect(session.isDragging()).toBe(true);
+  });
+});
+
+describe('引き継げないとき（onLeaveWindow 無し）の blur', () => {
+  it('ドラッグを取りやめ、離しても落とさない', () => {
+    session.begin({ entries: ENTRIES, selected: new Set(), path: '/base/a.txt', x: 0, y: 0 });
+    hit = q('.pane[data-pane="right"] .pane-list');
+    mouse('mousemove', 20, 20);
+    expect(session.isDragging()).toBe(true);
+    window.dispatchEvent(new Event('blur'));
+    expect(session.isDragging()).toBe(false);
+    mouse('mouseup', 20, 20);
+    expect(onDrop).not.toHaveBeenCalled();
   });
 });
 
