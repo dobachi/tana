@@ -4,6 +4,7 @@ import {
   buildEditExtraItems,
   buildGoMenuItems,
   buildFilterMenuItems,
+  buildViewMenuItems,
 } from '../core/appmenus.js';
 import { SHORTCUTS } from '../core/help.js';
 
@@ -108,10 +109,11 @@ describe('buildFilterMenuItems', () => {
     expect(labels(items)).toEqual([
       '　フォルダだけ',
       '　ファイルだけ',
+      '　画像だけ',
       '　拡張子を指定…',
       '　絞り込みを解除',
     ]);
-    expect(items[3].disabled).toBe(true);
+    expect(items[4].disabled).toBe(true);
   });
 
   it('今の状態に ✓ を付け、指定中の拡張子を見せる', () => {
@@ -119,17 +121,23 @@ describe('buildFilterMenuItems', () => {
     expect(labels(items)).toEqual([
       '　フォルダだけ',
       '✓ ファイルだけ',
+      '　画像だけ',
       '✓ 拡張子を指定…（.md .txt）',
       '　絞り込みを解除',
     ]);
-    expect(items[3].disabled).toBe(false);
+    expect(items[4].disabled).toBe(false);
   });
 
   it('キー表記と action を割り当てる', () => {
-    const a = { dirs: vi.fn(), files: vi.fn(), ext: vi.fn(), clear: vi.fn() };
+    const a = { dirs: vi.fn(), files: vi.fn(), images: vi.fn(), ext: vi.fn(), clear: vi.fn() };
     const items = buildFilterMenuItems({ type: 'dirs', exts: [] }, a);
-    expect(items.map((i) => i.shortcut)).toEqual(['f → d', 'f → f', 'f → e', 'f → a']);
-    expect(items.map((i) => i.action)).toEqual([a.dirs, a.files, a.ext, a.clear]);
+    expect(items.map((i) => i.shortcut)).toEqual(['f → d', 'f → f', 'f → i', 'f → e', 'f → a']);
+    expect(items.map((i) => i.action)).toEqual([a.dirs, a.files, a.images, a.ext, a.clear]);
+  });
+
+  it('画像だけのときに ✓', () => {
+    const items = buildFilterMenuItems({ type: 'images', exts: [] });
+    expect(labels(items)[2]).toBe('✓ 画像だけ');
   });
 
   it('ヘルプの絞り込みキーは全部このメニューにある', () => {
@@ -153,14 +161,17 @@ describe('ヘルプに載っている操作はメニューからも辿れる', (
   // お気に入り（一覧内のキー）・マウス操作・ヘルプ自身は対象外。
   const covered = ['移動', 'ペイン・タブ・サイドバー', '開く', 'パス・名前のコピー', 'モード'];
 
-  // カーソル移動そのもの（j/k/g/G/l/Enter）と右クリックメニュー自体はメニューに置かない
+  // カーソル移動そのもの（j/k/h/l/g/G/L/Enter/Backspace）と右クリックメニュー自体はメニューに置かない
   const SKIP = new Set([
     'j',
     'k',
     'g',
     'G',
+    'h',
     'l',
+    'L',
     'Enter',
+    'Backspace',
     'Shift+F10',
     '≣',
     '右クリック',
@@ -198,3 +209,42 @@ function expand(keys) {
   }
   return out;
 }
+
+describe('buildViewMenuItems', () => {
+  const a = { details: vi.fn(), icons: vi.fn(), bigger: vi.fn(), smaller: vi.fn() };
+
+  it('詳細表示中: ✓ は詳細、大きさは無効', () => {
+    const items = buildViewMenuItems({ view: 'details', sizeLabel: '中' }, a);
+    expect(items.map((i) => i.label)).toEqual([
+      '✓ 詳細表示',
+      '　アイコン表示',
+      '　アイコンを大きく',
+      '　アイコンを小さく',
+    ]);
+    expect(items[2].disabled).toBe(true);
+    expect(items[3].disabled).toBe(true);
+    expect(items.map((i) => i.shortcut)).toEqual(['v → d', 'v → i', 'v → +', 'v → -']);
+    expect(items.map((i) => i.action)).toEqual([a.details, a.icons, a.bigger, a.smaller]);
+  });
+
+  it('アイコン表示中: 今の大きさを出し、端では無効', () => {
+    const items = buildViewMenuItems(
+      { view: 'icons', sizeLabel: '特大', canBigger: false, canSmaller: true },
+      a,
+    );
+    expect(items[1].label).toBe('✓ アイコン表示');
+    expect(items[2].label).toBe('　アイコンを大きく（今: 特大）');
+    expect(items[2].disabled).toBe(true);
+    expect(items[3].disabled).toBe(false);
+  });
+
+  it('ヘルプの表示キー（v →）は全部このメニューにある', () => {
+    const keys = new Set(shortcuts(buildViewMenuItems({ view: 'icons' })).flatMap(expand));
+    const view = SHORTCUTS.find((s) => s.section === '表示');
+    const rows = view.items.filter(([k]) => k.startsWith('v →'));
+    expect(rows.length).toBeGreaterThan(0);
+    for (const [k] of rows) {
+      for (const p of expand(k)) if (p !== 'v→v') expect(keys).toContain(p);
+    }
+  });
+});

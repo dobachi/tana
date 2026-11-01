@@ -41,28 +41,41 @@ export function isThumbable(entry) {
   return THUMB_EXTS.includes(entry.name.slice(dot + 1).toLowerCase());
 }
 
-/** 同じ写真かを見分ける鍵（更新・サイズが変われば別物） */
-export function thumbKey(entry) {
-  return `${entry.path}\u0000${entry.modified ?? ''}\u0000${entry.size ?? ''}`;
+/** 同じ写真・同じ大きさかを見分ける鍵（更新・サイズ・頼む大きさが変われば別物） */
+export function thumbKey(entry, px = THUMB_PX) {
+  return `${entry.path}\u0000${entry.modified ?? ''}\u0000${entry.size ?? ''}\u0000${px}`;
 }
 
 /**
  * 小さな写真の読み込み口。結果（URL か null）は memo に覚え、同じ写真は二度頼まない。
- * memo を複数の loader で共有すると、左右のペインで同じフォルダを見ても一度で済む。
+ * memo を複数の loader で共有すると、左右のペインで同じフォルダを見ても一度で済む
+ * （読み込み中の分も memo に添えて共有するので、同時に頼んでも 1 回）。
  *
- * @param {{fetch: (entry: object) => Promise<string|null>, concurrency?: number, memo?: Map}} deps
+ * @param {{fetch: (entry: object, px: number) => Promise<string|null>, concurrency?: number,
+ *          memo?: Map}} deps
  */
 export function createThumbLoader({ fetch, concurrency = 4, memo = new Map() }) {
-  const queue = []; // {entry, key, resolve}
-  const inflight = new Map(); // key -> Promise
+  const queue = []; // {entry, px, key, resolve}
+  // 読み込み中（key -> Promise）。memo と一緒に共有する
+  if (!memo.inflight) memo.inflight = new Map();
+  const inflight = memo.inflight;
   let running = 0;
 
   function pump() {
     while (running < concurrency && queue.length) {
       const job = queue.shift();
+      // 待っている間に、別の loader（反対のペイン）が読み始めた・読み終えた
+      if (memo.has(job.key)) {
+        job.resolve(memo.get(job.key));
+        continue;
+      }
+      if (inflight.has(job.key)) {
+        inflight.get(job.key).then(job.resolve);
+        continue;
+      }
       running += 1;
       const p = Promise.resolve()
-        .then(() => fetch(job.entry))
+        .then(() => fetch(job.entry, job.px))
         .catch(() => null)
         .then((url) => {
           const v = url || null;
@@ -82,17 +95,17 @@ export function createThumbLoader({ fetch, concurrency = 4, memo = new Map() }) 
 
   return {
     /** 覚えている結果（無ければ undefined）。描き直しでちらつかせないため同期で引く */
-    peek: (entry) => memo.get(thumbKey(entry)),
+    peek: (entry, px = THUMB_PX) => memo.get(thumbKey(entry, px)),
     /**
      * 結果を返す。順番待ちのまま cancel されたら null で終わる。
      * @returns {Promise<string|null>}
      */
-    load(entry) {
-      const key = thumbKey(entry);
+    load(entry, px = THUMB_PX) {
+      const key = thumbKey(entry, px);
       if (memo.has(key)) return Promise.resolve(memo.get(key));
       if (inflight.has(key)) return inflight.get(key);
       return new Promise((resolve) => {
-        queue.push({ entry, key, resolve });
+        queue.push({ entry, px, key, resolve });
         pump();
       });
     },

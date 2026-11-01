@@ -91,3 +91,26 @@ describe('WSL 用の二打鍵 (o → w / o → e)', () => {
     expect(resolvePrefixAction('o', '1')).toBe('open:with:1');
   });
 });
+
+describe('表示 (v) と画像の絞り込み (f → i)', () => {
+  it('v はリーダー', () => {
+    expect(isPrefixLeader('v')).toBe(true);
+  });
+  it('詳細 ⇄ アイコン・大きさ', () => {
+    expect(resolvePrefixAction('v', 'v')).toBe('view:toggle');
+    expect(resolvePrefixAction('v', 'i')).toBe('view:icons');
+    expect(resolvePrefixAction('v', 'd')).toBe('view:details');
+    for (const k of ['+', '=', ';']) expect(resolvePrefixAction('v', k)).toBe('view:bigger');
+    expect(resolvePrefixAction('v', '-')).toBe('view:smaller');
+    expect(resolvePrefixAction('v', 'x')).toBeNull();
+  });
+  it('f → i は画像だけ', () => {
+    expect(resolvePrefixAction('f', 'i')).toBe('filter:images');
+    expect(prefixHint('f')).toContain('i=画像だけ');
+    expect(prefixHint('v')).toContain('i=アイコン');
+  });
+  it('H / L は二打鍵のリーダーではない（親へ / 開くに使う）', () => {
+    expect(isPrefixLeader('H')).toBe(false);
+    expect(isPrefixLeader('L')).toBe(false);
+  });
+});

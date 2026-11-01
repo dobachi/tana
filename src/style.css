@@ -780,6 +780,53 @@ body[data-mode='operation'] .pane.active {
   border-radius: 2px;
   pointer-events: none;
 }
+/* アイコン表示（core/iconview.js）: 写真のタイル並び。--icon-size は filepane が段階から入れる */
+.pane-list.icon-view {
+  display: grid;
+  overflow-x: hidden;
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--icon-size, 4.5em) + 1.6em), 1fr));
+  align-content: start;
+  gap: 6px;
+  padding: 8px;
+}
+.pane-list.icon-view .entry.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border-radius: 4px;
+  white-space: normal;
+  min-width: 0;
+}
+.pane-list.icon-view .entry-thumb {
+  width: var(--icon-size, 4.5em);
+  height: var(--icon-size, 4.5em);
+  margin: 0;
+  font-size: 1em;
+  line-height: 1;
+}
+/* 写真の無いタイルの印（📁 / 📄 / ⬆）は枠に合わせて大きく（枠そのものの大きさは変えない） */
+.pane-list.icon-view .entry-glyph {
+  font-size: calc(var(--icon-size, 4.5em) * 0.55);
+  line-height: 1;
+  opacity: 0.85;
+}
+.pane-columns[hidden] {
+  display: none;
+}
+.pane-list.icon-view .entry-name {
+  width: 100%;
+  text-align: center;
+  font-size: 0.85em;
+  line-height: 1.3;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .entry.is-dir .entry-name {
   color: var(--accent);
   font-weight: 600;

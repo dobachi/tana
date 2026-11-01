@@ -9,6 +9,7 @@
 use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// これより大きいファイルは作らない（読むだけで時間とメモリを食う）
@@ -19,6 +20,8 @@ pub const MAX_PX: u32 = 256;
 const MAX_DECODE_ALLOC: u64 = 512 * 1024 * 1024;
 /// キャッシュの合計の上限。超えたら古いものから消す
 pub const CACHE_MAX_BYTES: u64 = 200 * 1024 * 1024;
+/// 書きかけのファイル名を呼び出しごとに変えるための通し番号
+static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 /// キャッシュを使ったとき、この時間より古ければ更新日時を今にする（消される順を後ろへ）
 const TOUCH_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -121,14 +124,20 @@ pub fn thumbnail_in(cache: &Path, src: &Path, px: u32) -> Option<PathBuf> {
     let img = render(src, px).ok()?;
     std::fs::create_dir_all(cache).ok()?;
     // 書きかけを読ませないよう、別名で書いてから置き換える
-    let tmp = out.with_extension(format!("tmp{}", std::process::id()));
+    // 同じ写真を同時に頼まれる（左右のペインが同じフォルダ）ことがあるので、書きかけの名前は呼び出しごとに変える
+    let tmp = out.with_extension(format!(
+        "tmp{}-{}",
+        std::process::id(),
+        TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
     if img.save_with_format(&tmp, ImageFormat::Png).is_err() {
         let _ = std::fs::remove_file(&tmp);
         return None;
     }
     if std::fs::rename(&tmp, &out).is_err() {
         let _ = std::fs::remove_file(&tmp);
-        return None;
+        // 先に別の呼び出しが置いていれば、それを使う
+        return out.is_file().then_some(out);
     }
     Some(out)
 }
@@ -311,5 +320,27 @@ mod tests {
         assert!(!dir.path().join("old.png").exists());
         assert!(!dir.path().join("mid.png").exists());
         assert_eq!(prune(&dir.path().join("none"), 0), 0);
+    }
+
+    #[test]
+    fn the_same_photo_requested_at_once_succeeds_for_everyone() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("same.jpg");
+        write_jpeg(&src, 1200, 800);
+        let cache = dir.path().join("cache");
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let (c, s) = (cache.clone(), src.clone());
+                std::thread::spawn(move || thumbnail_in(&c, &s, 64))
+            })
+            .collect();
+        let outs: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert!(outs.iter().all(|o| o.is_some()), "{outs:?}");
+        // 書きかけは残らない
+        let names: Vec<_> = std::fs::read_dir(&cache)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(names.len(), 1, "{names:?}");
     }
 }

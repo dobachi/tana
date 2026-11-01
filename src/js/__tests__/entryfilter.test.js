@@ -109,3 +109,29 @@ describe('extOf', () => {
     expect(extOf(null)).toBe('');
   });
 });
+
+describe('画像だけ', () => {
+  const list = [
+    { name: 'photos', is_dir: true },
+    { name: 'a.JPG', is_dir: false },
+    { name: 'b.png', is_dir: false },
+    { name: 'c.heic', is_dir: false },
+    { name: 'd.svg', is_dir: false },
+    { name: 'notes.txt', is_dir: false },
+    { name: 'jpg', is_dir: false },
+  ];
+  it('画像のファイルとフォルダを残す', () => {
+    expect(names(applyEntryFilter(list, { type: 'images' }))).toEqual([
+      'photos',
+      'a.JPG',
+      'b.png',
+      'c.heic',
+      'd.svg',
+    ]);
+  });
+  it('拡張子は持たず、説明が付く', () => {
+    expect(normalizeFilter({ type: 'images', exts: ['md'] })).toEqual({ type: 'images', exts: [] });
+    expect(isFilterActive({ type: 'images' })).toBe(true);
+    expect(describeFilter({ type: 'images' })).toBe('画像（とフォルダ）');
+  });
+});

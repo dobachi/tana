@@ -1,5 +1,6 @@
 // filepane.js — 1ペインのファイル一覧コントローラ (FR-01)
-// ディレクトリの読み込み・描画・カーソル移動・階層ナビゲーション(h/l)・隠しファイル表示切替(FR-15)。
+// ディレクトリの読み込み・描画・カーソル移動・階層ナビゲーション(H/L)・隠しファイル表示切替(FR-15)。
+// 表示は詳細一覧とアイコン表示（core/iconview.js）。
 
 import { listDir, parentDir } from '../backend.js';
 import { pathSegments } from './pathnav.js';
@@ -12,6 +13,7 @@ import {
   isFilterActive,
   normalizeFilter,
 } from './entryfilter.js';
+import { VIEW, normalizeView, columnsFromTops, gridMove, glyphFor } from './iconview.js';
 
 /** バイト数を人間可読なサイズ文字列にする */
 export function formatSize(bytes) {
@@ -34,6 +36,14 @@ export function formatMtime(secs) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(
     d.getMinutes(),
   )}`;
+}
+
+/** アイコン表示のタイルに出す説明（名前・サイズ・更新日時） */
+export function tileTitle(e) {
+  const parts = [e.name];
+  if (!e.is_dir && e.size) parts.push(formatSize(e.size));
+  if (e.modified != null) parts.push(formatMtime(e.modified));
+  return parts.join('\n');
 }
 
 /** カーソル位置を [0, len-1] にクランプする */
@@ -108,6 +118,9 @@ export function restoreSelection(entries, selection) {
  * @param {(filter: {type: string, exts: string[]}) => void} [opts.onFilterChange]
  *   絞り込みが変わったとき（帯の × で外したときも）
  * @param {() => void} [opts.onReload] 見出しの ↻ ボタンが押されたとき
+ * @param {'details'|'icons'} [opts.view] 表示の種類（初期値。core/iconview.js）
+ * @param {() => {em: number, px: number}} [opts.getIconLayout] アイコン表示の枠の大きさと、
+ *   頼む縮小画像の大きさ
  * @param {{enabled: () => boolean, isThumbable: (e: object) => boolean,
  *          peek: (e: object) => (string|null|undefined), load: (e: object) => Promise<string|null>,
  *          cancel: () => void}} [opts.thumbs] 名前の左の小さな写真（core/thumbs.js）
@@ -283,8 +296,17 @@ export function createFilePane(rootEl, opts = {}) {
   const thumbs = opts.thumbs || null;
   let thumbObserver = null;
 
+  // 表示の種類（詳細 / アイコン）。アイコン表示のタイルの大きさは呼び出し側が持つ（全ペイン共通）
+  let view = normalizeView(opts.view);
+  const getIconLayout =
+    typeof opts.getIconLayout === 'function' ? opts.getIconLayout : () => ({ em: 4.5, px: 128 });
+  let thumbPx; // 今の描画で頼む縮小画像の大きさ（undefined は thumbs の既定）
+
   function thumbsWanted() {
-    return !!thumbs && thumbs.enabled() && entries.some((e) => thumbs.isThumbable(e));
+    if (!thumbs) return false;
+    // アイコン表示は写真を見るための表示なので、詳細一覧の設定に関係なく出す
+    if (view === VIEW.ICONS) return true;
+    return thumbs.enabled() && entries.some((e) => thumbs.isThumbable(e));
   }
 
   /** connected=false: 作ったばかりでまだ一覧に入っていない枠にも出す */
@@ -303,15 +325,21 @@ export function createFilePane(rootEl, opts = {}) {
     const e = slot._entry;
     if (!e) return;
     slot._entry = null;
-    thumbs.load(e).then((url) => showThumb(slot, url));
+    thumbs.load(e, thumbPx).then((url) => showThumb(slot, url));
   }
 
   function thumbSlot(e) {
     const slot = document.createElement('span');
     slot.className = 'entry-thumb';
     slot.setAttribute('aria-hidden', 'true');
-    if (!thumbs.isThumbable(e)) return slot;
-    const known = thumbs.peek(e);
+    if (view === VIEW.ICONS && !(thumbs && thumbs.isThumbable(e))) {
+      const glyph = document.createElement('span');
+      glyph.className = 'entry-glyph';
+      glyph.textContent = glyphFor(e);
+      slot.appendChild(glyph);
+    }
+    if (!thumbs || !thumbs.isThumbable(e)) return slot;
+    const known = thumbs.peek(e, thumbPx);
     if (known !== undefined) {
       // 前に読んだもの（描き直し・戻ってきたフォルダ）はすぐ出す
       showThumb(slot, known, false);
@@ -348,8 +376,15 @@ export function createFilePane(rootEl, opts = {}) {
     const scrollTop = listEl.scrollTop;
     listEl.replaceChildren();
     resetThumbs();
+    const icons = view === VIEW.ICONS;
+    const layout = icons ? getIconLayout() : null;
+    thumbPx = layout ? layout.px : undefined;
+    listEl.classList.toggle('icon-view', icons);
+    if (icons) listEl.style.setProperty('--icon-size', `${layout.em}em`);
+    else listEl.style.removeProperty('--icon-size');
+    if (columnsEl) columnsEl.hidden = icons;
     const showThumbs = thumbsWanted();
-    listEl.classList.toggle('has-thumbs', showThumbs);
+    listEl.classList.toggle('has-thumbs', showThumbs && !icons);
     entries.forEach((e, i) => {
       const li = document.createElement('li');
       const hiddenCls = isHidden(e) ? ' is-hidden' : '';
@@ -362,9 +397,10 @@ export function createFilePane(rootEl, opts = {}) {
         (selected.has(e.path) ? ' selected' : '');
       const name = document.createElement('span');
       name.className = 'entry-name';
-      name.textContent = e.is_parent ? '..' : e.is_dir ? e.name + '/' : e.name;
-      if (showThumbs) name.prepend(thumbSlot(e));
+      name.textContent = e.is_parent ? '..' : e.is_dir && !icons ? e.name + '/' : e.name;
+      if (showThumbs && !icons) name.prepend(thumbSlot(e));
       if (e.is_parent) li.title = `親フォルダへ: ${e.path}`;
+      else if (icons) li.title = tileTitle(e);
       const size = document.createElement('span');
       size.className = 'entry-size';
       size.textContent = e.is_dir ? '' : formatSize(e.size);
@@ -372,7 +408,12 @@ export function createFilePane(rootEl, opts = {}) {
       mtime.className = 'entry-mtime';
       mtime.textContent = formatMtime(e.modified);
       li.dataset.path = e.path; // ドロップ先の解決に使う（core/dragdrop.js）
-      li.append(name, size, mtime);
+      if (icons) {
+        li.classList.add('tile');
+        li.append(thumbSlot(e), name);
+      } else {
+        li.append(name, size, mtime);
+      }
       li.addEventListener('mousedown', (ev) => {
         if (onActivate) onActivate();
         // Shift+クリックの範囲選択でテキスト選択が走ると見た目が壊れるので抑止
@@ -542,6 +583,48 @@ export function createFilePane(rootEl, opts = {}) {
     }
   }
 
+  /** アイコン表示で 1 段に並ぶ数（レイアウトから測る。測れなければ 1） */
+  function gridColumns() {
+    const rows = listEl.children;
+    const tops = [];
+    // 1 段は高々この数。全部を測ると数千件で重い
+    for (let i = 0; i < rows.length && i < 256; i++) tops.push(rows[i].offsetTop);
+    const cols = columnsFromTops(tops);
+    // 全部が同じ高さに見えても、一覧の幅が 0（隠れている・レイアウト前）なら測れていない
+    return cols === tops.length && !listEl.clientWidth ? 1 : cols;
+  }
+
+  function moveTo(next) {
+    if (next !== cursor) {
+      cursor = next;
+      syncRowStates();
+      notify();
+    }
+  }
+
+  /** 左右（h / l、← / →）。アイコン表示だけ動く（詳細一覧は縦 1 列なので何もしない） */
+  function moveCursorHorizontal(delta) {
+    if (view !== VIEW.ICONS) return;
+    moveTo(gridMove(cursor, delta < 0 ? 'left' : 'right', gridColumns(), entries.length));
+  }
+
+  /** 上下（j / k、↑ / ↓）。アイコン表示では 1 段ずつ */
+  function moveCursorVertical(delta) {
+    if (view !== VIEW.ICONS) {
+      moveCursor(delta);
+      return;
+    }
+    moveTo(gridMove(cursor, delta < 0 ? 'up' : 'down', gridColumns(), entries.length));
+  }
+
+  /** 表示の種類を変える。カーソルと選択はそのまま */
+  function setView(next) {
+    const v = normalizeView(next);
+    if (v === view) return;
+    view = v;
+    render();
+  }
+
   function moveCursorTo(pos) {
     cursor = clampCursor(pos === 'top' ? 0 : entries.length - 1, entries.length);
     syncRowStates();
@@ -582,7 +665,7 @@ export function createFilePane(rootEl, opts = {}) {
   }
 
   /**
-   * カーソル位置を開く (l / Enter / ダブルクリック)。
+   * カーソル位置を開く (L / Enter / ダブルクリック)。
    * フォルダなら中に入り、ファイルなら既定アプリで開く（onOpenFile に委ねる。
    * ペイン自身は外部アプリ連携を知らない）。
    */
@@ -693,7 +776,11 @@ export function createFilePane(rootEl, opts = {}) {
     reload,
     beginPathEdit,
     moveCursor,
+    moveCursorHorizontal,
+    moveCursorVertical,
     moveCursorTo,
+    setView,
+    getView: () => view,
     enter,
     goParent,
     setShowHidden,

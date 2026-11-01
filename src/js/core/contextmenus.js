@@ -74,7 +74,7 @@ export function buildCrumbMenu(path, a = {}) {
 export function buildHeaderMenu(dir, a = {}) {
   return [
     { label: 'パスを入力して移動…', shortcut: 'Ctrl+L', action: a.pathInput },
-    { label: '親フォルダへ', shortcut: 'h', action: a.parent },
+    { label: '親フォルダへ', shortcut: 'H', action: a.parent },
     { label: '再読込', shortcut: 'Ctrl+R', disabled: !dir, action: a.reload },
     SEP,
     {

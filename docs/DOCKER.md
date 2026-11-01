@@ -26,7 +26,7 @@ make docker-gui          # = docker compose up --build
 
 ブラウザに Tana のウィンドウが表示され、サンドボックスのサンプルが見えます。
 
-- `Tab` でペイン往復、`j/k` 上下、`h/l` 親/入る
+- `Tab` でペイン往復、`j/k` 上下、`H/L` 親/入る（`h/l` はアイコン表示で左右）
 - `Ctrl+Shift+Space` 安全⇄操作モード、`Ctrl+Shift+T` テーマ、`Ctrl+H` 隠しファイル
 - `F5` コピー / `F6` 移動 / `Delete` ゴミ箱 / `Shift+Delete` 完全削除
   （安全モードでは抑止され、トーストで通知されます）

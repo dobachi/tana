@@ -103,7 +103,7 @@ export function buildEditExtraItems(state, a = {}) {
 export function buildGoMenuItems(state, a = {}) {
   const { canBack = true, canForward = true } = state || {};
   return [
-    { label: '親フォルダへ', shortcut: 'h', action: a.parent },
+    { label: '親フォルダへ', shortcut: 'H', action: a.parent },
     { label: '戻る', shortcut: 'Alt+←', disabled: !canBack, action: a.back },
     { label: '進む', shortcut: 'Alt+→', disabled: !canForward, action: a.forward },
     { separator: true },
@@ -135,7 +135,35 @@ export function buildFilterMenuItems(filter, a = {}) {
   return [
     { label: `${mark(type === 'dirs')}フォルダだけ`, shortcut: 'f → d', action: a.dirs },
     { label: `${mark(type === 'files')}ファイルだけ`, shortcut: 'f → f', action: a.files },
+    { label: `${mark(type === 'images')}画像だけ`, shortcut: 'f → i', action: a.images },
     { label: `${mark(exts.length > 0)}${extLabel}`, shortcut: 'f → e', action: a.ext },
     { label: '　絞り込みを解除', shortcut: 'f → a', disabled: !active, action: a.clear },
+  ];
+}
+
+/**
+ * 表示の種類（表示メニュー・一覧の空き所の右クリック）。今の状態に ✓ を付ける。
+ * @param {{view: string, sizeLabel: string, canBigger: boolean, canSmaller: boolean}} s
+ * @param {object} a actions（details / icons / bigger / smaller）
+ */
+export function buildViewMenuItems(s, a = {}) {
+  const { view = 'details', sizeLabel = '', canBigger = true, canSmaller = true } = s || {};
+  const icons = view === 'icons';
+  const mark = (on) => (on ? '✓ ' : '　');
+  return [
+    { label: `${mark(!icons)}詳細表示`, shortcut: 'v → d', action: a.details },
+    { label: `${mark(icons)}アイコン表示`, shortcut: 'v → i', action: a.icons },
+    {
+      label: '　アイコンを大きく' + (icons && sizeLabel ? `（今: ${sizeLabel}）` : ''),
+      shortcut: 'v → +',
+      disabled: !icons || !canBigger,
+      action: a.bigger,
+    },
+    {
+      label: '　アイコンを小さく',
+      shortcut: 'v → -',
+      disabled: !icons || !canSmaller,
+      action: a.smaller,
+    },
   ];
 }

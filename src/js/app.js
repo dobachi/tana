@@ -58,7 +58,19 @@ import {
   buildEditExtraItems,
   buildGoMenuItems,
   buildFilterMenuItems,
+  buildViewMenuItems,
 } from './core/appmenus.js';
+import {
+  VIEW,
+  ICON_SIZES,
+  ICON_SIZE_KEY,
+  loadView,
+  storeView,
+  loadIconSize,
+  storeIconSize,
+  stepIconSize,
+  thumbPxFor,
+} from './core/iconview.js';
 import { extOf, isFilterActive, parseExtList } from './core/entryfilter.js';
 import {
   contextTargetOf,
@@ -479,8 +491,24 @@ function runPrefixAction(action) {
     case 'sort:reverse':
       activeSort().reverse();
       break;
+    case 'view:toggle':
+      toggleActiveView();
+      return;
+    case 'view:icons':
+      setPaneView(panes.getActive(), VIEW.ICONS);
+      return;
+    case 'view:details':
+      setPaneView(panes.getActive(), VIEW.DETAILS);
+      return;
+    case 'view:bigger':
+      changeIconSize(1);
+      return;
+    case 'view:smaller':
+      changeIconSize(-1);
+      return;
     case 'filter:dirs':
     case 'filter:files':
+    case 'filter:images':
     case 'filter:ext':
     case 'filter:clear':
       if (fp) filterActions(fp)[action.slice('filter:'.length)]();
@@ -801,11 +829,61 @@ let thumbsEnabled = loadThumbnails();
 const thumbMemo = new Map();
 function paneThumbs() {
   const loader = createThumbLoader({
-    fetch: (entry) => thumbnailUrl(entry.path, THUMB_PX),
+    fetch: (entry, px) => thumbnailUrl(entry.path, px || THUMB_PX),
     memo: thumbMemo,
   });
   return { ...loader, enabled: () => thumbsEnabled, isThumbable };
 }
+// アイコン表示（core/iconview.js）。表示の種類はペインごと、タイルの大きさは全ペイン共通
+let iconSize = loadIconSize();
+function iconLayout() {
+  const { em } = ICON_SIZES[iconSize];
+  const base =
+    (typeof document !== 'undefined' &&
+      parseFloat(getComputedStyle(document.documentElement).fontSize)) ||
+    14;
+  const scale = fontScale.get();
+  const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+  return { em, px: thumbPxFor(em * base * scale, dpr) };
+}
+function setPaneView(p, view) {
+  const fp = filePanes[p];
+  if (!fp) return;
+  fp.setView(view);
+  storeView(p, fp.getView());
+}
+function toggleActiveView() {
+  const fp = activeFilePane();
+  if (fp) setPaneView(panes.getActive(), fp.getView() === VIEW.ICONS ? VIEW.DETAILS : VIEW.ICONS);
+}
+/** アイコンの大きさを 1 段変える（dir: +1 / -1）。アイコン表示のペインを描き直す */
+function changeIconSize(dir) {
+  const next = stepIconSize(iconSize, dir);
+  if (next === iconSize) return;
+  applyIconSize(next);
+  storeIconSize(next);
+}
+function applyIconSize(i) {
+  iconSize = i;
+  for (const fp of Object.values(filePanes)) if (fp && fp.getView() === VIEW.ICONS) fp.refresh();
+}
+function viewMenuItems(fp, p) {
+  return buildViewMenuItems(
+    {
+      view: fp ? fp.getView() : VIEW.DETAILS,
+      sizeLabel: ICON_SIZES[iconSize].label,
+      canBigger: iconSize < ICON_SIZES.length - 1,
+      canSmaller: iconSize > 0,
+    },
+    {
+      details: () => setPaneView(p, VIEW.DETAILS),
+      icons: () => setPaneView(p, VIEW.ICONS),
+      bigger: () => changeIconSize(1),
+      smaller: () => changeIconSize(-1),
+    },
+  );
+}
+
 function setThumbsEnabled(on) {
   thumbsEnabled = !!on;
   for (const fp of Object.values(filePanes)) if (fp) fp.refresh();
@@ -1450,7 +1528,12 @@ function showEntryMenu(pane, info) {
   );
   // 空いている所の右クリックには絞り込みも並べる（行の上ではメニューが長くなるので出さない）
   if (!entry) {
-    items.push({ separator: true }, ...buildFilterMenuItems(fp.getFilter(), filterActions(fp)));
+    items.push(
+      { separator: true },
+      ...viewMenuItems(fp, pane),
+      { separator: true },
+      ...buildFilterMenuItems(fp.getFilter(), filterActions(fp)),
+    );
   }
 
   showMenu(x, y, items, { focusFirst: !!info.fromKeyboard });
@@ -1649,6 +1732,9 @@ function buildMenuDefinition() {
         })),
         { label: '　並び順を反転', shortcut: 's r', action: () => activeSort().reverse() },
         { separator: true },
+        { label: '表示の種類', disabled: true },
+        ...viewMenuItems(activeFilePane(), panes.getActive()),
+        { separator: true },
         {
           label: `絞り込み${
             activeFilePane() && isFilterActive(activeFilePane().getFilter()) ? '（中）' : ''
@@ -1713,6 +1799,16 @@ function applyFontScale(action) {
  * 増減 (NFR-U5) に使う。どちらも webview 既定のズームは preventDefault で抑える。
  */
 function onWheel(e) {
+  // Ctrl+Shift+ホイール: アイコン表示のペインの上ならアイコンの大きさ
+  if (e.ctrlKey && e.shiftKey) {
+    const list = e.target && e.target.closest ? e.target.closest('.pane-list.icon-view') : null;
+    if (list) {
+      const d = e.deltaY || e.deltaX; // Shift+ホイールを横スクロールにする環境がある
+      e.preventDefault();
+      if (d) changeIconSize(d < 0 ? 1 : -1);
+      return;
+    }
+  }
   const holder = e.target && e.target.closest ? e.target.closest('.preview-image') : null;
   if (holder && e.ctrlKey) {
     const dir = wheelZoomDir(e);
@@ -2209,6 +2305,7 @@ function filterActions(fp) {
     dirs: () => set(cur().type === 'dirs' ? null : { type: 'dirs' }),
     files: () =>
       set(cur().type === 'files' ? { type: 'all', exts: cur().exts } : { ...cur(), type: 'files' }),
+    images: () => set(cur().type === 'images' ? null : { type: 'images' }),
     ext: async () => {
       if (!fp) return;
       const now = cur();
@@ -2595,19 +2692,31 @@ function onKeydown(e) {
     case 'j':
     case 'ArrowDown':
       e.preventDefault();
-      fp.moveCursor(1);
+      fp.moveCursorVertical(1);
       break;
     case 'k':
     case 'ArrowUp':
       e.preventDefault();
-      fp.moveCursor(-1);
+      fp.moveCursorVertical(-1);
       break;
+    // h / l は左右（アイコン表示で横へ。詳細一覧は縦 1 列なので動かない）。
+    // 開く / 親へは L / H（どちらの表示でも同じ）
     case 'l':
+    case 'ArrowRight':
+      e.preventDefault();
+      fp.moveCursorHorizontal(1);
+      break;
+    case 'h':
+    case 'ArrowLeft':
+      e.preventDefault();
+      fp.moveCursorHorizontal(-1);
+      break;
+    case 'L':
     case 'Enter':
       e.preventDefault();
       fp.enter();
       break;
-    case 'h':
+    case 'H':
     case 'Backspace':
       e.preventDefault();
       fp.goParent();
@@ -2676,6 +2785,7 @@ async function init() {
     'tana.theme': (v) => v && theme.set(String(v)),
     'tana.fontScale': (v) => v != null && fontScale.set(Number(v)),
     [THUMBS_KEY]: (v) => setThumbsEnabled(v !== 'off'),
+    [ICON_SIZE_KEY]: (v) => v != null && applyIconSize(stepIconSize(v, 0)),
   });
   window.addEventListener('storage', (e) => onStorage(e));
 
@@ -2756,6 +2866,8 @@ async function init() {
     filePanes[p] = createFilePane(el, {
       showHidden,
       thumbs: paneThumbs(),
+      view: loadView(p),
+      getIconLayout: iconLayout,
       getSort: () => sortStates[p].get(),
       onSort: (key) => sortStates[p].applyKey(key),
       // 件数（ステータスバー）は絞り込み後の数なので更新する

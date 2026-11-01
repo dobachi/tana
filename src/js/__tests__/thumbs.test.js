@@ -73,6 +73,8 @@ describe('isThumbable', () => {
     expect(thumbKey(a)).toBe(thumbKey({ ...a }));
     expect(thumbKey(a)).not.toBe(thumbKey({ ...a, modified: 2 }));
     expect(thumbKey(a)).not.toBe(thumbKey({ ...a, size: 2 }));
+    expect(thumbKey(a, 64)).toBe(thumbKey(a));
+    expect(thumbKey(a, 128)).not.toBe(thumbKey(a, 64));
   });
 });
 
@@ -117,9 +119,29 @@ describe('createThumbLoader', () => {
     expect(await b.load(e)).toBe('url:x.jpg');
     expect(b.peek(e)).toBe('url:x.jpg');
     expect(fetch).toHaveBeenCalledTimes(1);
+    // 大きさが違えば別に頼み、fetch に大きさが渡る
+    expect(await a.load(e, 256)).toBe('url:x.jpg');
+    expect(fetch).toHaveBeenLastCalledWith(e, 256);
+    expect(a.peek(e, 256)).toBe('url:x.jpg');
     // 写真が変わったら頼み直す
     await a.load({ ...e, modified: 9 });
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('左右のペインが同時に頼んでも 1 回だけ読む', async () => {
+    const pending = [];
+    const fetch = vi.fn(() => new Promise((r) => pending.push(r)));
+    const memo = new Map();
+    const left = createThumbLoader({ fetch, memo });
+    const right = createThumbLoader({ fetch, memo });
+    const e = file('both.jpg');
+    const p1 = left.load(e);
+    const p2 = right.load(e);
+    await tick();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    pending[0]('url-both');
+    expect(await Promise.all([p1, p2])).toEqual(['url-both', 'url-both']);
+    expect(right.runningCount()).toBe(0);
   });
 
   it('失敗も覚える（壊れたファイルを何度も読まない）', async () => {

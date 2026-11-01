@@ -6,7 +6,25 @@
 /** 何も絞り込まない状態。 */
 export const NO_FILTER = Object.freeze({ type: 'all', exts: Object.freeze([]) });
 
-const TYPES = ['all', 'dirs', 'files'];
+const TYPES = ['all', 'dirs', 'files', 'images'];
+
+/** 「画像だけ」に含める拡張子（縮小画像を作れない HEIC / SVG なども画像として残す） */
+export const IMAGE_EXTS = Object.freeze([
+  'jpg',
+  'jpeg',
+  'jpe',
+  'png',
+  'gif',
+  'webp',
+  'bmp',
+  'svg',
+  'heic',
+  'heif',
+  'avif',
+  'tif',
+  'tiff',
+  'ico',
+]);
 
 /** 拡張子 1 つを比較用に整える（".MD" / "*.md" / "md" → "md"）。使えなければ ''。 */
 function normExt(s) {
@@ -33,7 +51,10 @@ export function parseExtList(text) {
 export function normalizeFilter(f) {
   const o = f || {};
   const type = TYPES.includes(o.type) ? o.type : 'all';
-  const exts = type === 'dirs' ? [] : parseExtList((Array.isArray(o.exts) ? o.exts : []).join(' '));
+  const exts =
+    type === 'dirs' || type === 'images'
+      ? []
+      : parseExtList((Array.isArray(o.exts) ? o.exts : []).join(' '));
   return { type, exts };
 }
 
@@ -54,8 +75,10 @@ export function applyEntryFilter(entries, f) {
   const { type, exts } = normalizeFilter(f);
   if (type === 'all' && !exts.length) return entries;
   return entries.filter((e) => {
+    // 画像だけのときもフォルダは残す（中へ移動できるように。拡張子の指定と同じ）
     if (e.is_dir) return type !== 'files';
     if (type === 'dirs') return false;
+    if (type === 'images') return hasExt(e.name, IMAGE_EXTS);
     return !exts.length || hasExt(e.name, exts);
   });
 }
@@ -65,6 +88,7 @@ export function describeFilter(f) {
   const { type, exts } = normalizeFilter(f);
   const extText = exts.map((e) => '.' + e).join(' ');
   if (type === 'dirs') return 'フォルダだけ';
+  if (type === 'images') return '画像（とフォルダ）';
   if (type === 'files') return exts.length ? `${extText} のファイルだけ` : 'ファイルだけ';
   return exts.length ? `${extText} のファイル（とフォルダ）` : '';
 }
