@@ -132,7 +132,7 @@ make docker-check  # CI相当チェック
 - **`updater_env.rs`**: アプリ内更新が完了できる環境かの判定。`bundle_type()`（deb/rpm は適用に root が要る）× `wsl::is_wsl()`（polkit のセッションが無く認証できない）で `can_install` を決め、コマンド `update_env` で返す。WSL の deb 版では updater が pkexec（コンソール）→ zenity（GUI）と 2 度パスワードを聞いた末に必ず失敗するため、その経路に入る前に手動更新へ誘導する
 - **`sftp.rs`** (FR-20): 最小の SFTP v3 クライアント。パケットの組み立て/解釈は純粋、読み書きは先行要求で往復待ちを隠す。テストはローカルの `sftp-server` と実際に話す
 - **`remote.rs`** (FR-20): `sftp://` の解釈・接続先の検証（`-` 始まり等を拒否）・`~/.ssh/config` の Host 抽出（純粋）、接続表（`Connector` 注入で張り直し）、閲覧のみゲート（`READ_ONLY:<host>`）、手元⇄リモート/リモート同士のコピー・移動、一時フォルダへの取得。コマンド `remote_*` は spawn_blocking で UI を止めない。本物の ssh の確認は `TANA_TEST_SSH_HOST=k16 cargo test -- --ignored real_ssh`
-- **`places.rs`**: `build_places`（存在フィルタ+パス重複除去、注入で純粋テスト）/ `windows_drive_candidates`（A:〜Z: 生成）/ `standard_candidates`（dirs）/ `is_cloud_folder`・`cloud_places_from`（クラウド同期検出、純粋）/ `read_subdirs`（ボリューム/WSL 列挙、汎用）/ OS 別 `drive_candidates` / `wsl_places`（Win: `\\wsl$` → UNC）
+- **`places.rs`**: `build_places`（存在フィルタ+パス重複除去、注入で純粋テスト）/ `windows_drive_candidates`（A:〜Z: 生成）/ `standard_candidates`（dirs）/ `is_cloud_folder`・`cloud_places_from`（クラウド同期検出、純粋）/ `read_subdirs`（ボリューム/WSL 列挙、汎用）/ OS 別 `drive_candidates` / `wsl_places_from`（登録ディストロ → UNC の「場所」、純粋）・`installed_wsl_distros`（Win: レジストリ読み）
 - 依存は最小（tauri / tauri-cli / plugin-dialog / opener / updater / process / serde / dirs / trash / **regex-lite**（FR-18 正規表現、軽量））
 
 ---
@@ -153,7 +153,7 @@ make docker-check  # CI相当チェック
 | FR-04 | 安全/操作モード切替 | M | ✅ | Ctrl+Shift+Space トグル + 視覚表示 |
 | FR-05 | お気に入り（ネスト） | M | ✅ | ツリー・Ctrl+D 追加・localStorage。手動並べ替え（ドラッグ / Alt+矢印）・自動並べ替え（名前順 / 登録日順・昇降）・まとめ方（接続先 / タグ、見出しはたためる）・タグ。詳細: [FAVORITES.md](FAVORITES.md) |
 | FR-06 | お気に入り検索 | M | ✅ | インクリメンタル検索。`#タグ` とタグのチップで絞り込み |
-| FR-07 | 場所(Places)検出 | S | ✅ | サイドバー「場所」に自動検出を表示・クリック/キーボード移動（`places.rs`+`placesview.js`）。ドライブ/ボリューム（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）＋クラウド同期（OneDrive 個人/職場・Box・Dropbox・Google Drive）＋**WSL ディストロ（Win: `\\wsl$`/`\\wsl.localhost` → UNC `//wsl$/<distro>`、pathnav を UNC 対応化）**＋標準フォルダ。Places の手動追加はお気に入り(FR-05)で代替（見送り） |
+| FR-07 | 場所(Places)検出 | S | ✅ | サイドバー「場所」に自動検出を表示・クリック/キーボード移動（`places.rs`+`placesview.js`）。ドライブ/ボリューム（Win=ドライブレター, mac=/Volumes, Linux=/mnt・/media）＋クラウド同期（OneDrive 個人/職場・Box・Dropbox・Google Drive）＋**WSL ディストロ（Win: レジストリ `HKCU\…\Lxss` の登録から UNC `//wsl$/<distro>`。`\\wsl$` 直下は列挙できないため。既定ディストロが先頭、docker-desktop 等の内部用は除外、止まっているディストロを起こさないよう存在確認はしない。pathnav を UNC 対応化）**＋標準フォルダ。Places の手動追加はお気に入り(FR-05)で代替（見送り） |
 | FR-08 | タブ | S | ✅ | ペイン単位のタブ（Q3 確定）。Ctrl+T 新規/Ctrl+W 閉じる/Ctrl+Tab・Ctrl+Shift+Tab 切替＋タブ帯 UI（クリック/中クリック/×/＋）。各タブが dir＋カーソル/選択を保持し切替で復元（`core/tabs.js` + filepane getViewState/applyViewState）。起動時のタブ構成復元（session.js）＋**タブの D&D 並べ替え**（pointer ベース、クリックと閾値で判別）に対応 |
 | FR-09 | 多形式プレビュー | S | ✅ | 画像/テキスト/Markdown/メタ + 配置(右/下)/Ctrl+P。Markdownは markdown-it を遅延チャンク化(html:false)+CSP。**動画(mp4/webm)は将来対応**(backlog)。詳細設計: [PREVIEW.md](PREVIEW.md) |
 | FR-10 | 全機能キーボード到達 | M | ✅ | 網羅性点検を実施（2026-07-27）。コンテキストメニューを `Shift+F10`/`≣` で開いたとき先頭項目へフォーカスする（マウスと同じ即操作性）。同メニュー専用の「ファイルマネージャで表示・パス/名前コピー」の開き方をヘルプに明記。「同ペイン内フォルダへのドロップ」相当は Ctrl+C/Ctrl+X→Ctrl+V のファイルクリップボード（任意の現在地へ貼付）でキーボードからも到達可能にした。全機能キーボード到達を達成 |

@@ -3832,6 +3832,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tempfile",
  "trash",
+ "winreg",
 ]
 
 [[package]]

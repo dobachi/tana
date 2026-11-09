@@ -15,7 +15,7 @@ use std::path::Path;
 pub struct Place {
     pub name: String,
     pub path: String,
-    /// "drive" | "cloud" | "home" | "folder"
+    /// "drive" | "cloud" | "wsl" | "home" | "folder"
     pub kind: String,
 }
 
@@ -121,7 +121,8 @@ fn cloud_places() -> Vec<Place> {
 }
 
 /// あるディレクトリ直下のサブディレクトリを指定 kind の Place として列挙する
-/// （macOS の /Volumes・Linux の /mnt, /media・Windows の \\wsl$ 用）。名前順。
+/// （macOS の /Volumes・Linux の /mnt, /media 用）。名前順。
+#[cfg(any(not(windows), test))]
 fn read_subdirs(base: &str, kind: &str) -> Vec<Place> {
     let mut out = Vec::new();
     if let Ok(read) = std::fs::read_dir(base) {
@@ -157,17 +158,81 @@ fn drive_candidates() -> Vec<Place> {
     v
 }
 
-/// WSL ディストロ（Windows のみ）。`\\wsl$\<distro>` / `\\wsl.localhost\<distro>`
-/// を列挙する。パスは to_slash で `//wsl$/<distro>` の UNC 形式になる。
+/// レジストリ（`HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss`）の
+/// 登録 1 件: サブキー名（GUID）とディストロ名。
+#[cfg(any(windows, test))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct WslDistro {
+    pub id: String,
+    pub name: String,
+}
+
+/// Docker Desktop / Rancher Desktop が自分用に入れる内部ディストロ。
+/// 中身はユーザーのファイルではないので「場所」には出さない。
+#[cfg(any(windows, test))]
+fn is_internal_distro(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n.starts_with("docker-desktop") || n.starts_with("rancher-desktop")
+}
+
+/// インストール済みディストロから「場所」を作る（純粋）。
+///
+/// パスは `//wsl$/<distro>`（to_slash 済みの UNC 形式。`\\wsl$` は Windows 10
+/// の古い版でも通じる）。既定のディストロを先頭に、残りは名前順。空の名前・
+/// 内部ディストロ・名前の重複は除く。
+#[cfg(any(windows, test))]
+pub fn wsl_places_from(distros: Vec<WslDistro>, default_id: Option<&str>) -> Vec<Place> {
+    let default_id = default_id.map(|d| d.to_ascii_lowercase());
+    let mut v: Vec<&WslDistro> = distros
+        .iter()
+        .filter(|d| !d.name.trim().is_empty() && !is_internal_distro(&d.name))
+        .collect();
+    let is_default = |d: &WslDistro| Some(d.id.to_ascii_lowercase()) == default_id;
+    v.sort_by(|a, b| {
+        is_default(b)
+            .cmp(&is_default(a))
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    let mut seen = HashSet::new();
+    v.into_iter()
+        .filter(|d| seen.insert(d.name.to_lowercase()))
+        .map(|d| Place::new(d.name.clone(), format!("//wsl$/{}", d.name), "wsl"))
+        .collect()
+}
+
+/// インストール済みの WSL ディストロをレジストリから読む（Windows のみ）。
+///
+/// `\\wsl$` / `\\wsl.localhost` の直下は FindFirstFile では列挙できない
+/// （PowerShell でも「パスが存在しない」になる）ため、そこを read_dir しても
+/// 何も見つからない。登録はレジストリにあり、止まっているディストロも載る。
 #[cfg(windows)]
-fn wsl_places() -> Vec<Place> {
-    for base in ["\\\\wsl$", "\\\\wsl.localhost"] {
-        let v = read_subdirs(base, "wsl");
-        if !v.is_empty() {
-            return v;
+fn installed_wsl_distros() -> (Vec<WslDistro>, Option<String>) {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+    let Ok(lxss) = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Lxss")
+    else {
+        return (Vec::new(), None);
+    };
+    let default_id: Option<String> = lxss.get_value("DefaultDistribution").ok();
+    let mut out = Vec::new();
+    for id in lxss.enum_keys().flatten() {
+        let Ok(key) = lxss.open_subkey(&id) else {
+            continue;
+        };
+        if let Ok(name) = key.get_value::<String, _>("DistributionName") {
+            out.push(WslDistro { id, name });
         }
     }
-    Vec::new()
+    (out, default_id)
+}
+
+/// WSL ディストロ（Windows のみ）。存在確認はしない: 止まっているディストロの
+/// パスに触ると、それだけで起動してしまう（起動はクリックしたときでよい）。
+#[cfg(windows)]
+fn wsl_places() -> Vec<Place> {
+    let (distros, default_id) = installed_wsl_distros();
+    wsl_places_from(distros, default_id.as_deref())
 }
 
 #[cfg(not(windows))]
@@ -181,9 +246,14 @@ fn wsl_places() -> Vec<Place> {
 pub fn list_places() -> Vec<Place> {
     let mut candidates = drive_candidates();
     candidates.extend(cloud_places());
-    candidates.extend(wsl_places());
-    candidates.extend(standard_candidates());
-    build_places(candidates, |p| Path::new(p).exists())
+    let drives_and_cloud = build_places(candidates, |p| Path::new(p).exists());
+    let standard = build_places(standard_candidates(), |p| Path::new(p).exists());
+    // WSL は存在確認を通さない（wsl_places のコメント参照）。並びは
+    // ドライブ・クラウド → WSL → 標準フォルダのまま。
+    let mut all = drives_and_cloud;
+    all.extend(wsl_places());
+    all.extend(standard);
+    build_places(all, |_| true)
 }
 
 #[cfg(test)]
@@ -241,6 +311,63 @@ mod tests {
         let names: Vec<_> = got.iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, vec!["Debian", "Ubuntu"]); // 名前順・ファイルは除外
         assert!(got.iter().all(|p| p.kind == "wsl"));
+    }
+
+    fn distro(id: &str, name: &str) -> WslDistro {
+        WslDistro {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+
+    #[test]
+    fn wsl_places_lists_installed_distros_as_unc_paths_by_name() {
+        let got = wsl_places_from(
+            vec![distro("{b}", "Ubuntu-22.04"), distro("{a}", "CentOS7")],
+            None,
+        );
+        assert_eq!(
+            got,
+            vec![
+                p("CentOS7", "//wsl$/CentOS7", "wsl"),
+                p("Ubuntu-22.04", "//wsl$/Ubuntu-22.04", "wsl"),
+            ]
+        );
+    }
+
+    #[test]
+    fn wsl_places_puts_the_default_distro_first() {
+        let got = wsl_places_from(
+            vec![
+                distro("{a}", "Alpine"),
+                distro("{B-GUID}", "Ubuntu"),
+                distro("{c}", "Debian"),
+            ],
+            Some("{b-guid}"), // GUID の大小文字は区別しない
+        );
+        let names: Vec<_> = got.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, vec!["Ubuntu", "Alpine", "Debian"]);
+    }
+
+    #[test]
+    fn wsl_places_skips_internal_empty_and_duplicate_distros() {
+        let got = wsl_places_from(
+            vec![
+                distro("{1}", "docker-desktop"),
+                distro("{2}", "docker-desktop-data"),
+                distro("{3}", "Rancher-Desktop"),
+                distro("{4}", "  "),
+                distro("{5}", "Ubuntu"),
+                distro("{6}", "ubuntu"),
+            ],
+            None,
+        );
+        assert_eq!(got, vec![p("Ubuntu", "//wsl$/Ubuntu", "wsl")]);
+    }
+
+    #[test]
+    fn wsl_places_empty_without_distros() {
+        assert!(wsl_places_from(Vec::new(), Some("{x}")).is_empty());
     }
 
     #[test]
