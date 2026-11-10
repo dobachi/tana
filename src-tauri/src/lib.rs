@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+mod apps;
 mod extensions;
 mod fude;
 mod places;
@@ -617,7 +618,10 @@ pub fn run() {
             wsl::wsl_info,
             wsl::windows_path,
             wsl::open_in_windows,
-            wsl::reveal_in_windows
+            wsl::reveal_in_windows,
+            apps::app_support,
+            apps::list_installed_apps,
+            apps::open_with_dialog
         ])
         .run(tauri::generate_context!())
         .expect("error while running tana application");

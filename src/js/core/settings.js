@@ -6,7 +6,8 @@
 
 import { THEMES, THEME_LABELS } from './theme.js';
 import { MIN_SCALE, MAX_SCALE, STEP, toPercent } from './fontscale.js';
-import { QUICK_SLOTS } from './extapps.js';
+import { QUICK_SLOTS, nameFromCommand } from './extapps.js';
+import { showAppPicker } from './apppicker.js';
 import { APP_TARGETS, TARGET, TARGET_LABELS } from './wsl.js';
 import { describeProgress } from './pdfpreview.js';
 
@@ -43,6 +44,8 @@ export function closeSettings() {
  *              move: (id: string, dir: number) => boolean,
  *              setTarget?: (id: string, target: string) => boolean},
  *   wsl?: {available: boolean, distro?: string},
+ *   listInstalledApps?: () => Promise<Array<{name: string, command: string, target?: string}>>,
+ *   pickProgramFile?: () => Promise<string|null>,
  *   getThumbnails?: () => boolean,
  *   setThumbnails?: (v: boolean) => void,
  *   getDefaultOpen?: () => string,
@@ -149,10 +152,15 @@ export function openSettings(deps) {
             ${wsl ? targetSelectHtml('setting-extapp-target', TARGET.AUTO) : ''}
             <button type="button" class="modal-btn" id="setting-extapp-add">追加</button>
           </div>
+          <div class="extapp-pick">
+            <button type="button" class="modal-btn" id="setting-extapp-pick">インストール済みから選ぶ…</button>
+            <button type="button" class="modal-btn" id="setting-extapp-browse">参照…</button>
+          </div>
           <small class="setting-hint" id="setting-extapp-msg">
             上から ${QUICK_SLOTS} 件が <code>o → 1</code>…<code>o → ${QUICK_SLOTS}</code> に割り当たります。
             右クリック →「別のアプリで開く…」からも選べます。
             コマンドは Windows/Linux は実行ファイル名かフルパス、macOS はアプリ名（例: Visual Studio Code）。
+            パスが分からなければ「インストール済みから選ぶ…」「参照…」を使ってください。
             引数は渡せません。${
               wsl
                 ? '起動先「自動」は <code>.exe</code> や <code>C:\\…</code> を Windows 側として扱います。'
@@ -213,7 +221,7 @@ export function openSettings(deps) {
     });
   }
 
-  setupExtApps(panelEl, extApps, wsl);
+  setupExtApps(panelEl, extApps, wsl, deps);
   setupPdfExtension(panelEl, deps.pdfExt);
 
   panelEl.querySelector('.settings-close').focus();
@@ -296,7 +304,7 @@ export function setupPdfExtension(root, ext) {
  * 「外部アプリ」セクションの描画とイベント（FR-13）。
  * extApps を渡さない呼び出し（テスト等）ではセクションごと隠す。
  */
-function setupExtApps(root, extApps, wsl) {
+function setupExtApps(root, extApps, wsl, deps = {}) {
   const group = root.querySelector('#setting-extapps-group');
   if (!group) return;
   if (!extApps) {
@@ -422,6 +430,39 @@ function setupExtApps(root, extApps, wsl) {
   }
 
   addBtn.addEventListener('click', add);
+
+  // インストール済みの一覧から選ぶ：選んだらそのまま登録する（パスを調べる手間を無くす）
+  const pickBtn = root.querySelector('#setting-extapp-pick');
+  if (pickBtn) {
+    if (typeof deps.listInstalledApps !== 'function') pickBtn.hidden = true;
+    else
+      pickBtn.addEventListener('click', async () => {
+        const app = await showAppPicker({ load: deps.listInstalledApps, wsl: !!wsl });
+        if (!app) {
+          pickBtn.focus();
+          return;
+        }
+        const res = extApps.add({ name: app.name, command: app.command, target: app.target });
+        notify(res.ok ? `「${res.entry.name}」を追加しました` : res.reason);
+        render();
+        pickBtn.focus();
+      });
+  }
+
+  // 参照…：実行ファイルを選んでコマンド欄へ入れる（表示名は空なら補う）。登録は「追加」で。
+  const browseBtn = root.querySelector('#setting-extapp-browse');
+  if (browseBtn) {
+    if (typeof deps.pickProgramFile !== 'function') browseBtn.hidden = true;
+    else
+      browseBtn.addEventListener('click', async () => {
+        const path = await deps.pickProgramFile();
+        if (!path) return;
+        cmdEl.value = path;
+        if (!nameEl.value.trim()) nameEl.value = nameFromCommand(path);
+        notify('');
+        addBtn.focus();
+      });
+  }
   // Enter で追加できるように（設定画面は Esc で閉じるので Enter は衝突しない）
   for (const el of [nameEl, cmdEl]) {
     el.addEventListener('keydown', (e) => {

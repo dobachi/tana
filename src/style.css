@@ -294,6 +294,57 @@ body[data-mode='operation'] .settings-panel {
   width: auto;
   padding: 3px 6px;
 }
+/* インストール済みアプリの選択（apppicker.js）。設定画面（z-index 3000）の上に出す。 */
+.app-picker-overlay {
+  z-index: 3100;
+}
+.modal.app-picker {
+  width: min(640px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.app-picker-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.app-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.app-picker-row.is-selected {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.app-picker-name {
+  flex: 0 1 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-picker-command {
+  flex: 1 1 55%;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl; /* 長いパスは末尾（実行ファイル名）を見せる */
+  text-align: left;
+}
+.app-picker-side {
+  flex: 0 0 auto;
+  font-size: 0.85em;
+  color: var(--fg-dim);
+}
+.extapp-pick {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
 .extapp-add input[type='text'] {
   flex: 1 1 50%;
   min-width: 0;

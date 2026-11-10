@@ -60,6 +60,11 @@ Linux 側で開きたい場合は設定で戻せるし、メニューとキー�
 
 いずれも **引数は渡せない**（プログラム 1 つ + パス 1 つ）。これは既存の FR-13 と同じ制約。
 
+パスが分からないときは、設定の **インストール済みから選ぶ…** で Windows 側のアプリ（レジストリの App Paths / Uninstall を
+`powershell.exe` 経由で読む）と Linux 側の `.desktop` を一覧から選べる。登録せずに開くなら、右クリック「別のアプリで開く…」→
+**Windows のアプリ一覧から選ぶ…**（`o → c`）で Windows 標準の「プログラムから開く」が出る（`rundll32 shell32.dll,OpenAs_RunDLL`。
+空白入りのパスは `/select,` と同じ理由で PowerShell の Start-Process 経由）。
+
 ## 3. 仕組み
 
 Rust 側 `src-tauri/src/wsl.rs` が 2 つの仕事をする。

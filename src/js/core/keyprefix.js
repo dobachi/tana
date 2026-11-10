@@ -41,6 +41,8 @@ const MAP = {
     o: 'open:app',
     r: 'open:reveal',
     a: 'open:with:ask',
+    // Windows / WSL: OS の「プログラムから開く」でアプリを選ぶ（c = choose）
+    c: 'open:with:choose',
     // リモート接続画面 (FR-20)。低頻度なので o（開く）の下に置く
     s: 'open:remote',
     // WSL 専用。非 WSL では「使えない」と理由を出す（黙って無反応にしない）。

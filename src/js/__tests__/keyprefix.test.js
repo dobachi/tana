@@ -42,6 +42,7 @@ describe('resolvePrefixAction', () => {
       expect(resolvePrefixAction('o', String(n))).toBe(`open:with:${n}`);
     }
     expect(resolvePrefixAction('o', 'a')).toBe('open:with:ask');
+    expect(resolvePrefixAction('o', 'c')).toBe('open:with:choose');
     expect(resolvePrefixAction('o', '0')).toBeNull();
   });
   it('f は絞り込み', () => {

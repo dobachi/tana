@@ -9,11 +9,12 @@
  * @param {object} state
  * @param {boolean} state.hasEntry カーソル行があるか
  * @param {boolean} state.wsl WSL か（Windows 側で開く項目を出す）
+ * @param {boolean} [state.openWithDialog] Windows の「プログラムから開く」を出せるか
  * @param {boolean} state.safe 安全モードか（切替項目のラベル用）
  * @param {object} a actions
  */
 export function buildFileMenuItems(state, a = {}) {
-  const { hasEntry = false, wsl = false, safe = true } = state || {};
+  const { hasEntry = false, wsl = false, openWithDialog = false, safe = true } = state || {};
   const items = [
     { label: '既定のアプリで開く', shortcut: 'o → o', disabled: !hasEntry, action: a.openApp },
     {
@@ -29,6 +30,14 @@ export function buildFileMenuItems(state, a = {}) {
       action: a.openWith,
     },
   ];
+  if (openWithDialog) {
+    items.push({
+      label: 'Windows のアプリ一覧から選んで開く…',
+      shortcut: 'o → c',
+      disabled: !hasEntry,
+      action: a.chooseApp,
+    });
+  }
   if (wsl) {
     items.push(
       {

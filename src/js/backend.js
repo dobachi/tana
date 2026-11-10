@@ -135,6 +135,45 @@ export async function revealInWindows(path) {
   return invoke('reveal_in_windows', { path });
 }
 
+// ===== 外部アプリの選択 (FR-13, apps.rs) =====
+
+/**
+ * この環境で使える機能 {platform, openWithDialog}。Tauri 不在時は null。
+ * platform は 'windows' | 'wsl' | 'macos' | 'linux'。
+ */
+export async function appSupport() {
+  return invoke('app_support');
+}
+
+/** インストール済みアプリ [{name, command, target}]。Tauri 不在時は []。 */
+export async function listInstalledApps() {
+  return (await invoke('list_installed_apps')) || [];
+}
+
+/** Windows の「プログラムから開く」ダイアログを出す（Windows / WSL のみ）。 */
+export async function openWithDialog(path) {
+  return invoke('open_with_dialog', { path });
+}
+
+/**
+ * 実行ファイルを 1 つ選ぶファイルダイアログ。選ばなければ null。
+ * @param {boolean} windows true なら .exe 等に絞る（WSL の Linux 側ダイアログでは絞らない）
+ */
+export async function pickProgramFile(windows) {
+  try {
+    const mod = await import('@tauri-apps/plugin-dialog');
+    const r = await mod.open({
+      title: 'プログラムを選ぶ',
+      multiple: false,
+      directory: false,
+      filters: windows ? [{ name: 'プログラム', extensions: ['exe', 'bat', 'cmd'] }] : undefined,
+    });
+    return typeof r === 'string' ? r : null;
+  } catch {
+    return null;
+  }
+}
+
 /** プレビュー用データを取得する (read_preview コマンド, FR-09)。Tauri 不在時は null */
 export async function readPreview(path, maxBytes) {
   if (isRemote(path)) return remoteInvoke('remote_read_preview', { path, maxBytes });

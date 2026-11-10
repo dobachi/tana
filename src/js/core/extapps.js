@@ -90,6 +90,18 @@ export function pickByIndex(list, key) {
   return (Array.isArray(list) ? list : [])[n - 1] || null;
 }
 
+/**
+ * 実行ファイルのパスから表示名を作る（「参照…」で選んだとき用）。
+ * `C:\Program Files\7-Zip\7zFM.exe` → `7zFM`、`/Applications/Foo.app` → `Foo`。
+ */
+export function nameFromCommand(command) {
+  const c = String(command || '')
+    .trim()
+    .replace(/[\\/]+$/, '');
+  const base = c.split(/[\\/]/).pop() || '';
+  return base.replace(/\.(exe|bat|cmd|com|app)$/i, '');
+}
+
 /** 「開けませんでした」に添える理由。アプリ名を必ず出す（何が失敗したか分かるように） */
 export function describeAppError(app, error) {
   const label = app || '既定のアプリ';

@@ -176,6 +176,10 @@ import {
   windowsPath,
   openInWindows,
   revealInWindows,
+  appSupport,
+  listInstalledApps,
+  openWithDialog,
+  pickProgramFile,
   readFileBytes,
   extensionStatus,
   installExtension,
@@ -215,6 +219,8 @@ extApps.subscribe(() => storeExtApps(extApps.list()));
 // WSL 連携 (FR-13 の WSL 拡張)。実体は init() で Rust に問い合わせて差し替える。
 // それまでは「使えない」= 従来どおり OS 既定の opener だけ、として振る舞う。
 let wsl = { ...NO_WSL };
+// 外部アプリまわりで使える機能（apps.rs）。取得前・取得失敗時は「使えない」に倒す。
+let appCaps = { platform: '', openWithDialog: false };
 let wslDefaultOpen = loadStoredDefaultOpen();
 // リモート接続 (FR-20)。最近の接続先は保存、書き込み許可は保存しない（既定は閲覧のみ）。
 const remotes = createRemotes(loadStoredRemotes());
@@ -536,6 +542,10 @@ function runPrefixAction(action) {
       break;
     case 'open:with:ask':
       if (entry) openWithPrompt(entry.path);
+      break;
+    // Windows の「プログラムから開く」。default の open:with:<数字> より先に拾う。
+    case 'open:with:choose':
+      if (entry) openWithSystemChooser(entry.path);
       break;
     case 'open:remote':
       openRemoteView();
@@ -1347,6 +1357,34 @@ async function copyWindowsPath(path) {
   }
 }
 
+/**
+ * Windows 標準の「プログラムから開く」ダイアログで開く（登録不要）。
+ * Windows と WSL のみ。リモートは一時コピーを取得してから渡す。
+ */
+async function openWithSystemChooser(path) {
+  if (!path) return;
+  if (!appCaps.openWithDialog) {
+    toast('「プログラムから開く」は Windows / WSL でのみ利用できます');
+    return;
+  }
+  const remote = isRemote(path);
+  if (remote) {
+    toast(`${remoteLabel(path)} を取得しています…`);
+    try {
+      path = await remoteFetch(path);
+    } catch (e) {
+      toast('取得できませんでした: ' + (e && e.message ? e.message : e));
+      return;
+    }
+  }
+  try {
+    await openWithDialog(path);
+    if (remote) toast('一時コピーを開きます（保存しても相手には戻りません）');
+  } catch (e) {
+    toast('「プログラムから開く」を出せませんでした: ' + (e && e.message ? e.message : e));
+  }
+}
+
 /** 「その他…」: コマンドを都度入力して開く。登録はしない（設定画面で管理する）。 */
 async function openWithPrompt(path) {
   if (!path) return;
@@ -1385,8 +1423,15 @@ function showOpenWithMenu(x, y, path, opts = {}) {
   items.push(
     { separator: true },
     { label: 'その他…（コマンドを入力）', shortcut: 'o → a', action: () => openWithPrompt(path) },
-    { label: 'アプリを管理…', action: () => openSettingsPanel() },
   );
+  if (appCaps.openWithDialog) {
+    items.push({
+      label: 'Windows のアプリ一覧から選ぶ…',
+      shortcut: 'o → c',
+      action: () => openWithSystemChooser(path),
+    });
+  }
+  items.push({ label: 'アプリを管理…', action: () => openSettingsPanel() });
   showMenu(x, y, items, { focusFirst: opts.focusFirst });
 }
 
@@ -1548,6 +1593,9 @@ function openSettingsPanel() {
     setShowHidden,
     extApps,
     wsl,
+    // 外部アプリの登録を楽にする（apps.rs）。一覧から選ぶ / ファイルダイアログで選ぶ。
+    listInstalledApps,
+    pickProgramFile: () => pickProgramFile(appCaps.platform === 'windows'),
     // 既定オープン（Enter / ダブルクリック）の行き先。WSL のときだけ設定に出す。
     getDefaultOpen: () => resolveDefaultTarget(wslDefaultOpen, wsl),
     setDefaultOpen: (v) => {
@@ -1613,12 +1661,14 @@ function buildMenuDefinition() {
           {
             hasEntry: !!activeFilePane()?.getCursorEntry(),
             wsl: wsl.available,
+            openWithDialog: appCaps.openWithDialog,
             safe: safemode.isSafe(),
           },
           {
             openApp: () => runPrefixAction('open:app'),
             reveal: () => runPrefixAction('open:reveal'),
             openWith: openWithFromMenu,
+            chooseApp: () => runPrefixAction('open:with:choose'),
             openWindows: () => runPrefixAction('open:windows'),
             explorer: () => runPrefixAction('open:explorer'),
             newWindow: () => openNewWindow(),
@@ -2850,6 +2900,16 @@ async function init() {
     .catch(() => {
       wsl = { ...NO_WSL };
     });
+  appSupport()
+    .then((caps) => {
+      if (caps && typeof caps === 'object') {
+        appCaps = {
+          platform: typeof caps.platform === 'string' ? caps.platform : '',
+          openWithDialog: caps.openWithDialog === true,
+        };
+      }
+    })
+    .catch(() => {});
 
   const addFolderBtn = document.getElementById('fav-add-folder');
   if (addFolderBtn) {

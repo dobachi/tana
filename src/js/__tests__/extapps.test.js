@@ -8,6 +8,7 @@ import {
   hydrate,
   pickByIndex,
   describeAppError,
+  nameFromCommand,
   loadStoredExtApps,
   storeExtApps,
   QUICK_SLOTS,
@@ -248,5 +249,21 @@ describe('describeAppError', () => {
   it('アプリ未指定・理由なしでも文になる', () => {
     expect(describeAppError('', null)).toBe('既定のアプリ で開けませんでした');
     expect(describeAppError('code', null)).toBe('code で開けませんでした');
+  });
+});
+
+describe('nameFromCommand', () => {
+  it('実行ファイル名から拡張子を除いて表示名にする', () => {
+    expect(nameFromCommand('C:\\Program Files\\7-Zip\\7zFM.exe')).toBe('7zFM');
+    expect(nameFromCommand('/mnt/c/Program Files/7-Zip/7zFM.EXE')).toBe('7zFM');
+    expect(nameFromCommand('/Applications/Visual Studio Code.app')).toBe('Visual Studio Code');
+    expect(nameFromCommand('/Applications/Foo.app/')).toBe('Foo');
+    expect(nameFromCommand('/usr/bin/gimp')).toBe('gimp');
+    expect(nameFromCommand('run.bat')).toBe('run');
+  });
+  it('空・不正値は空文字', () => {
+    expect(nameFromCommand('')).toBe('');
+    expect(nameFromCommand(null)).toBe('');
+    expect(nameFromCommand(undefined)).toBe('');
   });
 });

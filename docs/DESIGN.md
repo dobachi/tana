@@ -229,6 +229,15 @@ Backend (Rust / Tauri Commands)
   - 呼び出し口は3つ: 右クリック →「別のアプリで開く…」(登録一覧 + その他… + 管理)、二打鍵 `o → 1..9`(登録の上から9件)、`o → a`(コマンドを都度入力)
   - `menu.js` はサブメニューを持たないので、「別のアプリで開く…」は同じ位置に**一段掘り下げたメニューを開き直す**(キーボード操作は `showMenu` のまま使える)
   - 対象は**カーソル行の1ファイル**(既存の「外部アプリで開く」と同じ)。複数選択への一括適用は行わない
+- **登録を楽にする**（`apps.rs` + `core/apppicker.js`）: パスを調べて手入力しなくて済むように
+  - 設定「外部アプリ」の **インストール済みから選ぶ…**: `list_installed_apps` が一覧を作り、絞り込み付きの選択画面から選ぶとそのまま登録する。
+    Windows はレジストリの `App Paths`（既定値）と `Uninstall`（DisplayName + DisplayIcon）、WSL は同じ情報を `powershell.exe` 経由で読む（＋ Linux 側の `.desktop`）、
+    Linux は `.desktop`（`%U` 等以外の引数が要るものは表せないので除外）、macOS は `/Applications` 等の `.app`。インストーラ／アンインストーラ（Package Cache 等）は除外。
+    PowerShell はスクリプトを `-EncodedCommand` で渡し、出力を UTF-8 JSON の base64 にする（引用符のエスケープとコンソールのコードページ＝表示名の文字化けを避ける）
+  - **参照…**: ファイルダイアログで実行ファイルを選んでコマンド欄に入れる（表示名が空ならファイル名から補う）
+  - **Windows のアプリ一覧から選ぶ…**（右クリック「別のアプリで開く…」内 / ファイルメニュー / `o → c`）: 登録せず、Windows 標準の「プログラムから開く」
+    （`rundll32 shell32.dll,OpenAs_RunDLL <path>`）を出す。Windows と WSL のみ（`app_support` で判定）。`OpenAs_RunDLL` は残りのコマンドライン全体をパスとして読むので
+    引用符で包まない（Windows は `raw_arg`、WSL で空白入りのときは PowerShell の Start-Process に 1 本の文字列で渡す）
 - 渡せるのは**プログラム1つだけで引数は付けられない**(`code --wait` は不可)。OS ごとに意味も異なる:
   Linux `Command::new(cmd).arg(path)` / macOS `open -a <cmd> <path>` / Windows `cmd /c start "" "<cmd>" "<path>"`。
   Windows は引用符がエスケープされずに渡るため、`"` を含むコマンドは `extapps.js` 側で拒否する

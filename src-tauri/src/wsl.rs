@@ -98,7 +98,7 @@ fn is_windows_path(p: &str) -> bool {
 }
 
 /// 末尾の `/` を落とす（ルート `/` はそのまま）。
-fn trim_trailing_slashes(p: &str) -> &str {
+pub(crate) fn trim_trailing_slashes(p: &str) -> &str {
     let t = p.trim_end_matches('/');
     if t.is_empty() {
         "/"
@@ -218,7 +218,7 @@ pub fn is_wsl() -> bool {
 }
 
 /// WSL 連携の可否を調べる（プロセス内で一度だけ）。
-fn detect() -> &'static WslInfo {
+pub(crate) fn detect() -> &'static WslInfo {
     static INFO: OnceLock<WslInfo> = OnceLock::new();
     INFO.get_or_init(|| {
         if !is_wsl() {
@@ -239,7 +239,7 @@ fn detect() -> &'static WslInfo {
 }
 
 /// 自動マウント先（プロセス内で一度だけ推定）。推定できなければ既定の `/mnt`。
-fn automount_root() -> &'static str {
+pub(crate) fn automount_root() -> &'static str {
     static ROOT: OnceLock<String> = OnceLock::new();
     ROOT.get_or_init(|| {
         std::fs::read_to_string("/proc/mounts")
@@ -260,14 +260,14 @@ fn ensure_available() -> Result<&'static WslInfo, String> {
 }
 
 /// 起動用に Windows パスへ変換する（連携可否のチェック込み）。
-fn win_path_for(path: &str) -> Result<String, String> {
+pub(crate) fn win_path_for(path: &str) -> Result<String, String> {
     let info = ensure_available()?;
     to_windows_path(path, &info.distro, automount_root())
 }
 
 /// 起動して待たない。アプリは Tana より長生きしうるので `wait` は別スレッドに任せる
 /// （待たずに Child を捨てるとゾンビが残るため）。
-fn spawn_detached(mut cmd: Command, label: &str) -> Result<(), String> {
+pub(crate) fn spawn_detached(mut cmd: Command, label: &str) -> Result<(), String> {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -351,7 +351,7 @@ pub fn reveal_in_windows(path: String) -> Result<(), String> {
 /// explorer.exe はこの形を解釈できず、まったく別の場所を開いてしまう（実機確認済み）。
 /// 引用符を自分で足しても interop に `\"` へエスケープされるため、argv をどう並べても
 /// 正規形 `/select,"C:\a b.txt"` は作れない。
-fn needs_start_process(win: &str) -> bool {
+pub(crate) fn needs_start_process(win: &str) -> bool {
     win.contains(' ') || win.contains('"') || win.contains('\t')
 }
 

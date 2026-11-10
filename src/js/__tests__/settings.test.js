@@ -241,6 +241,99 @@ describe('外部アプリ セクション', () => {
   });
 });
 
+describe('外部アプリ: 一覧から選ぶ / 参照', () => {
+  const rows = () => document.querySelectorAll('.extapp-row');
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const SEVEN_ZIP = {
+    name: '7-Zip 23.01 (x64)',
+    command: 'C:\\Program Files\\7-Zip\\7zFM.exe',
+    target: 'windows',
+  };
+
+  it('取得手段が渡されなければボタンを出さない', () => {
+    openSettings({ ...deps, extApps: createExtApps() });
+    expect(document.querySelector('#setting-extapp-pick').hidden).toBe(true);
+    expect(document.querySelector('#setting-extapp-browse').hidden).toBe(true);
+  });
+
+  it('一覧から選ぶとそのまま登録される（起動先も引き継ぐ）', async () => {
+    const extApps = createExtApps();
+    const listInstalledApps = vi.fn(async () => [SEVEN_ZIP, { name: 'VLC', command: 'vlc' }]);
+    openSettings({ ...deps, extApps, listInstalledApps, wsl: { available: true } });
+    document.querySelector('#setting-extapp-pick').click();
+    await flush();
+    const picker = document.querySelector('.app-picker');
+    expect(picker).toBeTruthy();
+    expect(picker.querySelectorAll('.app-picker-row')).toHaveLength(2);
+    picker.querySelector('.app-picker-row').click();
+    await flush();
+    expect(document.querySelector('.app-picker')).toBeNull();
+    expect(extApps.list()).toHaveLength(1);
+    expect(extApps.list()[0]).toMatchObject({
+      name: SEVEN_ZIP.name,
+      command: SEVEN_ZIP.command,
+      target: 'windows',
+    });
+    expect(rows()).toHaveLength(1);
+    expect(document.querySelector('#setting-extapp-msg').textContent).toContain('追加しました');
+  });
+
+  it('同じアプリを二度選ぶと理由を出し、重複登録しない', async () => {
+    const extApps = createExtApps([SEVEN_ZIP]);
+    openSettings({ ...deps, extApps, listInstalledApps: async () => [SEVEN_ZIP] });
+    document.querySelector('#setting-extapp-pick').click();
+    await flush();
+    document.querySelector('.app-picker-row').click();
+    await flush();
+    expect(extApps.list()).toHaveLength(1);
+    expect(document.querySelector('#setting-extapp-msg').textContent).toContain('すでに');
+  });
+
+  it('選択画面を Esc で閉じても設定画面は閉じず、何も登録しない', async () => {
+    const extApps = createExtApps();
+    openSettings({ ...deps, extApps, listInstalledApps: async () => [SEVEN_ZIP] });
+    document.querySelector('#setting-extapp-pick').click();
+    await flush();
+    document
+      .querySelector('.app-picker-filter')
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flush();
+    expect(document.querySelector('.app-picker')).toBeNull();
+    expect(isSettingsOpen()).toBe(true);
+    expect(extApps.list()).toHaveLength(0);
+  });
+
+  it('参照…で選んだパスがコマンド欄に入り、表示名が空なら補う', async () => {
+    const extApps = createExtApps();
+    const pickProgramFile = vi.fn(async () => '/mnt/c/Program Files/7-Zip/7zFM.exe');
+    openSettings({ ...deps, extApps, pickProgramFile });
+    document.querySelector('#setting-extapp-browse').click();
+    await flush();
+    expect(document.querySelector('#setting-extapp-command').value).toBe(
+      '/mnt/c/Program Files/7-Zip/7zFM.exe',
+    );
+    expect(document.querySelector('#setting-extapp-name').value).toBe('7zFM');
+    // 登録は「追加」を押してから（参照だけでは増えない）
+    expect(extApps.list()).toHaveLength(0);
+  });
+
+  it('参照…で表示名が入力済みなら上書きしない / キャンセルなら何もしない', async () => {
+    const extApps = createExtApps();
+    const results = ['C:\\x\\a.exe', null];
+    openSettings({ ...deps, extApps, pickProgramFile: async () => results.shift() });
+    const nameEl = document.querySelector('#setting-extapp-name');
+    const cmdEl = document.querySelector('#setting-extapp-command');
+    nameEl.value = '自分の名前';
+    document.querySelector('#setting-extapp-browse').click();
+    await flush();
+    expect(nameEl.value).toBe('自分の名前');
+    expect(cmdEl.value).toBe('C:\\x\\a.exe');
+    document.querySelector('#setting-extapp-browse').click();
+    await flush();
+    expect(cmdEl.value).toBe('C:\\x\\a.exe');
+  });
+});
+
 // --- WSL 連携（FR-13 の WSL 拡張） ---
 describe('WSL セクション', () => {
   const rows = () => document.querySelectorAll('.extapp-row');

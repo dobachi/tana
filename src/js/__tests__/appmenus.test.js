@@ -29,6 +29,18 @@ describe('buildFileMenuItems', () => {
     expect(byLabel(items, 'エクスプローラーで表示').disabled).toBe(false);
   });
 
+  it('「プログラムから開く」は使える環境（Windows / WSL）でだけ出す', () => {
+    const label = 'Windows のアプリ一覧から選んで開く…';
+    expect(byLabel(buildFileMenuItems({ hasEntry: true }), label)).toBe(undefined);
+    const chooseApp = vi.fn();
+    const items = buildFileMenuItems({ hasEntry: true, openWithDialog: true }, { chooseApp });
+    const item = byLabel(items, label);
+    expect(item.shortcut).toBe('o → c');
+    expect(item.disabled).toBe(false);
+    expect(item.action).toBe(chooseApp);
+    expect(byLabel(buildFileMenuItems({ openWithDialog: true }), label).disabled).toBe(true);
+  });
+
   it('ウィンドウの開閉と終了がある', () => {
     const a = { newWindow: vi.fn(), closeWindow: vi.fn(), quit: vi.fn() };
     const items = buildFileMenuItems({}, a);
@@ -151,7 +163,7 @@ describe('buildFilterMenuItems', () => {
 
 describe('ヘルプに載っている操作はメニューからも辿れる', () => {
   const all = [
-    ...buildFileMenuItems({ wsl: true }),
+    ...buildFileMenuItems({ wsl: true, openWithDialog: true }),
     ...buildEditExtraItems({}),
     ...buildGoMenuItems({}),
   ];
