@@ -1,11 +1,13 @@
 // remoteview.js — リモート接続のオーバーレイ UI (FR-20)。
 //
 // 上段: 接続先（最近/接続中/~/.ssh/config から候補）とパスを入れて「開く」。
+//        どちらかの欄に `ssh://host/path` や `host:/path` の 1 行指定を貼れば、
+//        接続先とパスに分けて入る（remotes.js の splitRemoteInput）。
 //        「書き込みを許可する」は既定オフ（閲覧のみ）。
 // 下段: 接続中の一覧。接続ごとに書き込み許可の切替・開く・切断。
 // キーボード: 入力欄で Enter=開く、Esc=閉じる。候補・パスの組み立ては remotes.js（純粋）。
 
-import { hostCandidates, targetUri } from './remotes.js';
+import { hostCandidates, splitRemoteInput, targetUri } from './remotes.js';
 import { createModalHeader } from './modalheader.js';
 
 const SOURCE_LABEL = { recent: '最近', connected: '接続中', config: 'ssh config' };
@@ -142,8 +144,28 @@ export function createRemoteView(deps) {
     writeEl.checked = remotes.isWritable(host);
   }
 
+  /**
+   * どちらかの欄に 1 行指定が入っていれば、接続先とパスに分けて欄へ反映する。
+   * @returns {boolean} 続けてよければ true（ポート指定などで断ったら false）
+   */
+  function absorbSpec() {
+    const r = splitRemoteInput(hostEl.value, pathEl.value);
+    if (r.error) {
+      setMessage(r.error, true);
+      return false;
+    }
+    if (r.fromSpec) {
+      hostEl.value = r.host;
+      pathEl.value = r.path;
+      syncFromHost();
+      setMessage(`1 行指定を読みました: ${r.host} ${r.path || '（ホーム）'}`);
+    }
+    return true;
+  }
+
   async function submit() {
     if (busy || !hostEl) return;
+    if (!absorbSpec()) return;
     const host = hostEl.value.trim();
     const uri = targetUri(host, pathEl.value);
     if (!uri) {
@@ -209,6 +231,7 @@ export function createRemoteView(deps) {
     hostEl.type = 'text';
     hostEl.className = 'remote-host-input';
     hostEl.placeholder = '接続先（例: k16 / user@host）';
+    hostEl.title = 'ssh の接続先。ssh://host/path の 1 行指定を貼ってもよい';
     hostEl.spellcheck = false;
     hostEl.autocomplete = 'off';
     hostEl.setAttribute('list', 'remote-host-candidates');
@@ -217,7 +240,8 @@ export function createRemoteView(deps) {
     pathEl = doc.createElement('input');
     pathEl.type = 'text';
     pathEl.className = 'remote-path-input';
-    pathEl.placeholder = 'パス（空欄=ホーム, ~/x, /etc …）';
+    pathEl.placeholder = 'パス（空欄=ホーム, ~/x, /etc）または ssh://host/path';
+    pathEl.title = '相手側のパス。ssh://host/path や host:/path の 1 行指定を貼ると接続先も入る';
     pathEl.spellcheck = false;
     pathEl.autocomplete = 'off';
     openBtn = doc.createElement('button');
@@ -263,6 +287,9 @@ export function createRemoteView(deps) {
     });
     overlay.addEventListener('keydown', onKey);
     hostEl.addEventListener('change', syncFromHost);
+    // 貼り付け直後に接続先とパスへ分ける（Enter を待たない）
+    hostEl.addEventListener('input', absorbSpec);
+    pathEl.addEventListener('input', absorbSpec);
     doc.body.appendChild(overlay);
 
     const host = initial.host || remotes.recent()[0] || '';

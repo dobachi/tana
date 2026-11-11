@@ -3,6 +3,7 @@ import {
   createRemotes,
   hostCandidates,
   targetUri,
+  splitRemoteInput,
   loadStoredRemotes,
   storeRemotes,
   STORAGE_KEY,
@@ -94,6 +95,90 @@ describe('targetUri', () => {
   it('接続先が不正なら null', () => {
     expect(targetUri('', '/x')).toBeNull();
     expect(targetUri('-oX', '/x')).toBeNull();
+  });
+});
+
+describe('splitRemoteInput', () => {
+  it('1 行指定が無ければそのまま（接続先は trim）', () => {
+    expect(splitRemoteInput(' k16 ', '~/notes')).toEqual({
+      host: 'k16',
+      path: '~/notes',
+      fromSpec: false,
+    });
+    expect(splitRemoteInput('', '')).toEqual({ host: '', path: '', fromSpec: false });
+  });
+  it('パス欄の ssh:// / sftp:// / remote:// を接続先とパスに分ける', () => {
+    for (const scheme of ['ssh', 'sftp', 'remote']) {
+      expect(splitRemoteInput('', `${scheme}://k16/home/me/notes`)).toEqual({
+        host: 'k16',
+        path: '/home/me/notes',
+        fromSpec: true,
+      });
+    }
+    expect(splitRemoteInput('', 'remote://dobachi@k16/srv/')).toEqual({
+      host: 'dobachi@k16',
+      path: '/srv/',
+      fromSpec: true,
+    });
+    expect(splitRemoteInput('', 'ssh://k16')).toEqual({ host: 'k16', path: '', fromSpec: true });
+    expect(splitRemoteInput('', 'ssh://k16/~/x')).toEqual({
+      host: 'k16',
+      path: '~/x',
+      fromSpec: true,
+    });
+  });
+  it('パス欄の scp 形（host:/path）も分け、飾りは外す', () => {
+    expect(splitRemoteInput('', 'me@k16:/srv/data')).toEqual({
+      host: 'me@k16',
+      path: '/srv/data',
+      fromSpec: true,
+    });
+    expect(splitRemoteInput('', '`ssh://k16/a b`')).toEqual({
+      host: 'k16',
+      path: '/a b',
+      fromSpec: true,
+    });
+  });
+  it('パス欄の指定は接続先欄より優先する', () => {
+    expect(splitRemoteInput('other', 'ssh://k16/srv')).toEqual({
+      host: 'k16',
+      path: '/srv',
+      fromSpec: true,
+    });
+  });
+  it('接続先欄に貼った指定も読む。パスが無ければパス欄を残す', () => {
+    expect(splitRemoteInput('ssh://k16/srv', '~/x')).toEqual({
+      host: 'k16',
+      path: '/srv',
+      fromSpec: true,
+    });
+    expect(splitRemoteInput('ssh://k16', '~/x')).toEqual({
+      host: 'k16',
+      path: '~/x',
+      fromSpec: true,
+    });
+    expect(splitRemoteInput('k16:/srv', '')).toEqual({ host: 'k16', path: '/srv', fromSpec: true });
+  });
+  it('ポート指定は断る（どちらの欄でも）', () => {
+    expect(splitRemoteInput('', 'ssh://k16:2222/x')).toEqual({
+      error: expect.stringContaining('ポート 2222'),
+    });
+    expect(splitRemoteInput('ssh://k16:2222', '')).toEqual({
+      error: expect.stringContaining('ポート 2222'),
+    });
+  });
+  it('普通のパスや user@host を指定と誤読しない', () => {
+    expect(splitRemoteInput('me@k16', '/etc')).toEqual({
+      host: 'me@k16',
+      path: '/etc',
+      fromSpec: false,
+    });
+    expect(splitRemoteInput('k16', 'C:/x')).toEqual({ host: 'k16', path: 'C:/x', fromSpec: false });
+    expect(splitRemoteInput('k16', 'Note: /x')).toEqual({
+      host: 'k16',
+      path: 'Note: /x',
+      fromSpec: false,
+    });
   });
 });
 

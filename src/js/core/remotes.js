@@ -8,6 +8,7 @@
 // UI は remoteview.js、接続そのものは backend.js → Rust remote.rs。
 
 import { isValidHost } from './remotepath.js';
+import { parseRemoteSpec } from './remotespec.js';
 
 export const STORAGE_KEY = 'tana.remotes';
 export const MAX_RECENT = 10;
@@ -115,6 +116,31 @@ export function targetUri(host, path) {
   if (p.startsWith('~/')) return `sftp://${h}/${p}`;
   if (!p.startsWith('/')) p = `/~/${p}`; // 相対はホーム基準（ssh/sftp の慣習）
   return `sftp://${h}${p}`;
+}
+
+/**
+ * 接続画面の 2 つの欄（接続先・パス）を読む。どちらかに `ssh://host/path` や `host:/path` の
+ * 1 行指定（remotespec.js）が貼られていれば、接続先とパスに分けて返す。
+ * パス欄の指定を優先し、接続先欄の指定はパスが空のときだけ既存のパス欄を残す。
+ * @param {string} hostText 接続先欄
+ * @param {string} pathText パス欄
+ * @returns {{host: string, path: string, fromSpec: boolean} | {error: string}}
+ *   fromSpec は 1 行指定を読んで分けたとき true（欄を書き換える合図）
+ */
+export function splitRemoteInput(hostText, pathText) {
+  const hostIn = String(hostText || '').trim();
+  const pathIn = String(pathText || '');
+  const fromPath = parseRemoteSpec(pathIn);
+  if (fromPath) {
+    if (fromPath.error) return { error: fromPath.error };
+    return { host: fromPath.host, path: fromPath.path, fromSpec: true };
+  }
+  const fromHost = parseRemoteSpec(hostIn);
+  if (fromHost) {
+    if (fromHost.error) return { error: fromHost.error };
+    return { host: fromHost.host, path: fromHost.path || pathIn, fromSpec: true };
+  }
+  return { host: hostIn, path: pathIn, fromSpec: false };
 }
 
 export function loadStoredRemotes(storage = globalThis.localStorage) {

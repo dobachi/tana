@@ -89,6 +89,61 @@ describe('remoteview', () => {
     expect($('.remote-message').textContent).toContain('接続先');
   });
 
+  it('パス欄に 1 行指定を貼ると接続先とパスに分かれる（Enter を待たない）', async () => {
+    const { view } = setup();
+    view.open();
+    await flush();
+    const pathEl = $('.remote-path-input');
+    pathEl.value = 'remote://dobachi@k16/home/dobachi/notes/';
+    pathEl.dispatchEvent(new Event('input', { bubbles: true }));
+    expect($('.remote-host-input').value).toBe('dobachi@k16');
+    expect(pathEl.value).toBe('/home/dobachi/notes/');
+    expect($('.remote-message').textContent).toContain('1 行指定');
+    expect($('.remote-message').classList.contains('error')).toBe(false);
+  });
+
+  it('接続先欄に 1 行指定を貼っても分かれ、書き込み許可はその接続先の値になる', async () => {
+    const remotes = createRemotes({ recent: ['other'] });
+    remotes.setWritable('k16', true);
+    const { view } = setup({ remotes });
+    view.open();
+    await flush();
+    const hostEl = $('.remote-host-input');
+    hostEl.value = 'k16:/srv/data';
+    hostEl.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(hostEl.value).toBe('k16');
+    expect($('.remote-path-input').value).toBe('/srv/data');
+    expect($('.remote-write-option input').checked).toBe(true);
+  });
+
+  it('接続先が空でも、パス欄の 1 行指定だけで開ける', async () => {
+    const { view, deps } = setup({ remotes: createRemotes() });
+    view.open();
+    await flush();
+    expect($('.remote-host-input').value).toBe('');
+    $('.remote-path-input').value = 'ssh://k16/home/me/notes';
+    key($('.remote-path-input'), 'Enter');
+    await flush();
+    expect(deps.onOpen).toHaveBeenCalledWith('sftp://k16/home/me/notes', {
+      host: 'k16',
+      writable: false,
+    });
+    expect(view.isOpen()).toBe(false);
+  });
+
+  it('ポート付きの指定は開かずに断る', async () => {
+    const { view, deps } = setup();
+    view.open();
+    await flush();
+    $('.remote-path-input').value = 'ssh://k16:2222/x';
+    $('.remote-open').click();
+    await flush();
+    expect(deps.onOpen).not.toHaveBeenCalled();
+    expect($('.remote-message').textContent).toContain('ポート 2222');
+    expect($('.remote-message').classList.contains('error')).toBe(true);
+    expect(view.isOpen()).toBe(true);
+  });
+
   it('接続中の一覧から書き込み許可の切替と切断ができる', async () => {
     const { view, deps, remotes } = setup({ sessions: [{ host: 'k16', writable: false }] });
     view.open();
