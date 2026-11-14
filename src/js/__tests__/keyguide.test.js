@@ -5,6 +5,7 @@ import {
   storeKeyGuide,
   parsePrefixHint,
   keyGuideItems,
+  keyGuideVisible,
 } from '../core/keyguide.js';
 import { PREFIX_LEADERS, resolvePrefixAction } from '../core/keyprefix.js';
 
@@ -145,5 +146,43 @@ describe('index.html のキーガイド', async () => {
     expect(html).toMatch(/<div id="keyguide"[^>]*\shidden[\s>]/);
     expect(html).toContain('class="keyguide-items"');
     expect(html).toContain('class="keyguide-close"');
+  });
+});
+
+describe('keyGuideVisible', () => {
+  it('オンなら常に出す', () => {
+    expect(keyGuideVisible({ on: true })).toBe(true);
+    expect(keyGuideVisible({ on: true, prefix: 'f' })).toBe(true);
+  });
+
+  it('オフでも二打鍵の途中（f 等を押した直後）は出す', () => {
+    for (const leader of Object.keys(PREFIX_LEADERS)) {
+      expect(keyGuideVisible({ on: false, prefix: leader })).toBe(true);
+    }
+  });
+
+  it('オフで二打鍵の途中でなければ出さない', () => {
+    expect(keyGuideVisible({ on: false, prefix: null })).toBe(false);
+    expect(keyGuideVisible({ on: false, prefix: 'z' })).toBe(false);
+    expect(keyGuideVisible()).toBe(false);
+  });
+});
+
+describe('絞り込み中の案内', () => {
+  it('絞り込み中は先頭に解除のキーを目立たせて出す', () => {
+    const r = keyGuideItems({ filterActive: true });
+    expect(r.items[0]).toEqual({ key: 'f → a', label: '絞り込みを解除', emphasis: true });
+    // 案内しているキーは実際に解除へ解決できる
+    expect(resolvePrefixAction('f', 'a')).toBe('filter:clear');
+  });
+
+  it('絞り込んでいなければ出さない', () => {
+    expect(keyGuideItems({ filterActive: false }).items.some((i) => i.key === 'f → a')).toBe(false);
+  });
+
+  it('f を押した直後は絞り込みのサブコマンドを並べる', () => {
+    const r = keyGuideItems({ prefix: 'f' });
+    expect(r.title).toBe('f → 絞り込み');
+    expect(r.items.map((i) => i.key)).toEqual(['d', 'f', 'i', 'e', 'a', 'Esc']);
   });
 });

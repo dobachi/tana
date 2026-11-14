@@ -3,7 +3,9 @@
 // 二打鍵（o → o など）や F キーは忘れやすいので、今の状況で効く主なキーを短く並べる。
 //   - 二打鍵の途中（リーダーを押した直後）: その続きのキー一覧（keyprefix.js のヒントが真実源）
 //   - お気に入りの一覧にいるとき: お気に入りのキー
-//   - ペイン: 主なキー + 二打鍵の入口。操作モードではファイル操作のキーも出す
+//   - ペイン: 主なキー + 二打鍵の入口。操作モードではファイル操作のキーも出す。
+//     絞り込み中は解除のキーを先頭に出す
+// 二打鍵の続きは、ガイドをオフにしていてもリーダーを押した間だけ出す（keyGuideVisible）。
 // 表示のオン/オフは localStorage に保存する（既定はオフ）。DOM 描画は app 側。
 
 import { prefixHint, PREFIX_LEADERS } from './keyprefix.js';
@@ -89,14 +91,28 @@ const FAVORITES = [
   { key: 'Esc', label: 'ペインへ' },
 ];
 
+const isLeader = (p) => !!p && Object.prototype.hasOwnProperty.call(PREFIX_LEADERS, p);
+
+/**
+ * ガイドの帯を出すか。ガイドがオンなら常に、オフでも二打鍵の途中（f 等を押した直後）は出す。
+ * @param {{on?: boolean, prefix?: string|null}} state
+ */
+export function keyGuideVisible({ on = false, prefix = null } = {}) {
+  return !!on || isLeader(prefix);
+}
+
+/** 絞り込み中だけ出す、解除のしかた。先頭に置き、目立たせる */
+const FILTER_CLEAR = { key: 'f → a', label: '絞り込みを解除', emphasis: true };
+
 /**
  * 今の状況で出すキー一覧。
- * @param {{prefix?: string|null, focus?: 'pane'|'favorites'|string, safe?: boolean, wsl?: boolean}} state
- * @returns {{title: string, items: Array<{key: string, label: string}>}}
+ * @param {{prefix?: string|null, focus?: 'pane'|'favorites'|string, safe?: boolean,
+ *          wsl?: boolean, filterActive?: boolean}} state
+ * @returns {{title: string, items: Array<{key: string, label: string, emphasis?: boolean}>}}
  */
 export function keyGuideItems(state = {}) {
-  const { prefix, focus, safe = true, wsl = false } = state;
-  if (prefix && Object.prototype.hasOwnProperty.call(PREFIX_LEADERS, prefix)) {
+  const { prefix, focus, safe = true, wsl = false, filterActive = false } = state;
+  if (isLeader(prefix)) {
     const parsed = parsePrefixHint(prefixHint(prefix, { wsl }));
     return {
       title: `${prefix} → ${parsed.title}`,
@@ -106,7 +122,11 @@ export function keyGuideItems(state = {}) {
   if (focus === 'favorites') {
     return { title: 'お気に入り', items: FAVORITES.slice() };
   }
-  const items = [...PANE_BASIC, ...LEADER_LABELS.map(([key, label]) => ({ key, label }))];
+  const items = [
+    ...(filterActive ? [FILTER_CLEAR] : []),
+    ...PANE_BASIC,
+    ...LEADER_LABELS.map(([key, label]) => ({ key, label })),
+  ];
   if (safe) {
     items.push({ key: 'Ctrl+Shift+Space', label: '操作モードへ' });
   } else {

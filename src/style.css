@@ -1073,6 +1073,13 @@ body.dnd-active * {
   color: var(--accent);
   white-space: nowrap;
 }
+/* 絞り込み中の「解除」など、今とくに見てほしい項目 */
+.keyguide-item.emphasis {
+  color: var(--accent);
+}
+.keyguide-item.emphasis kbd {
+  border-color: var(--accent);
+}
 /* 二打鍵の途中は目立たせる（次に押すキーを探しやすく） */
 .keyguide.pending {
   border-top-color: var(--accent);

@@ -92,7 +92,7 @@ import { createConflictDialog } from './core/conflictdialog.js';
 import { createInputDialog } from './core/inputdialog.js';
 import { createNavHistory } from './core/navhistory.js';
 import { createTabList } from './core/tabs.js';
-import { isPrefixLeader, resolvePrefixAction, prefixHint } from './core/keyprefix.js';
+import { isPrefixLeader, resolvePrefixAction } from './core/keyprefix.js';
 import {
   createFavorites,
   loadStoredFavorites,
@@ -201,7 +201,13 @@ import {
 } from './core/thumbs.js';
 import { fudeHandoffUri } from './core/fudehandoff.js';
 import { collapsePathText, maxPathCollapse } from './core/crumbfit.js';
-import { KEYGUIDE_KEY, keyGuideItems, loadKeyGuide, storeKeyGuide } from './core/keyguide.js';
+import {
+  KEYGUIDE_KEY,
+  keyGuideItems,
+  keyGuideVisible,
+  loadKeyGuide,
+  storeKeyGuide,
+} from './core/keyguide.js';
 
 const safemode = createSafeMode(MODE.SAFE);
 const panes = createPanes(PANE.LEFT);
@@ -1071,13 +1077,16 @@ let isMainWindow = true;
 // 二打鍵プレフィックス待ち（s=並替 / t=タブ / y=コピー / o=開く）。null なら待機なし。
 let pendingPrefix = null;
 
-// 画面下のキーガイド（core/keyguide.js）。既定オフ。表示メニュー / 設定 / v → k で切り替える
+// 画面下のキーガイド（core/keyguide.js）。既定オフ。表示メニュー / 設定 / v → k で切り替える。
+// オフでも二打鍵の途中（f 等を押した直後）は、続けて押すキーを帯で出す。
 let keyGuideOn = loadKeyGuide();
 function renderKeyGuide() {
   const el = document.getElementById('keyguide');
   if (!el) return;
-  el.hidden = !keyGuideOn;
-  if (!keyGuideOn) return;
+  const visible = keyGuideVisible({ on: keyGuideOn, prefix: pendingPrefix });
+  el.hidden = !visible;
+  if (!visible) return;
+  const fpNow = activeFilePane();
   const active = document.activeElement;
   const focus =
     active && active.closest && active.closest('#favorites-section') ? 'favorites' : 'pane';
@@ -1086,6 +1095,7 @@ function renderKeyGuide() {
     focus,
     safe: safemode.isSafe(),
     wsl: wsl.available,
+    filterActive: !!fpNow && isFilterActive(fpNow.getFilter()),
   });
   const list = el.querySelector('.keyguide-items');
   list.replaceChildren();
@@ -1096,9 +1106,9 @@ function renderKeyGuide() {
     t.textContent = title;
     list.appendChild(t);
   }
-  for (const { key, label } of items) {
+  for (const { key, label, emphasis } of items) {
     const item = document.createElement('span');
-    item.className = 'keyguide-item';
+    item.className = 'keyguide-item' + (emphasis ? ' emphasis' : '');
     const kbd = document.createElement('kbd');
     kbd.textContent = key;
     item.append(kbd, ` ${label}`);
@@ -1970,6 +1980,8 @@ function fitStatusPath(el, full) {
 
 function updateStatus(info) {
   const fp = activeFilePane();
+  // 絞り込みの有無・アクティブペインの切替をキーガイドに反映する
+  if (keyGuideOn) renderKeyGuide();
   const pathEl = document.getElementById('status-path');
   const selEl = document.getElementById('status-selection');
   const dir = info ? info.dir : fp && fp.getCurrentDir();
@@ -2789,9 +2801,8 @@ function onKeydown(e) {
   if (isPrefixLeader(e.key) && !isEditableTarget(e.target)) {
     e.preventDefault();
     pendingPrefix = e.key.toLowerCase();
-    // キーガイドを出していれば続きのキーはそこに並ぶので、トーストは重ねない
-    if (keyGuideOn) renderKeyGuide();
-    else toast(prefixHint(pendingPrefix, { wsl: wsl.available }));
+    // 続けて押すキーは画面下の帯に出す（ガイドがオフでもこの間だけ出る）
+    renderKeyGuide();
     return;
   }
 
@@ -3057,7 +3068,7 @@ async function init() {
   // キーガイド: 閉じるボタンと、フォーカス先（ペイン / お気に入り）に合わせた出し分け
   const kgClose = document.querySelector('#keyguide .keyguide-close');
   if (kgClose) kgClose.addEventListener('click', () => setKeyGuide(false));
-  document.addEventListener('focusin', () => keyGuideOn && renderKeyGuide());
+  document.addEventListener('focusin', () => renderKeyGuide());
   renderKeyGuide();
 
   // 窓幅が変わったらステータスバーのパスの畳み方を測り直す
