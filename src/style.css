@@ -684,7 +684,8 @@ body[data-mode='operation'] .pane.active {
   white-space: nowrap;
   overflow: hidden;
 }
-/* パスは残りの幅を使い、はみ出しは省略。右端のリロードボタンは常に見せる */
+/* パスは残りの幅を使う。長いときは filepane.js が途中の階層を … に畳む（右端=現在地を残す）。
+   それでも入らないときだけ末尾を省略。右端のリロードボタンは常に見せる */
 .pane-header .pane-path {
   flex: 1;
   min-width: 0;
@@ -1040,6 +1041,17 @@ body.dnd-active * {
   border-top: 1px solid var(--border);
   font-size: 0.92em;
   color: var(--fg-dim);
+}
+/* 各項目は 1 行。縮むのはパスだけ（途中省略は app.js の fitStatusPath） */
+#statusbar > * {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+#statusbar > .status-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .mode-indicator {
   font-weight: 600;

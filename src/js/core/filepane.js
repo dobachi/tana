@@ -4,6 +4,7 @@
 
 import { listDir, parentDir } from '../backend.js';
 import { pathSegments } from './pathnav.js';
+import { crumbCollapseRange } from './crumbfit.js';
 import { applyClick, toggleAt, selectAll, pruneSelection, targetEntries } from './selection.js';
 import { sortEntries, defaultCollator, DEFAULT_SORT } from './sort.js';
 import { exceededThreshold } from './dnd.js';
@@ -218,6 +219,61 @@ export function createFilePane(rootEl, opts = {}) {
         if (onNavigate) onNavigate(seg.path);
       });
       pathEl.appendChild(btn);
+    });
+    fitBreadcrumb(segs);
+  }
+
+  /**
+   * 入り切らないときは途中の階層を「…」に畳む（右端＝現在地を切り落とさない）。
+   * 幅は実測。未レイアウト（幅 0）なら何もしない。
+   */
+  function fitBreadcrumb(segs) {
+    const available = pathEl.clientWidth;
+    if (!(available > 0) || segs.length < 3) return;
+    const crumbs = [...pathEl.querySelectorAll('.crumb')];
+    if (crumbs.length !== segs.length) return;
+    // 各セグメントの幅 = 直前の区切り + ボタン
+    const widths = crumbs.map((btn) => {
+      const prev = btn.previousElementSibling;
+      const sepW = prev && prev.classList.contains('crumb-sep') ? prev.offsetWidth : 0;
+      return btn.offsetWidth + sepW;
+    });
+    if (widths.reduce((a, w) => a + w, 0) <= available) return;
+
+    const doc = pathEl.ownerDocument;
+    const group = doc.createElement('span');
+    group.className = 'crumb-collapsed';
+    if (segs[0].name !== '/') {
+      const sep = doc.createElement('span');
+      sep.className = 'crumb-sep';
+      sep.textContent = '/';
+      group.appendChild(sep);
+    }
+    const ell = doc.createElement('button');
+    ell.type = 'button';
+    ell.className = 'crumb crumb-ellipsis';
+    ell.textContent = '…';
+    group.appendChild(ell);
+    crumbs[0].after(group);
+
+    const range = crumbCollapseRange(widths, available, group.offsetWidth);
+    if (!range) {
+      group.remove();
+      return;
+    }
+    for (let i = range.from; i < range.to; i += 1) {
+      const prev = crumbs[i].previousElementSibling;
+      if (prev && prev.classList.contains('crumb-sep')) prev.remove();
+      crumbs[i].remove();
+    }
+    // 「…」は畳んだ中で最も深い階層を指す（一段ずつ上がる感覚で辿れる）
+    const deepest = segs[range.to - 1];
+    ell.title = deepest.path;
+    ell.dataset.path = deepest.path;
+    ell.setAttribute('aria-label', `省略された階層: ${deepest.path}`);
+    ell.addEventListener('click', () => {
+      if (onActivate) onActivate();
+      if (onNavigate) onNavigate(deepest.path);
     });
   }
 
@@ -750,6 +806,19 @@ export function createFilePane(rootEl, opts = {}) {
       ev.stopPropagation();
       if (opts.onReload) opts.onReload();
     });
+  }
+
+  // ペイン幅が変わったらブレッドクラムの畳み方を測り直す
+  const RO = globalThis.ResizeObserver;
+  if (pathEl && typeof RO === 'function') {
+    // 文字サイズ変更（高さが変わる）でも測り直す。中身の差し替えでは寸法は変わらない
+    let lastSize = '';
+    new RO(() => {
+      const size = `${pathEl.clientWidth}x${pathEl.clientHeight}`;
+      if (size === lastSize) return;
+      lastSize = size;
+      renderBreadcrumb();
+    }).observe(pathEl);
   }
 
   if (inputEl) {

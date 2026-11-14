@@ -200,6 +200,7 @@ import {
   storeThumbnails,
 } from './core/thumbs.js';
 import { fudeHandoffUri } from './core/fudehandoff.js';
+import { collapsePathText, maxPathCollapse } from './core/crumbfit.js';
 
 const safemode = createSafeMode(MODE.SAFE);
 const panes = createPanes(PANE.LEFT);
@@ -1902,6 +1903,19 @@ function syncActivePane(active) {
   sessionSaver.schedule(); // アクティブペインの変更を保存
 }
 
+/**
+ * ステータスバーのパスを 1 行に収める。入り切らなければ途中の階層を … に畳み、
+ * 現在地（末尾）を残す。全文はツールチップで見られる。
+ */
+function fitStatusPath(el, full) {
+  el.textContent = full;
+  el.title = full;
+  const max = maxPathCollapse(full);
+  for (let k = 1; k <= max && el.scrollWidth > el.clientWidth; k += 1) {
+    el.textContent = collapsePathText(full, k);
+  }
+}
+
 function updateStatus(info) {
   const fp = activeFilePane();
   const pathEl = document.getElementById('status-path');
@@ -1909,7 +1923,7 @@ function updateStatus(info) {
   const dir = info ? info.dir : fp && fp.getCurrentDir();
   const entry = info ? info.entry : fp && fp.getCursorEntry();
   const count = info ? info.count : fp && fp.getCount();
-  if (pathEl) pathEl.textContent = isRemote(dir) ? remoteLabel(dir) : dir || '';
+  if (pathEl) fitStatusPath(pathEl, isRemote(dir) ? remoteLabel(dir) : dir || '');
   if (selEl) {
     const name = entry ? entry.name : '';
     const picked =
@@ -2983,6 +2997,9 @@ async function init() {
 
   // プレビュー縦幅のマウスリサイズ（区切りドラッグ）
   initPreviewResize();
+
+  // 窓幅が変わったらステータスバーのパスの畳み方を測り直す
+  window.addEventListener('resize', () => updateStatus());
 
   // 起動ディレクトリ: CLI 引数 > セッション復元(FR-14) > ホーム
   // `tana .` のような相対パスは cwd で解決してから読む。相対のまま読むと

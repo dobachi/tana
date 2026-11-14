@@ -94,6 +94,7 @@ make docker-check  # CI相当チェック
 | `core/menubar.js` | メニューバー（Ctrl+Shift+B で開閉・既定は非表示・永続化） |
 | `core/settings.js` | 設定画面（テーマ/文字サイズ/隠しファイル）。即時反映・即時保存で Save ボタンは無し |
 | `core/pathnav.js` | パス直接入力/ブレッドクラムの純粋ロジック（`resolveInputPath` / `pathSegments`）|
+| `core/crumbfit.js` | 長いパスの途中省略の純粋ロジック。ペイン見出しのブレッドクラムは先頭と現在地側を残して途中の階層を `…`（押すと畳んだ最深階層へ）に、ステータスバーのパスも同様に途中を畳む |
 | `core/menu-nav.js` | メニュー内のキーボード移動 |
 | `core/session.js` | セッション復元 (FR-14)。ディレクトリ・アクティブペイン |
 | `core/sort.js` / `core/sortstate.js` | 並び替えの純粋ロジックと共有状態（Intl.Collator 自然順・フォルダ先頭） |
