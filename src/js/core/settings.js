@@ -46,6 +46,8 @@ export function closeSettings() {
  *   wsl?: {available: boolean, distro?: string},
  *   listInstalledApps?: () => Promise<Array<{name: string, command: string, target?: string}>>,
  *   pickProgramFile?: () => Promise<string|null>,
+ *   getKeyGuide?: () => boolean,
+ *   setKeyGuide?: (v: boolean) => void,
  *   getThumbnails?: () => boolean,
  *   setThumbnails?: (v: boolean) => void,
  *   getDefaultOpen?: () => string,
@@ -96,6 +98,20 @@ export function openSettings(deps) {
           </label>
           <small class="setting-hint">Ctrl + H でも切り替えられます。</small>
         </div>
+        ${
+          deps.setKeyGuide
+            ? `<div class="setting-group">
+          <label>
+            <input type="checkbox" id="setting-keyguide"${deps.getKeyGuide && deps.getKeyGuide() ? ' checked' : ''} />
+            画面下にキーガイドを表示
+          </label>
+          <small class="setting-hint">
+            主な操作のキーを出しっぱなしにします。o や y などを押した直後は、続けて押すキーの一覧に変わります。
+            v → k でも切り替えられます。
+          </small>
+        </div>`
+            : ''
+        }
         ${
           deps.setThumbnails
             ? `<div class="setting-group">
@@ -206,6 +222,11 @@ export function openSettings(deps) {
   panelEl.querySelector('#setting-show-hidden').addEventListener('change', (e) => {
     setShowHidden(e.target.checked);
   });
+
+  const keyGuideEl = panelEl.querySelector('#setting-keyguide');
+  if (keyGuideEl) {
+    keyGuideEl.addEventListener('change', (e) => deps.setKeyGuide(e.target.checked));
+  }
 
   const thumbsEl = panelEl.querySelector('#setting-thumbnails');
   if (thumbsEl) {

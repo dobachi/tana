@@ -201,6 +201,7 @@ import {
 } from './core/thumbs.js';
 import { fudeHandoffUri } from './core/fudehandoff.js';
 import { collapsePathText, maxPathCollapse } from './core/crumbfit.js';
+import { KEYGUIDE_KEY, keyGuideItems, loadKeyGuide, storeKeyGuide } from './core/keyguide.js';
 
 const safemode = createSafeMode(MODE.SAFE);
 const panes = createPanes(PANE.LEFT);
@@ -512,6 +513,9 @@ function runPrefixAction(action) {
       return;
     case 'view:smaller':
       changeIconSize(-1);
+      return;
+    case 'view:keyguide':
+      setKeyGuide(!keyGuideOn);
       return;
     case 'filter:dirs':
     case 'filter:files':
@@ -1067,6 +1071,46 @@ let isMainWindow = true;
 // 二打鍵プレフィックス待ち（s=並替 / t=タブ / y=コピー / o=開く）。null なら待機なし。
 let pendingPrefix = null;
 
+// 画面下のキーガイド（core/keyguide.js）。既定オフ。表示メニュー / 設定 / v → k で切り替える
+let keyGuideOn = loadKeyGuide();
+function renderKeyGuide() {
+  const el = document.getElementById('keyguide');
+  if (!el) return;
+  el.hidden = !keyGuideOn;
+  if (!keyGuideOn) return;
+  const active = document.activeElement;
+  const focus =
+    active && active.closest && active.closest('#favorites-section') ? 'favorites' : 'pane';
+  const { title, items } = keyGuideItems({
+    prefix: pendingPrefix,
+    focus,
+    safe: safemode.isSafe(),
+    wsl: wsl.available,
+  });
+  const list = el.querySelector('.keyguide-items');
+  list.replaceChildren();
+  el.classList.toggle('pending', !!pendingPrefix);
+  if (title) {
+    const t = document.createElement('span');
+    t.className = 'keyguide-title';
+    t.textContent = title;
+    list.appendChild(t);
+  }
+  for (const { key, label } of items) {
+    const item = document.createElement('span');
+    item.className = 'keyguide-item';
+    const kbd = document.createElement('kbd');
+    kbd.textContent = key;
+    item.append(kbd, ` ${label}`);
+    list.appendChild(item);
+  }
+}
+function setKeyGuide(on, { save = true } = {}) {
+  keyGuideOn = !!on;
+  if (save) storeKeyGuide(keyGuideOn);
+  renderKeyGuide();
+}
+
 // セッション復元 (FR-14): 各ペインのカレントdir・アクティブペインを保存/復元
 const sessionSaver = createSessionSaver({
   getState: () => ({
@@ -1124,6 +1168,7 @@ function syncMode(mode) {
         ? '閲覧専用です（切替: Ctrl+Shift+Space）'
         : '変更可能です（切替: Ctrl+Shift+Space）';
   }
+  renderKeyGuide();
 }
 
 function syncTheme(t) {
@@ -1603,6 +1648,8 @@ function openSettingsPanel() {
       wslDefaultOpen = v;
       storeDefaultOpen(v);
     },
+    getKeyGuide: () => keyGuideOn,
+    setKeyGuide: (v) => setKeyGuide(v),
     getThumbnails: () => thumbsEnabled,
     setThumbnails: (v) => {
       storeThumbnails(v);
@@ -1813,6 +1860,11 @@ function buildMenuDefinition() {
         },
         { separator: true },
         { label: 'メニューバーを隠す', shortcut: 'Ctrl+Shift+B', action: toggleMenuBar },
+        {
+          label: keyGuideOn ? '✓ キーガイドを表示' : 'キーガイドを表示',
+          shortcut: 'v → k',
+          action: () => setKeyGuide(!keyGuideOn),
+        },
         { separator: true },
         { label: '設定…', shortcut: 'Ctrl+,', action: toggleSettings },
       ],
@@ -2730,13 +2782,16 @@ function onKeydown(e) {
     e.preventDefault();
     const action = resolvePrefixAction(pendingPrefix, e.key);
     pendingPrefix = null;
+    renderKeyGuide();
     if (action) runPrefixAction(action);
     return;
   }
   if (isPrefixLeader(e.key) && !isEditableTarget(e.target)) {
     e.preventDefault();
     pendingPrefix = e.key.toLowerCase();
-    toast(prefixHint(pendingPrefix, { wsl: wsl.available }));
+    // キーガイドを出していれば続きのキーはそこに並ぶので、トーストは重ねない
+    if (keyGuideOn) renderKeyGuide();
+    else toast(prefixHint(pendingPrefix, { wsl: wsl.available }));
     return;
   }
 
@@ -2849,6 +2904,7 @@ async function init() {
     'tana.theme': (v) => v && theme.set(String(v)),
     'tana.fontScale': (v) => v != null && fontScale.set(Number(v)),
     [THUMBS_KEY]: (v) => setThumbsEnabled(v !== 'off'),
+    [KEYGUIDE_KEY]: (v) => setKeyGuide(v === 'on', { save: false }),
     [ICON_SIZE_KEY]: (v) => v != null && applyIconSize(stepIconSize(v, 0)),
   });
   window.addEventListener('storage', (e) => onStorage(e));
@@ -2997,6 +3053,12 @@ async function init() {
 
   // プレビュー縦幅のマウスリサイズ（区切りドラッグ）
   initPreviewResize();
+
+  // キーガイド: 閉じるボタンと、フォーカス先（ペイン / お気に入り）に合わせた出し分け
+  const kgClose = document.querySelector('#keyguide .keyguide-close');
+  if (kgClose) kgClose.addEventListener('click', () => setKeyGuide(false));
+  document.addEventListener('focusin', () => keyGuideOn && renderKeyGuide());
+  renderKeyGuide();
 
   // 窓幅が変わったらステータスバーのパスの畳み方を測り直す
   window.addEventListener('resize', () => updateStatus());

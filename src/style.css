@@ -72,10 +72,12 @@ body {
   display: grid;
   grid-template-columns: 220px 1fr;
   /* メニューバーは非表示時に高さ0になるよう auto 行にする */
-  grid-template-rows: auto 1fr 26px;
+  /* キーガイドは非表示時に高さ 0 になるよう auto 行にする */
+  grid-template-rows: auto 1fr auto 26px;
   grid-template-areas:
     'menubar menubar'
     'sidebar workspace'
+    'keyguide keyguide'
     'statusbar statusbar';
   height: 100vh;
 }
@@ -1030,6 +1032,70 @@ body.dnd-active * {
   text-decoration: line-through;
 }
 
+/* キーガイド: 今効く主なキーを出しっぱなしにする帯（core/keyguide.js） */
+.keyguide {
+  grid-area: keyguide;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 6px 3px 10px;
+  background: var(--bg-elev);
+  border-top: 1px solid var(--border);
+  font-size: 0.88em;
+  color: var(--fg-dim);
+  -webkit-user-select: none;
+  user-select: none;
+}
+.keyguide[hidden] {
+  display: none;
+}
+.keyguide-items {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+}
+.keyguide-item {
+  white-space: nowrap;
+}
+.keyguide-item kbd {
+  font-family: var(--mono);
+  font-size: 0.95em;
+  color: var(--fg);
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+}
+.keyguide-title {
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+/* 二打鍵の途中は目立たせる（次に押すキーを探しやすく） */
+.keyguide.pending {
+  border-top-color: var(--accent);
+}
+.keyguide.pending .keyguide-item kbd {
+  border-color: var(--accent);
+}
+.keyguide-close {
+  flex-shrink: 0;
+  font: inherit;
+  line-height: 1;
+  color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 1px 5px;
+  cursor: pointer;
+}
+.keyguide-close:hover {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
 /* Status Bar */
 #statusbar {
   grid-area: statusbar;
@@ -1601,12 +1667,13 @@ body[data-mode='operation'] .mode-indicator {
 /* 配置は下固定: ワークスペースの下にプレビュー（当面、右配置は廃止）。
    プレビュー行の高さは --preview-h（区切りドラッグで可変）。未設定時は既定比率。 */
 #app[data-preview] {
-  grid-template-rows: auto 1fr 6px var(--preview-h, minmax(140px, 34%)) 26px;
+  grid-template-rows: auto 1fr 6px var(--preview-h, minmax(140px, 34%)) auto 26px;
   grid-template-areas:
     'menubar   menubar'
     'sidebar   workspace'
     'sidebar   pvdivider'
     'sidebar   preview'
+    'keyguide  keyguide'
     'statusbar statusbar';
 }
 

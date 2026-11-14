@@ -256,7 +256,8 @@ describe('buildViewMenuItems', () => {
     const rows = view.items.filter(([k]) => k.startsWith('v →'));
     expect(rows.length).toBeGreaterThan(0);
     for (const [k] of rows) {
-      for (const p of expand(k)) if (p !== 'v→v') expect(keys).toContain(p);
+      // v→v はトグル、v→k（キーガイド）は表示メニュー本体（app.js）にあり、表示の種類ではない
+      for (const p of expand(k)) if (p !== 'v→v' && p !== 'v→k') expect(keys).toContain(p);
     }
   });
 });

@@ -149,6 +149,28 @@ describe('一覧の小さな写真', () => {
   });
 });
 
+describe('キーガイド', () => {
+  it('現在値がチェックに出て、変えると setKeyGuide に伝わる', () => {
+    const setKeyGuide = vi.fn();
+    openSettings({ ...deps, getKeyGuide: () => false, setKeyGuide });
+    const cb = document.querySelector('#setting-keyguide');
+    expect(cb.checked).toBe(false);
+    cb.checked = true;
+    cb.dispatchEvent(new Event('change'));
+    expect(setKeyGuide).toHaveBeenCalledWith(true);
+  });
+
+  it('オンの現在値も出る', () => {
+    openSettings({ ...deps, getKeyGuide: () => true, setKeyGuide: vi.fn() });
+    expect(document.querySelector('#setting-keyguide').checked).toBe(true);
+  });
+
+  it('setKeyGuide を渡さなければ項目を出さない', () => {
+    openSettings(deps);
+    expect(document.querySelector('#setting-keyguide')).toBeNull();
+  });
+});
+
 // --- 外部アプリ（別のアプリで開く / FR-13） ---
 describe('外部アプリ セクション', () => {
   const rows = () => document.querySelectorAll('.extapp-row');
