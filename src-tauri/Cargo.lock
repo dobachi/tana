@@ -3812,6 +3812,7 @@ version = "0.5.20"
 dependencies = [
  "base64 0.22.1",
  "dirs 5.0.1",
+ "dunce",
  "futures-util",
  "hex",
  "image",

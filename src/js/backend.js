@@ -443,6 +443,35 @@ export async function onOsDragDrop(handler) {
 }
 
 /**
+ * 外へのドラッグで OS に渡すパスを点検する（dragout.rs）。長すぎるリモートの写しは
+ * 短い場所へ置き直したパスを返し、渡せないものは reject する。Tauri 不在時はそのまま。
+ */
+export async function prepareDragOut(paths) {
+  const fn = getInvoke();
+  if (!fn) return paths;
+  return fn('prepare_drag_out', { paths });
+}
+
+/** マウスの主ボタンが今押されているか（OS に尋ねる）。分からなければ null */
+export async function primaryButtonDown() {
+  try {
+    const v = await invoke('primary_button_down');
+    return typeof v === 'boolean' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 前回 Tana が panic で終わっていたら、その記録のパス。無ければ null */
+export async function takeCrashNotice() {
+  try {
+    return (await invoke('take_crash_notice')) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * OS のドラッグを始める（tauri-plugin-drag）。paths は手元の絶対パス、icon は
  * PNG の data URL。常にコピーとして渡す。ドラッグが終わると resolve する。
  */

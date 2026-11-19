@@ -258,6 +258,53 @@ describe('createDragOut — 外へのドラッグ', () => {
     expect(ok).toBe(true);
   });
 
+  it('stillHeld は非同期（OS に尋ねる）でもよい。離されていたら始めない', async () => {
+    const ok = await out.start([{ path: 'sftp://h/r/b.txt', name: 'b.txt' }], async () => false);
+    expect(ok).toBe(false);
+    expect(startDrag).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenLastCalledWith(expect.stringContaining('離された'));
+    expect(await out.start([{ path: 'sftp://h/r/b.txt', name: 'b.txt' }], async () => true)).toBe(
+      true,
+    );
+  });
+
+  it('OS に渡す直前に点検し、置き直したパスで始める', async () => {
+    const preparePaths = vi.fn(async (paths) =>
+      paths.map((p) => p.replace('/tmp/cache/h/r', '/s')),
+    );
+    const o = createDragOut({
+      startDrag,
+      fetchRemote,
+      isRemote: (p) => p.startsWith('sftp://'),
+      makeIcon: () => 'icon',
+      toast,
+      preparePaths,
+    });
+    const sources = [{ path: 'sftp://h/r/b.txt', name: 'b.txt' }];
+    expect(await o.start(sources)).toBe(true);
+    expect(preparePaths).toHaveBeenCalledWith(['/tmp/cache/h/r/b.txt']);
+    expect(startDrag).toHaveBeenCalledWith(['/s/b.txt'], 'icon');
+    // 戻して落としたときの読み替えも、実際に OS へ渡したパスで行う
+    expect(o.getOutbound()).toEqual({ paths: ['/s/b.txt'], sources });
+  });
+
+  it('点検で断られたら OS のドラッグを始めず理由を伝える（落ちる代わりに）', async () => {
+    const o = createDragOut({
+      startDrag,
+      fetchRemote,
+      isRemote: () => false,
+      makeIcon: () => 'icon',
+      toast,
+      preparePaths: async () => {
+        throw 'パスが長すぎるか、Windows で扱えない名前のため外へ渡せません: a.txt';
+      },
+    });
+    expect(await o.start([{ path: '/l/a.txt', name: 'a.txt' }])).toBe(false);
+    expect(startDrag).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenLastCalledWith(expect.stringContaining('パスが長すぎる'));
+    expect(o.getOutbound()).toBeNull();
+  });
+
   it('取り寄せや開始の失敗は理由を伝える', async () => {
     fetchRemote.mockRejectedValue(new Error('接続できません'));
     expect(await out.start([{ path: 'sftp://h/r/b.txt', name: 'b.txt' }])).toBe(false);

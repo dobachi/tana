@@ -162,15 +162,19 @@ export function createOsDropTarget(deps) {
  * @param {(path: string) => boolean} deps.isRemote
  * @param {(sources: object[]) => string} deps.makeIcon PNG の data URL
  * @param {(msg: string) => void} deps.toast
+ * @param {(paths: string[]) => Promise<string[]>} [deps.preparePaths] OS に渡す直前の点検。
+ *   Windows ではパスが長すぎる等でシェルが受け取れないと、drag クレートが panic して
+ *   Tana ごと落ちる。点検で断られたら（reject）理由を伝えて始めない。
  */
 export function createDragOut(deps) {
   const { startDrag, fetchRemote, isRemote, makeIcon, toast } = deps;
+  const preparePaths = deps.preparePaths || (async (paths) => paths);
   let outbound = null;
 
   return {
     /**
      * @param {object[]} sources
-     * @param {() => boolean} [stillHeld] ボタンがまだ押されているか
+     * @param {() => boolean|Promise<boolean>} [stillHeld] ボタンがまだ押されているか
      * @returns {Promise<boolean>} OS のドラッグを始めたか
      */
     async start(sources, stillHeld = () => true) {
@@ -189,9 +193,15 @@ export function createDragOut(deps) {
         toast(`外へドラッグできません: ${errorText(e)}`);
         return false;
       }
+      try {
+        paths = await preparePaths(paths);
+      } catch (e) {
+        toast(`外へドラッグできません: ${errorText(e)}`);
+        return false;
+      }
       // 取り寄せている間に離されたら始めない。OS のドラッグはボタンが上がっていると
       // その場で落としてしまい、意図しない場所へコピーされる。
-      if (hasRemote && !stillHeld()) {
+      if (hasRemote && !(await stillHeld())) {
         toast('ボタンが離されたので、外へのドラッグをやめました');
         return false;
       }

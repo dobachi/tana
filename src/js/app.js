@@ -187,6 +187,9 @@ import {
   pathKinds,
   onOsDragDrop,
   startOsDrag,
+  prepareDragOut,
+  primaryButtonDown,
+  takeCrashNotice,
   fudeAvailable,
   openRemoteInFude,
   thumbnailUrl,
@@ -655,13 +658,23 @@ const dragOut = createDragOut({
   isRemote,
   makeIcon: makeDragIcon,
   toast,
+  preparePaths: prepareDragOut,
 });
+
+// 取り寄せを待つ間に離されたか。Alt+Tab で前面を外れると webview に mouseup が
+// 届かないので、OS に尋ねられるとき（Windows）はその答えも見る。
+async function stillHeldAfterWait(heldByWebview) {
+  if (!heldByWebview()) return false;
+  return (await primaryButtonDown()) !== false;
+}
 
 const dragSession = createDragSession({
   getPaneDir: paneDirOf,
   canMutate: () => safemode.canMutate(),
   onDrop: runDrop,
-  onLeaveWindow: isDesktop() ? (sources, stillHeld) => dragOut.start(sources, stillHeld) : null,
+  onLeaveWindow: isDesktop()
+    ? (sources, stillHeld) => dragOut.start(sources, () => stillHeldAfterWait(stillHeld))
+    : null,
   toast,
 });
 
@@ -3154,6 +3167,10 @@ async function init() {
 
   // 外（エクスプローラー等）からのドロップを受ける（§10）
   onOsDragDrop((payload) => osDrop.handle(payload));
+  // 前回 panic で終わっていたら知らせる（記録は crashlog.rs が書く）
+  takeCrashNotice().then((logPath) => {
+    if (logPath) toast(`前回 Tana が異常終了しました。記録: ${logPath}`);
+  });
 
   // 起動中に場所を指定して起動されたら、このウィンドウで開く（Rust の single-instance から）
   if (isMainWindow) listenEvent('open-path', (e) => openPathFromLaunch(e && e.payload));

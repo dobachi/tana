@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 mod apps;
+mod crashlog;
+mod dragout;
 mod extensions;
 mod fude;
 mod places;
@@ -547,6 +549,7 @@ fn read_file_bytes(path: String, max_bytes: u64) -> Result<tauri::ipc::Response,
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    crashlog::install();
     let mut builder = tauri::Builder::default();
     // 最初に登録する（2 つ目の起動を最初の Tana へ回すため）
     #[cfg(desktop)]
@@ -569,6 +572,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_dir,
             path_kinds,
+            dragout::prepare_drag_out,
+            dragout::primary_button_down,
+            crashlog::take_crash_notice,
             fude::fude_available,
             fude::open_remote_in_fude,
             windows::new_window,
