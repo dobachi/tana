@@ -575,6 +575,7 @@ pub fn run() {
             dragout::prepare_drag_out,
             dragout::primary_button_down,
             crashlog::take_crash_notice,
+            crashlog::crash_log_location,
             fude::fude_available,
             fude::open_remote_in_fude,
             windows::new_window,

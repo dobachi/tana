@@ -130,6 +130,24 @@ export function buildGoMenuItems(state, a = {}) {
 }
 
 /**
+ * ヘルプ(H)。
+ * @param {object} state
+ * @param {string} [state.version] Tana のバージョン（先頭に無効項目として出す）
+ * @param {object} a actions（shortcuts / crashLog / update）
+ */
+export function buildHelpMenuItems(state, a = {}) {
+  const { version = '' } = state || {};
+  return [
+    { label: `Tana${version ? ' v' + version : ''}`, disabled: true },
+    { separator: true },
+    { label: 'ショートカット一覧', shortcut: '?', action: a.shortcuts },
+    { separator: true },
+    { label: '異常終了の記録を開く', action: a.crashLog },
+    { label: '更新を確認', action: a.update },
+  ];
+}
+
+/**
  * 絞り込み（表示メニュー・一覧の空き所の右クリック）。今の状態に ✓ を付ける。
  * @param {{type: string, exts: string[]}} filter 今の絞り込み（entryfilter.normalizeFilter 済み）
  * @param {object} a actions（dirs / files / ext / clear）

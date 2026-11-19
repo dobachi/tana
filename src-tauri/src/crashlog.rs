@@ -132,6 +132,27 @@ pub fn install() {
     }));
 }
 
+/// 記録の場所を開くときの行き先。記録があればそのファイル、無ければフォルダ
+/// （無ければ作る。開いた先が「見つかりません」にならないように）。
+pub fn log_location(dir: &Path) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let log = dir.join(LOG_NAME);
+    Ok(if log.is_file() {
+        log
+    } else {
+        dir.to_path_buf()
+    })
+}
+
+/// 記録の場所（ヘルプメニューの「異常終了の記録を開く」）
+#[tauri::command]
+pub fn crash_log_location() -> Result<String, String> {
+    let dir = crash_dir().ok_or("記録の場所が分かりません")?;
+    log_location(&dir)
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| e.to_string())
+}
+
 /// 前回 panic で終わっていたら、記録のパスを返す（1 回だけ）
 #[tauri::command]
 pub fn take_crash_notice() -> Option<String> {
@@ -180,6 +201,18 @@ mod tests {
         let got = take_notice(&dir).unwrap();
         assert!(got.ends_with(LOG_NAME));
         assert_eq!(take_notice(&dir), None, "知らせるのは 1 回だけ");
+    }
+
+    #[test]
+    fn log_location_points_at_log_or_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("app");
+        // 記録がまだ無い: フォルダを作ってフォルダを返す
+        assert_eq!(log_location(&dir).unwrap(), dir);
+        assert!(dir.is_dir());
+        // 記録がある: そのファイルを返す（開くとカーソルが合う）
+        write_report(&dir, "x\n").unwrap();
+        assert_eq!(log_location(&dir).unwrap(), dir.join(LOG_NAME));
     }
 
     #[test]

@@ -5,6 +5,7 @@ import {
   buildGoMenuItems,
   buildFilterMenuItems,
   buildViewMenuItems,
+  buildHelpMenuItems,
 } from '../core/appmenus.js';
 import { SHORTCUTS } from '../core/help.js';
 
@@ -259,5 +260,36 @@ describe('buildViewMenuItems', () => {
       // v→v はトグル、v→k（キーガイド）は表示メニュー本体（app.js）にあり、表示の種類ではない
       for (const p of expand(k)) if (p !== 'v→v' && p !== 'v→k') expect(keys).toContain(p);
     }
+  });
+});
+
+describe('buildHelpMenuItems', () => {
+  it('先頭にバージョンを無効項目で出す（無ければ名前だけ）', () => {
+    expect(buildHelpMenuItems({ version: '0.5.21' })[0]).toEqual({
+      label: 'Tana v0.5.21',
+      disabled: true,
+    });
+    expect(buildHelpMenuItems({})[0].label).toBe('Tana');
+    expect(buildHelpMenuItems(null)[0].label).toBe('Tana');
+  });
+
+  it('異常終了の記録を開く項目があり、押すと注入した action を呼ぶ', () => {
+    const crashLog = vi.fn();
+    const item = byLabel(buildHelpMenuItems({}, { crashLog }), '異常終了の記録を開く');
+    expect(item).toBeTruthy();
+    expect(item.disabled).toBeFalsy();
+    item.action();
+    expect(crashLog).toHaveBeenCalledTimes(1);
+  });
+
+  it('ショートカット一覧と更新の確認も残っている', () => {
+    const shortcutsFn = vi.fn();
+    const update = vi.fn();
+    const items = buildHelpMenuItems({}, { shortcuts: shortcutsFn, update });
+    byLabel(items, 'ショートカット一覧').action();
+    byLabel(items, '更新を確認').action();
+    expect(shortcutsFn).toHaveBeenCalled();
+    expect(update).toHaveBeenCalled();
+    expect(byLabel(items, 'ショートカット一覧').shortcut).toBe('?');
   });
 });

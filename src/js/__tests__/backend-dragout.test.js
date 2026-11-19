@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { prepareDragOut, primaryButtonDown, takeCrashNotice } from '../backend.js';
+import {
+  prepareDragOut,
+  primaryButtonDown,
+  takeCrashNotice,
+  crashLogLocation,
+} from '../backend.js';
 
 function withInvoke(impl) {
   const invoke = vi.fn(impl);
@@ -61,5 +66,21 @@ describe('takeCrashNotice', () => {
       throw new Error('x');
     });
     expect(await takeCrashNotice()).toBeNull();
+  });
+});
+
+describe('crashLogLocation', () => {
+  it('crash_log_location の答えを返す。Tauri が無ければ null', async () => {
+    expect(await crashLogLocation()).toBeNull();
+    const invoke = withInvoke(async () => '/home/u/.local/share/com.dobachi.tana');
+    expect(await crashLogLocation()).toBe('/home/u/.local/share/com.dobachi.tana');
+    expect(invoke).toHaveBeenCalledWith('crash_log_location', {});
+  });
+
+  it('失敗は呼び出し側へ伝える（トーストで理由を出すため）', async () => {
+    withInvoke(async () => {
+      throw 'denied';
+    });
+    await expect(crashLogLocation()).rejects.toBe('denied');
   });
 });

@@ -59,6 +59,7 @@ import {
   buildGoMenuItems,
   buildFilterMenuItems,
   buildViewMenuItems,
+  buildHelpMenuItems,
 } from './core/appmenus.js';
 import {
   VIEW,
@@ -190,6 +191,7 @@ import {
   prepareDragOut,
   primaryButtonDown,
   takeCrashNotice,
+  crashLogLocation,
   fudeAvailable,
   openRemoteInFude,
   thumbnailUrl,
@@ -1895,18 +1897,34 @@ function buildMenuDefinition() {
     {
       label: 'ヘルプ(H)',
       accessKey: 'H',
-      items: () => [
-        { label: `Tana${appVer ? ' v' + appVer : ''}`, disabled: true },
-        { separator: true },
-        { label: 'ショートカット一覧', shortcut: '?', action: () => help.toggle() },
-        { separator: true },
-        {
-          label: '更新を確認',
-          action: () => checkForUpdates({ manual: true, notify: toast, currentVersion: appVer }),
-        },
-      ],
+      items: () =>
+        buildHelpMenuItems(
+          { version: appVer },
+          {
+            shortcuts: () => help.toggle(),
+            crashLog: openCrashLog,
+            update: () => checkForUpdates({ manual: true, notify: toast, currentVersion: appVer }),
+          },
+        ),
     },
   ];
+}
+
+/**
+ * 異常終了の記録（crash.log）を、今のペインで開く。記録があればそのファイルに
+ * カーソルを合わせ、無ければ置き場のフォルダを開く。
+ */
+async function openCrashLog() {
+  try {
+    const loc = await crashLogLocation();
+    if (!loc) {
+      toast('デスクトップ版でのみ利用できます');
+      return;
+    }
+    await navigatePane(panes.getActive(), loc, { raw: true });
+  } catch (e) {
+    toast('記録の場所を開けませんでした: ' + (e && e.message ? e.message : e));
+  }
 }
 
 /**
@@ -3169,7 +3187,8 @@ async function init() {
   onOsDragDrop((payload) => osDrop.handle(payload));
   // 前回 panic で終わっていたら知らせる（記録は crashlog.rs が書く）
   takeCrashNotice().then((logPath) => {
-    if (logPath) toast(`前回 Tana が異常終了しました。記録: ${logPath}`);
+    if (logPath)
+      toast(`前回 Tana が異常終了しました。記録: ${logPath}（ヘルプ → 異常終了の記録を開く）`);
   });
 
   // 起動中に場所を指定して起動されたら、このウィンドウで開く（Rust の single-instance から）

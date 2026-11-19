@@ -241,7 +241,7 @@ RFB プロトコル（[RFC 6143](https://www.rfc-editor.org/rfc/rfc6143.html)）
     - Alt+Tab で前面を外れたあとは webview に `mouseup` が届かず、離したことが分からない。Windows では OS にボタンの状態を直接尋ねる（`primary_button_down` = `GetAsyncKeyState`、左右入れ替え設定も考慮）。
 - **OS に渡す直前にパスを点検する**（`prepare_drag_out`, `dragout.rs`）。drag クレートの Windows 版は `dunce::canonicalize` したパスをシェル（`ILCreateFromPathW`）へ渡すが、パスが長い（260 文字超）か Windows が普通の名前として扱えないと `\\?\` 付きのまま残ってシェルが受け取れず、クレート内の `unwrap()` が panic して **Tana ごと終了する**（別 PC の Windows でリモートのファイルを外へドラッグして落ちた報告の有力な原因。実機での再現・確定はまだ。取り寄せ先 `%TEMP%\tana-remote\<ホスト>\<リモートの絶対パス>` は深くなりやすい）。
   - 同じ判定（`dunce` で解決して `\\?\` が残るか）を先に行い、リモートの写しなら短い場所（`%TEMP%\tana-drag\<連番>\<名前>`、1 時間で掃除）へ置き直して渡す。手元のファイルなら理由をトーストで伝えて始めない。
-- panic は `crashlog.rs` が `<ローカルのアプリデータ>/com.dobachi.tana/crash.log` に記録し、次の起動でトーストで知らせる。リリース版の Windows はコンソールが無く、イベントループ内の panic は Windows のエラー報告にも残らないため。
+- panic は `crashlog.rs` が `<ローカルのアプリデータ>/com.dobachi.tana/crash.log` に記録し、次の起動でトーストで知らせる。置き場はヘルプメニューの「異常終了の記録を開く」で今のペインに開ける（記録があれば crash.log にカーソル、無ければフォルダを作って開く）。リリース版の Windows はコンソールが無く、イベントループ内の panic は Windows のエラー報告にも残らないため。
   - **リモートのフォルダ**は断る。丸ごと取り寄せると重く、途中で離されると無駄になる。
   - 取り寄せは外へ出たときだけ。ペイン間のドラッグのたびに先読みすると、使わない通信が増える。
 

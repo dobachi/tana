@@ -462,6 +462,11 @@ export async function primaryButtonDown() {
   }
 }
 
+/** 異常終了の記録の場所（記録があれば crash.log、無ければそのフォルダ）。Tauri 不在時は null */
+export async function crashLogLocation() {
+  return (await invoke('crash_log_location')) || null;
+}
+
 /** 前回 Tana が panic で終わっていたら、その記録のパス。無ければ null */
 export async function takeCrashNotice() {
   try {
