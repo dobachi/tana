@@ -288,6 +288,42 @@ describe('createDragOut — 外へのドラッグ', () => {
     expect(o.getOutbound()).toEqual({ paths: ['/s/b.txt'], sources });
   });
 
+  it('WSL 上の手元のファイルがコピーされたら、待った分ボタンを確かめる', async () => {
+    const preparePaths = vi.fn(async (paths) =>
+      paths.map((p) => (p.startsWith('//wsl') ? '/tmp/tana-drag/1/a.md' : p)),
+    );
+    const o = createDragOut({
+      startDrag,
+      fetchRemote,
+      isRemote: () => false,
+      makeIcon: () => 'icon',
+      toast,
+      preparePaths,
+    });
+    const src = [{ path: '//wsl/u/a.md', name: 'a.md' }];
+    // 離されていたら始めない
+    expect(await o.start(src, async () => false)).toBe(false);
+    expect(startDrag).not.toHaveBeenCalled();
+    // 押したままならコピー先で始める
+    expect(await o.start(src, async () => true)).toBe(true);
+    expect(startDrag).toHaveBeenCalledWith(['/tmp/tana-drag/1/a.md'], 'icon');
+    expect(o.getOutbound().paths).toEqual(['/tmp/tana-drag/1/a.md']);
+  });
+
+  it('コピーしなかった手元のファイルは待ちが無いので stillHeld を見ない', async () => {
+    const o = createDragOut({
+      startDrag,
+      fetchRemote,
+      isRemote: () => false,
+      makeIcon: () => 'icon',
+      toast,
+      preparePaths: async (paths) => paths,
+    });
+    const stillHeld = vi.fn(async () => false);
+    expect(await o.start([{ path: '/l/a.txt', name: 'a.txt' }], stillHeld)).toBe(true);
+    expect(stillHeld).not.toHaveBeenCalled();
+  });
+
   it('点検で断られたら OS のドラッグを始めず理由を伝える（落ちる代わりに）', async () => {
     const o = createDragOut({
       startDrag,

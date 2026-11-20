@@ -1,15 +1,20 @@
 // dragout.rs — Tana → 外 のドラッグで OS に渡すパスを整える（docs/DRAG-AND-DROP.md §10）
 //
-// 外へのドラッグは tauri-plugin-drag（drag クレート）が行う。Windows 版はパスを
-// dunce::canonicalize してからシェル（ILCreateFromPathW）に渡すが、パスが長い
-// （260 文字超）か Windows が普通の名前として扱えないと `\\?\` 付きのまま残り、
-// シェルが受け取れずに drag クレート内の unwrap() が panic する。panic はメイン
-// スレッドのイベントループで起きるので、Tana はそのまま終了してしまう。
+// 外へのドラッグは tauri-plugin-drag（drag クレート）が行う。Windows 版は渡された
+// パスを必ず dunce::canonicalize してからシェル（ILCreateFromPathW）に渡すが、
+// 結果が `\\?\` 付きのまま残るとシェルが受け取れず、drag クレート内の unwrap() が
+// panic する。panic はメインスレッドのイベントループで起きるので Tana ごと終了する。
+// `\\?\` が残るのは次のとき（dunce は `\\?\C:\` 形式しか普通の形に戻さない）:
+//   - WSL・ネットワーク共有のパス（`\\wsl.localhost\…` → `\\?\UNC\…`）。長さに依らず必ず
+//   - パスが長い（260 文字超）、Windows が普通の名前として扱えない名前を含む
+// 実機で `\\?\UNC\wsl.localhost\…` は ILCreateFromPathW が失敗し、`\\wsl.localhost\…` は
+// 通ることを確認した（2026-11-20）。渡す綴りを変えてもクレート内で再び変換されるので、
 //
-// そこで渡す前に同じ判定をし、
-//   - リモートから取り寄せた写し（tana-remote 配下）なら、短い場所へ置き直す
-//   - それ以外（手元のファイル）は理由を返して断る
-// ようにする。判定の中身（resolve）は差し替えられるので、OS に依らずテストできる。
+//   - ファイルなら、短い一時フォルダ（tana-drag）へコピーしてそちらを渡す。
+//     外へのドラッグは常にコピーなので、相手に届く結果は変わらない
+//   - フォルダは丸ごとコピーすると重いので、理由を返して断る
+//
+// 判定の中身（resolve）は差し替えられるので、OS に依らずテストできる。
 
 use std::path::{Path, PathBuf};
 
@@ -57,12 +62,10 @@ fn display_name(p: &Path) -> String {
 
 /// OS に渡すパスを決める。
 ///
-/// * `cache_root` — リモートの取り寄せ先（ここ配下なら置き直してよい）
-/// * `short_root` — 置き直し先
+/// * `short_root` — コピーの置き場
 /// * `resolve` — パスを解決し、シェルに渡せるかを返す
 pub fn prepare_paths(
     paths: &[String],
-    cache_root: &Path,
     short_root: &Path,
     resolve: &dyn Fn(&Path) -> std::io::Result<Resolved>,
 ) -> Result<Vec<String>, String> {
@@ -75,10 +78,9 @@ pub fn prepare_paths(
             out.push(r.path.to_string_lossy().to_string());
             continue;
         }
-        let from_cache = p.starts_with(cache_root) && p.is_file();
-        if !from_cache {
+        if !p.is_file() {
             return Err(format!(
-                "パスが長すぎるか、Windows で扱えない名前のため外へ渡せません: {}",
+                "WSL・ネットワーク上や長いパスのフォルダは外へドラッグできません（ファイルなら出せます）: {}",
                 display_name(p)
             ));
         }
@@ -93,7 +95,10 @@ pub fn prepare_paths(
         let dir = short_root.join(format!("{nanos:x}{i}"));
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let dest = dir.join(p.file_name().ok_or("ファイル名がありません")?);
-        std::fs::copy(p, &dest).map_err(|e| e.to_string())?;
+        if let Err(e) = std::fs::copy(p, &dest) {
+            let _ = std::fs::remove_dir_all(&dir);
+            return Err(format!("{}: {e}", display_name(p)));
+        }
         let r2 = resolve(&dest).map_err(|e| e.to_string())?;
         if !r2.usable {
             let _ = std::fs::remove_dir_all(&dir);
@@ -125,15 +130,15 @@ fn resolve_for_shell(p: &Path) -> std::io::Result<Resolved> {
     })
 }
 
-/// 外へのドラッグの直前に呼ぶ。OS に渡すパス（置き直し後）を返す。
+/// 外へのドラッグの直前に呼ぶ。OS に渡すパス（コピーした場合はコピー先）を返す。
+/// 大きなファイルのコピーで画面を止めないよう、ワーカースレッドで行う。
 #[tauri::command]
-pub fn prepare_drag_out(paths: Vec<String>) -> Result<Vec<String>, String> {
-    prepare_paths(
-        &paths,
-        &crate::remote::cache_root(),
-        &short_root(),
-        &resolve_for_shell,
-    )
+pub async fn prepare_drag_out(paths: Vec<String>) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        prepare_paths(&paths, &short_root(), &resolve_for_shell)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[cfg(windows)]
@@ -199,71 +204,85 @@ mod tests {
         let a = tmp.path().join("a.txt");
         std::fs::write(&a, b"x").unwrap();
         let paths = vec![a.to_string_lossy().to_string()];
-        let out = prepare_paths(
-            &paths,
-            &tmp.path().join("c"),
-            &tmp.path().join("s"),
-            &fake(10_000),
-        )
-        .unwrap();
+        let out = prepare_paths(&paths, &tmp.path().join("s"), &fake(10_000)).unwrap();
         assert_eq!(out, paths);
+        assert!(!tmp.path().join("s").exists(), "渡せるならコピーしない");
     }
 
     #[test]
-    fn long_cache_copy_is_moved_to_short_root() {
+    fn unusable_file_is_copied_to_short_root() {
+        // WSL（\\?\UNC\…）・長いリモートの写し・長い手元のパス、どれも同じ扱い
         let tmp = tempfile::tempdir().unwrap();
-        let cache = tmp.path().join("tana-remote");
-        let deep = cache.join("host").join("x".repeat(80)).join("y".repeat(80));
+        let deep = tmp.path().join("x".repeat(80)).join("y".repeat(80));
         std::fs::create_dir_all(&deep).unwrap();
-        let f = deep.join("report.pptx");
+        let f = deep.join("sponsor-email-summary.md");
         std::fs::write(&f, b"data").unwrap();
         let short = tmp.path().join("s");
         let limit = f.to_string_lossy().len(); // 元のパスはちょうど渡せない長さ
-        let out = prepare_paths(
-            &[f.to_string_lossy().to_string()],
-            &cache,
-            &short,
-            &fake(limit),
-        )
-        .unwrap();
+        let out = prepare_paths(&[f.to_string_lossy().to_string()], &short, &fake(limit)).unwrap();
         let moved = Path::new(&out[0]);
         assert!(moved.starts_with(&short));
-        assert_eq!(moved.file_name().unwrap(), "report.pptx");
+        assert_eq!(moved.file_name().unwrap(), "sponsor-email-summary.md");
         assert_eq!(std::fs::read(moved).unwrap(), b"data");
-        assert!(f.exists(), "元の写しは残す（次の取り寄せで使う）");
+        assert!(f.exists(), "元のファイルはそのまま");
     }
 
     #[test]
-    fn long_local_path_is_refused_with_reason() {
+    fn mixed_items_keep_order_and_copy_only_unusable() {
         let tmp = tempfile::tempdir().unwrap();
-        let f = tmp.path().join("local.txt");
-        std::fs::write(&f, b"x").unwrap();
+        let ok = tmp.path().join("a.txt");
+        std::fs::write(&ok, b"1").unwrap();
+        let deep = tmp.path().join("z".repeat(60));
+        std::fs::create_dir_all(&deep).unwrap();
+        let bad = deep.join("b.txt");
+        std::fs::write(&bad, b"2").unwrap();
+        let short = tmp.path().join("s");
+        // "zzz" を含むパスだけ渡せない（WSL 上のファイルの見立て）
+        let wsl_like = |p: &Path| -> std::io::Result<Resolved> {
+            std::fs::metadata(p)?;
+            Ok(Resolved {
+                path: p.to_path_buf(),
+                usable: !p.to_string_lossy().contains("zzz"),
+            })
+        };
+        let out = prepare_paths(
+            &[
+                ok.to_string_lossy().to_string(),
+                bad.to_string_lossy().to_string(),
+            ],
+            &short,
+            &wsl_like,
+        )
+        .unwrap();
+        assert_eq!(out[0], ok.to_string_lossy());
+        assert!(Path::new(&out[1]).starts_with(&short));
+        assert!(out[1].ends_with("b.txt"));
+    }
+
+    #[test]
+    fn unusable_folder_is_refused_with_reason() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path().join("docs");
+        std::fs::create_dir_all(&d).unwrap();
         let err = prepare_paths(
-            &[f.to_string_lossy().to_string()],
-            &tmp.path().join("tana-remote"),
+            &[d.to_string_lossy().to_string()],
             &tmp.path().join("s"),
             &fake(1),
         )
         .unwrap_err();
-        assert!(err.contains("local.txt"), "{err}");
-        assert!(
-            !tmp.path().join("s").exists(),
-            "手元のファイルは置き直さない"
-        );
+        assert!(err.contains("フォルダ") && err.contains("docs"), "{err}");
+        assert!(!tmp.path().join("s").exists(), "フォルダはコピーしない");
     }
 
     #[test]
     fn refuses_when_even_the_short_copy_is_unusable() {
         let tmp = tempfile::tempdir().unwrap();
-        let cache = tmp.path().join("tana-remote");
-        std::fs::create_dir_all(&cache).unwrap();
-        let f = cache.join("n".repeat(100));
+        let f = tmp.path().join("n".repeat(100));
         std::fs::write(&f, b"x").unwrap();
         let short = tmp.path().join("s");
-        let err = prepare_paths(&[f.to_string_lossy().to_string()], &cache, &short, &fake(1))
-            .unwrap_err();
+        let err = prepare_paths(&[f.to_string_lossy().to_string()], &short, &fake(1)).unwrap_err();
         assert!(err.contains("ファイル名"), "{err}");
-        // 使えない置き直しは片付ける
+        // 使えないコピーは片付ける
         assert_eq!(std::fs::read_dir(&short).unwrap().count(), 0);
     }
 
@@ -273,7 +292,6 @@ mod tests {
         let p = tmp.path().join("gone.txt");
         let err = prepare_paths(
             &[p.to_string_lossy().to_string()],
-            tmp.path(),
             &tmp.path().join("s"),
             &fake(10_000),
         )
