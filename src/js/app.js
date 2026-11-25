@@ -34,7 +34,12 @@ import {
   parentPath,
 } from './core/pathnav.js';
 import { createSearch } from './core/searchview.js';
-import { createWorkspaces, loadStoredWorkspaces, storeWorkspaces } from './core/workspaces.js';
+import {
+  createWorkspaces,
+  loadStoredWorkspaces,
+  storeWorkspaces,
+  sessionToLayout,
+} from './core/workspaces.js';
 import { createWorkspacesView } from './core/workspacesview.js';
 import {
   initMenuBar,
@@ -703,19 +708,16 @@ const search = createSearch({
   onOpen: (hit) => openSearchHit(hit),
 });
 
-// ワークスペース（タブ構成の保存/復元）。永続化は localStorage。
-const workspaces = createWorkspaces(loadStoredWorkspaces());
+// ワークスペース（名前付きセッション）。永続化は localStorage。初回は前回のセッションを
+// "default" として引き継ぐ（旧形式のスナップショットは同名のワークスペースになる）。
+const workspaces = createWorkspaces(loadStoredWorkspaces(), loadSession());
 workspaces.subscribe(() => storeWorkspaces(workspaces.toJSON()));
 const workspacesView = createWorkspacesView({
   workspaces,
-  getContext: () => {
-    const fp = activeFilePane();
-    return {
-      snapshot: captureWorkspaceSnapshot(),
-      suggestedName: fp ? tabLabel(fp.getCurrentDir()) : '',
-    };
-  },
-  onOpen: (ws) => applyWorkspace(ws),
+  ask: (title, value) => promptName(title, value),
+  isMain: () => isMainWindow,
+  notify: (msg) => toast(msg),
+  onSwitch: (name) => switchWorkspace(name),
 });
 
 // リモート接続画面 (FR-20)。開く/切断/書き込み許可は Rust remote.rs へ。
@@ -791,29 +793,35 @@ function syncPaneRemote(p) {
   el.classList.toggle('pane-remote-ro', !!host && !remotes.isWritable(host));
 }
 
-/** 現在の両ペインのタブ構成をスナップショットにする。 */
-function captureWorkspaceSnapshot() {
-  const dirs = (p) => (paneTabs[p] ? paneTabs[p].list().map((t) => t.dir) : []);
-  const active = (p) => (paneTabs[p] ? paneTabs[p].activeIndex() : 0);
-  return {
-    left: dirs(PANE.LEFT),
-    right: dirs(PANE.RIGHT),
-    activeLeft: active(PANE.LEFT),
-    activeRight: active(PANE.RIGHT),
-    active: panes.getActive(),
-  };
+/**
+ * ワークスペースを切り替える。最初のウィンドウでは今のセッションを使用中のワークスペースに
+ * 残してから使用中を移し、相手のセッションを両ペインへ広げる。追加ウィンドウはセッションを
+ * 持たないので、そのウィンドウに広げるだけ（使用中は変えない）。
+ */
+async function switchWorkspace(name) {
+  const ws = workspaces.get(name);
+  if (!ws) return;
+  if (isMainWindow) {
+    if (name === workspaces.active()) return;
+    sessionSaver.flush(); // 今の状態を今のワークスペースへ
+    workspaces.setActive(name);
+  }
+  await applyWorkspace(sessionToLayout(ws.session));
+  if (isMainWindow) sessionSaver.flush();
+  toast(isMainWindow ? `ワークスペース「${name}」に切り替えました` : `「${name}」を開きました`);
 }
 
-/** 保存済みワークスペースを両ペインに適用する（タブを作り直して読み込む）。 */
+/** タブ構成を両ペインに適用する（タブを作り直して読み込む）。場所の無いペインはホームから。 */
 async function applyWorkspace(ws) {
   if (!ws) return;
   const home = (await homeDir()) || '.';
-  for (const [p, list, idx] of [
+  for (const [p, saved, idx] of [
     [PANE.LEFT, ws.left, ws.activeLeft],
     [PANE.RIGHT, ws.right, ws.activeRight],
   ]) {
     const fp = filePanes[p];
-    if (!fp || !Array.isArray(list) || !list.length) continue;
+    if (!fp) continue;
+    const list = Array.isArray(saved) && saved.length ? saved : [home];
     paneTabs[p] = createTabList(list[0]);
     for (let i = 1; i < list.length; i++) paneTabs[p].add(list[i]);
     paneTabs[p].activate(Math.min(idx || 0, list.length - 1));
@@ -1154,9 +1162,12 @@ const sessionSaver = createSessionSaver({
       right: paneTabs[PANE.RIGHT] ? paneTabs[PANE.RIGHT].activeIndex() : 0,
     },
   }),
-  // 前回のタブ構成は最初のウィンドウ（main）だけが持つ（追加ウィンドウが上書きしない）
+  // 前回のタブ構成は最初のウィンドウ（main）だけが持つ（追加ウィンドウが上書きしない）。
+  // 使用中のワークスペースにも記録する（保存する項目だけ）。
   store: (state) => {
-    if (isMainWindow) storeSession(state);
+    if (!isMainWindow) return;
+    storeSession(state);
+    workspaces.record(state);
   },
 });
 
@@ -3143,7 +3154,8 @@ async function init() {
   if (!plan.useSession) {
     await Promise.all([loadOr(filePanes.left, cli), loadOr(filePanes.right, cli)]);
   } else {
-    session = loadSession();
+    // 使用中のワークスペースのセッション（保存する項目だけ。保存しない項目は空で始まる）
+    session = workspaces.activeSession();
     await Promise.all([
       loadOr(filePanes.left, session && session.dirs.left),
       loadOr(filePanes.right, session && session.dirs.right),

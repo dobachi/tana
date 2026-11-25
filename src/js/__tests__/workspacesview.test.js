@@ -1,17 +1,28 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createWorkspacesView } from '../core/workspacesview.js';
-import { createWorkspaces } from '../core/workspaces.js';
+import { createWorkspaces, DEFAULT_WORKSPACE } from '../core/workspaces.js';
 
-const SNAP = { left: ['/a', '/b'], right: ['/c'], activeLeft: 0, activeRight: 0, active: 'left' };
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const q = (sel) => document.querySelector(sel);
+const rows = () => [...document.querySelectorAll('.ws-row')];
+const key = (el, k) => el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
 
 function setup(over = {}) {
   const workspaces = over.workspaces || createWorkspaces();
+  if (!over.workspaces) workspaces.add('notes');
+  const answers = [...(over.answers || [])];
+  const asked = [];
   const view = createWorkspacesView({
     workspaces,
-    getContext: () => ({ snapshot: SNAP, suggestedName: 'work' }),
-    onOpen: over.onOpen || vi.fn(),
+    onSwitch: over.onSwitch || vi.fn(),
+    ask: async (title) => {
+      asked.push(title);
+      return answers.length ? answers.shift() : null;
+    },
+    isMain: () => over.isMain !== false,
+    notify: over.notify || vi.fn(),
   });
-  return { workspaces, view };
+  return { workspaces, view, asked };
 }
 
 describe('workspacesview', () => {
@@ -19,69 +30,125 @@ describe('workspacesview', () => {
     document.body.innerHTML = '';
   });
 
-  it('open で入力欄に既定名が入る', () => {
+  it('一覧に使用中の印、選択は使用中から始まる', () => {
     const { view } = setup();
     view.open();
-    expect(view.isOpen()).toBe(true);
-    expect(document.querySelector('.ws-input').value).toBe('work');
+    expect(rows().map((r) => r.querySelector('.ws-name').textContent)).toEqual([
+      DEFAULT_WORKSPACE,
+      'notes',
+    ]);
+    expect(rows()[0].classList.contains('selected')).toBe(true);
+    expect(rows()[0].querySelector('.ws-active-tag')).not.toBeNull();
+    expect(q('.ws-switch').disabled).toBe(true);
+    expect(q('.ws-remove').disabled).toBe(true);
   });
 
-  it('保存ボタンで現在の構成を保存し一覧に出る', () => {
+  it('j で選んで Enter で切り替え、閉じる', () => {
+    const onSwitch = vi.fn();
+    const { view } = setup({ onSwitch });
+    view.open();
+    key(rows()[0], 'j');
+    expect(rows()[1].classList.contains('selected')).toBe(true);
+    key(rows()[1], 'Enter');
+    expect(onSwitch).toHaveBeenCalledWith('notes');
+    expect(view.isOpen()).toBe(false);
+  });
+
+  it('使用中を選んで Enter しても何もしない（最初のウィンドウ）', () => {
+    const onSwitch = vi.fn();
+    const { view } = setup({ onSwitch });
+    view.open();
+    key(rows()[0], 'Enter');
+    expect(onSwitch).not.toHaveBeenCalled();
+    expect(view.isOpen()).toBe(true);
+  });
+
+  it('追加ウィンドウでは「このウィンドウで開く」で、使用中も開ける', () => {
+    const onSwitch = vi.fn();
+    const { view } = setup({ onSwitch, isMain: false });
+    view.open();
+    expect(q('.ws-switch').textContent).toBe('このウィンドウで開く');
+    q('.ws-switch').click();
+    expect(onSwitch).toHaveBeenCalledWith(DEFAULT_WORKSPACE);
+  });
+
+  it('n で新規、使えない名前は聞き直す', async () => {
+    const { view, workspaces, asked } = setup({ answers: ['notes', '執筆'] });
+    view.open();
+    key(rows()[0], 'n');
+    await tick();
+    await tick();
+    expect(asked[1]).toMatch(/既に/);
+    expect(workspaces.list().map((w) => w.name)).toContain('執筆');
+    expect(q('.ws-row.selected .ws-name').textContent).toBe('執筆');
+  });
+
+  it('r で名前を変更（使用中は使用中のまま）', async () => {
+    const { view, workspaces } = setup({ answers: ['仕事'] });
+    view.open();
+    key(rows()[0], 'r');
+    await tick();
+    expect(workspaces.active()).toBe('仕事');
+  });
+
+  it('x で使用中でないものを削除、使用中は知らせて消さない', () => {
+    const notify = vi.fn();
+    const { view, workspaces } = setup({ notify });
+    view.open();
+    key(rows()[0], 'x');
+    expect(notify).toHaveBeenCalled();
+    key(rows()[0], 'j');
+    key(rows()[1], 'x');
+    expect(workspaces.list().map((w) => w.name)).toEqual([DEFAULT_WORKSPACE]);
+  });
+
+  it('選んだワークスペースの保存する項目を変える。場所を外すとタブは選べない', () => {
     const { view, workspaces } = setup();
     view.open();
-    document.querySelector('.ws-input').value = 'マイ作業';
-    document.querySelector('.ws-save').click();
-    expect(workspaces.list().map((w) => w.name)).toContain('マイ作業');
-    expect([...document.querySelectorAll('.ws-name')].map((n) => n.textContent)).toContain(
-      'マイ作業',
-    );
+    rows()[1].click();
+    expect(q('.ws-keep-title').textContent).toContain('notes');
+    const dirs = q('[data-keep="dirs"]');
+    dirs.checked = false;
+    dirs.dispatchEvent(new Event('change'));
+    expect(workspaces.get('notes').keep.dirs).toBe(false);
+    expect(workspaces.get(DEFAULT_WORKSPACE).keep.dirs).toBe(true);
+    expect(q('[data-keep="tabs"]').disabled).toBe(true);
   });
 
-  it('保存済みは左右のタブ数を表示', () => {
-    const workspaces = createWorkspaces();
-    workspaces.save('既存', SNAP);
+  it('保存済みはタブ数、未保存はその旨を表示', () => {
+    const workspaces = createWorkspaces(null, {
+      dirs: { left: '/a', right: '/b' },
+      tabs: { left: ['/a', '/x'] },
+    });
+    workspaces.add('empty');
     const { view } = setup({ workspaces });
     view.open();
-    expect(document.querySelector('.ws-meta').textContent).toBe('左 2 / 右 1 タブ');
+    expect(rows()[0].querySelector('.ws-meta').textContent).toBe('左 2 / 右 1 タブ');
+    expect(rows()[1].querySelector('.ws-meta').textContent).toMatch(/まだ/);
   });
 
-  it('行クリックで onOpen を呼び閉じる', () => {
+  it('Escape で閉じる。名前の入力中は閉じない', async () => {
+    let release;
     const workspaces = createWorkspaces();
-    const id = workspaces.save('既存', SNAP);
-    const onOpen = vi.fn();
-    const { view } = setup({ workspaces, onOpen });
+    const view = createWorkspacesView({
+      workspaces,
+      onSwitch: vi.fn(),
+      ask: () => new Promise((r) => (release = r)),
+    });
     view.open();
-    document.querySelector('.ws-row').click();
-    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id, name: '既存' }));
+    key(rows()[0], 'n');
+    key(rows()[0], 'Escape');
+    expect(view.isOpen()).toBe(true);
+    release(null);
+    await tick();
+    key(rows()[0], 'Escape');
     expect(view.isOpen()).toBe(false);
   });
 
-  it('× で削除', () => {
-    const workspaces = createWorkspaces();
-    workspaces.save('消す', SNAP);
-    const { view } = setup({ workspaces });
-    view.open();
-    document.querySelector('.ws-remove').click();
-    expect(workspaces.list()).toHaveLength(0);
-    expect(document.querySelector('.ws-list .placeholder')).not.toBeNull();
-  });
-
-  it('Escape で閉じる', () => {
+  it('右上の × で閉じる', () => {
     const { view } = setup();
     view.open();
-    document
-      .querySelector('.ws-overlay')
-      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    q('.modal-close').click();
     expect(view.isOpen()).toBe(false);
-  });
-
-  it('右上の × で閉じる（行の削除 × とは別）', () => {
-    const workspaces = createWorkspaces();
-    workspaces.save('残す', SNAP);
-    const { view } = setup({ workspaces });
-    view.open();
-    document.querySelector('.ws-box .modal-close').click();
-    expect(view.isOpen()).toBe(false);
-    expect(workspaces.list()).toHaveLength(1);
   });
 });

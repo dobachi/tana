@@ -61,7 +61,7 @@ export function buildFileMenuItems(state, a = {}) {
     { label: 'タブを閉じる', shortcut: 'Ctrl+W', action: a.closeTab },
     { separator: true },
     { label: 'リモート接続…（SSH / SFTP）', shortcut: 'Ctrl+Shift+X', action: a.remote },
-    { label: 'ワークスペース…（タブ構成の保存/復元）', action: a.workspaces },
+    { label: 'ワークスペース…', action: a.workspaces },
     { label: 'お気に入りに現在地を追加', shortcut: 'Ctrl+D', action: a.addFavorite },
     { separator: true },
     {

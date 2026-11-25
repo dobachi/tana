@@ -106,8 +106,8 @@ make docker-check  # CI相当チェック
 | `core/tabs.js` | **タブの純粋な状態 (FR-08)**。ペインごとの add/close/activate/next/prev/move、各タブは dir + 表示状態。読み込み/保存の結線は app.js（`renderTabs`/`switchToActiveTab` と filepane の `getViewState`/`applyViewState`） |
 | `core/keyprefix.js` | **二打鍵プレフィックスの純粋マッピング**。`(prefix, key)→アクションID`（s=並替/t=タブ移動/y=コピー/o=開く）とヒント文言。実行は app.js `runPrefixAction`。方針は memory `feedback_tana_prefix_shortcuts` |
 | `core/searchview.js` | **現在ディレクトリ内検索のオーバーレイUI (FR-18)**。`Ctrl+F`/`/`。入力→debounce→backend `search_dir`（Channel でヒットをストリーミング受信し逐次描画）、Enter でジャンプ。トグル(本文/正規/大小/隠し)。マッチングは Rust `search.rs`（純粋部テスト済み） |
-| `core/workspaces.js` | **ワークスペース（タブ構成の保存/復元）の純粋な状態**。両ペインのタブ dir 一覧＋アクティブに名前を付けて保存/上書き/削除、localStorage 永続化。UI は workspacesview.js |
-| `core/workspacesview.js` | **ワークスペースのオーバーレイUI**。ファイルメニューから開く。現在構成を名前保存＋保存済み一覧の開く/削除（j/k/Enter/Del/Esc） |
+| `core/workspaces.js` | **ワークスペース（名前付きセッション）の純粋な状態**。ワークスペースごとにセッション（各ペインの場所・タブ・アクティブペイン）を持ち、保存する項目もワークスペースごとに選べる。使用中のワークスペースへはセッション保存 (FR-14) のたびに自動で記録。旧形式（タブ構成のスナップショット）は同名のワークスペースへ、それまでのセッションは `default` へ移行。localStorage 永続化。UI は workspacesview.js |
+| `core/workspacesview.js` | **ワークスペースのオーバーレイUI**。ファイルメニューから開く。一覧から切り替え（j/k/Enter）、新規 n・名前を変更 r・削除 x（使用中は不可）、選んだワークスペースで保存する項目を選ぶ。追加ウィンドウでは「このウィンドウで開く」（使用中は変えない） |
 | `core/dnd.js` | **D&D の判定（純粋）**。掴んだ対象・効果(copy/move)・不正ドロップの拒否。詳細: [DRAG-AND-DROP.md](DRAG-AND-DROP.md) |
 | `core/dragdrop.js` | **D&D の追跡（DOM）**。ポインタイベントで自作。`resolveDropTarget` は OS ドロップでも再利用する。安全モードは拒否ゴースト＋トーストで示す。ウィンドウの外へ出たら `onLeaveWindow` で OS のドラッグへ引き継ぐ |
 | `core/osdnd.js` | **OS との D&D の判定（純粋）**。物理→CSS 座標・ウィンドウ外判定・外へ出すものの計画（リモートは取り寄せ / リモートのフォルダは断る）・戻ってきたドロップの読み替え。詳細: [DRAG-AND-DROP.md](DRAG-AND-DROP.md) §10 |

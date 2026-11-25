@@ -98,19 +98,17 @@ describe('別ウィンドウの変更の取り込み（replace）', () => {
     expect(seen).toHaveBeenCalledTimes(1);
   });
 
-  it('ワークスペース: 相手の id のまま取り込み、その後の保存も重ならない', () => {
-    const a = createWorkspaces([]);
-    a.save('w1', { left: ['/a'] });
-    a.save('w2', { right: ['/b'] });
-    const b = createWorkspaces([]);
+  it('ワークスペース: 相手の内容を取り込み、同じ内容なら通知しない', () => {
+    const a = createWorkspaces();
+    a.add('w1');
+    a.record({ dirs: { left: '/a', right: '/b' } });
+    const b = createWorkspaces();
     const seen = vi.fn();
     b.subscribe(seen);
     b.replace(a.toJSON());
     expect(b.toJSON()).toEqual(a.toJSON());
     b.replace(a.toJSON());
     expect(seen).toHaveBeenCalledTimes(1);
-    const id = b.save('w3', { left: ['/c'] });
-    expect(a.toJSON().map((w) => w.id)).not.toContain(id);
   });
 
   it('外部アプリ', () => {
